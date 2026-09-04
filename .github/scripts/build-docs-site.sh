@@ -90,6 +90,7 @@ NAV='<nav class="top">
   <span class="brand"><img src="assets/acemq.png" alt="AceMQ"> for .NET</span>
   <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting started</a>
+  <a class="tutorials" href="tutorials.html">Tutorials</a>
   <a href="publishing.html">Publishing</a>
   <a href="consuming.html">Consuming</a>
   <a href="topology.html">Topology</a>
@@ -100,6 +101,7 @@ NAV='<nav class="top">
   <a href="request-reply.html">Request/reply</a>
   <a href="streams.html">Streams</a>
   <a href="observability.html">Metrics</a>
+  <a class="api" href="apidocs/">API reference</a>
   <a href="testing.html">Testing</a>
   <a href="csharp.html">C#</a>
   <a href="vbnet.html">VB.NET</a>
@@ -147,9 +149,15 @@ done
 
 rm -f "$OUT/.nav.html" "$OUT/.foot.html"
 
-# No API reference yet. DocFX would generate one from the XML comments, and it is
-# worth adding when there is an API broad enough to browse -- today it is two
-# types. A nav entry pointing at an empty page is worse than no entry.
+# The API reference, generated from the XML documentation by DocFX. Skipped when
+# DocFX is absent so a local docs build still works without installing it; CI
+# installs it, so the published site always has one.
+if command -v docfx >/dev/null 2>&1; then
+  docfx etc/apidocs/docfx.json --logLevel warning
+  echo "  rendered apidocs/"
+else
+  echo "  docfx not installed; skipping the API reference"
+fi
 
 # Jekyll would otherwise skip javadoc's underscore-prefixed resources.
 touch "$OUT/.nojekyll"

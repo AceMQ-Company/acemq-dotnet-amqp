@@ -1,0 +1,240 @@
+### YamlMime:ApiPage
+title: Class ConnectionConfig
+body:
+- api1: Class ConnectionConfig
+  id: AceMq_Amqp_ConnectionConfig
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L25
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig
+    commentId: T:AceMq.Amqp.ConnectionConfig
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How to reach a broker, and how to behave once connected.
+- code: public sealed class ConnectionConfig
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: ConnectionConfig
+    url: AceMq.Amqp.ConnectionConfig.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    The defaults match the Java library's, because a service rewritten from Java to
+
+    C# should not change its timeout behaviour as a side effect of changing
+
+    language.
+- h2: Properties
+- api3: ClientName
+  id: AceMq_Amqp_ConnectionConfig_ClientName
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L65
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.ClientName
+    commentId: P:AceMq.Amqp.ConnectionConfig.ClientName
+- markdown: Name this connection reports to the broker, so it is identifiable in the UI.
+- code: public string ClientName { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: ConfirmTimeout
+  id: AceMq_Amqp_ConnectionConfig_ConfirmTimeout
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L70
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.ConfirmTimeout
+    commentId: P:AceMq.Amqp.ConnectionConfig.ConfirmTimeout
+- markdown: How long to wait for the broker to confirm a publish before failing it.
+- code: public TimeSpan ConfirmTimeout { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- api3: ConnectionTimeout
+  id: AceMq_Amqp_ConnectionConfig_ConnectionTimeout
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L67
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.ConnectionTimeout
+    commentId: P:AceMq.Amqp.ConnectionConfig.ConnectionTimeout
+- code: public TimeSpan ConnectionTimeout { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- api3: CredentialsProvider
+  id: AceMq_Amqp_ConnectionConfig_CredentialsProvider
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L82
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.CredentialsProvider
+    commentId: P:AceMq.Amqp.ConnectionConfig.CredentialsProvider
+- markdown: Where credentials come from, if not from the URL.
+- code: public ICredentialsProvider? CredentialsProvider { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: ICredentialsProvider
+      url: AceMq.Amqp.ICredentialsProvider.html
+    - '?'
+- api3: MaxOutstandingPublishes
+  id: AceMq_Amqp_ConnectionConfig_MaxOutstandingPublishes
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L73
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.MaxOutstandingPublishes
+    commentId: P:AceMq.Amqp.ConnectionConfig.MaxOutstandingPublishes
+- markdown: Publishes allowed in flight before <code>SendAsync</code> applies back pressure.
+- code: public int MaxOutstandingPublishes { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: Password
+  id: AceMq_Amqp_ConnectionConfig_Password
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L61
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.Password
+    commentId: P:AceMq.Amqp.ConnectionConfig.Password
+- code: public string? Password { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: PublisherConfirms
+  id: AceMq_Amqp_ConnectionConfig_PublisherConfirms
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L76
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.PublisherConfirms
+    commentId: P:AceMq.Amqp.ConnectionConfig.PublisherConfirms
+- markdown: Whether the broker is asked to confirm publishes. On by default.
+- code: public bool PublisherConfirms { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Scheme
+  id: AceMq_Amqp_ConnectionConfig_Scheme
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L85
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.Scheme
+    commentId: P:AceMq.Amqp.ConnectionConfig.Scheme
+- markdown: The URL's scheme, which is how a transport is chosen.
+- code: public string Scheme { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Tls
+  id: AceMq_Amqp_ConnectionConfig_Tls
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L79
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.Tls
+    commentId: P:AceMq.Amqp.ConnectionConfig.Tls
+- markdown: How the connection is secured.
+- code: public TlsOptions Tls { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: Url
+  id: AceMq_Amqp_ConnectionConfig_Url
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L58
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.Url
+    commentId: P:AceMq.Amqp.ConnectionConfig.Url
+- markdown: Broker URL. Its scheme selects the transport.
+- code: public string Url { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Username
+  id: AceMq_Amqp_ConnectionConfig_Username
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L60
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.Username
+    commentId: P:AceMq.Amqp.ConnectionConfig.Username
+- code: public string? Username { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: VirtualHost
+  id: AceMq_Amqp_ConnectionConfig_VirtualHost
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L62
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.VirtualHost
+    commentId: P:AceMq.Amqp.ConnectionConfig.VirtualHost
+- code: public string? VirtualHost { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h2: Methods
+- api3: ForUrl(string)
+  id: AceMq_Amqp_ConnectionConfig_ForUrl_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L96
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.ForUrl(System.String)
+    commentId: M:AceMq.Amqp.ConnectionConfig.ForUrl(System.String)
+- markdown: Starts a configuration for a broker URL.
+- code: public static ConnectionConfig.Builder ForUrl(string url)
+- h4: Parameters
+- parameters:
+  - name: url
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConnectionConfig
+      url: AceMq.Amqp.ConnectionConfig.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.ConnectionConfig.Builder.html
+- api3: ToString()
+  id: AceMq_Amqp_ConnectionConfig_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/ConnectionConfig.cs#L98
+  metadata:
+    uid: AceMq.Amqp.ConnectionConfig.ToString
+    commentId: M:AceMq.Amqp.ConnectionConfig.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: How to reach a broker, and how to behave once connected.

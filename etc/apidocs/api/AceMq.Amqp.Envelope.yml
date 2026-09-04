@@ -1,0 +1,293 @@
+### YamlMime:ApiPage
+title: Class Envelope
+body:
+- api1: Class Envelope
+  id: AceMq_Amqp_Envelope
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L31
+  metadata:
+    uid: AceMq.Amqp.Envelope
+    commentId: T:AceMq.Amqp.Envelope
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: >-
+    What travels with a message besides its body: identity, causation, and the
+
+    counters the retry engine keeps.
+- code: public sealed class Envelope
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Envelope
+    url: AceMq.Amqp.Envelope.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    The defaults are part of the wire contract, not conveniences, and are pinned by
+
+    the fixtures in the test project: a type that falls back to the routing key, a
+
+    correlation that falls back to the id, an origin of <code>acemq@{host}</code>, version
+
+    and attempt starting at 1.
+- h2: Properties
+- api3: Attempt
+  id: AceMq_Amqp_Envelope_Attempt
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L66
+  metadata:
+    uid: AceMq.Amqp.Envelope.Attempt
+    commentId: P:AceMq.Amqp.Envelope.Attempt
+- markdown: Delivery attempt, starting at 1.
+- code: public int Attempt { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: CausationId
+  id: AceMq_Amqp_Envelope_CausationId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L63
+  metadata:
+    uid: AceMq.Amqp.Envelope.CausationId
+    commentId: P:AceMq.Amqp.Envelope.CausationId
+- markdown: The message that caused this one, when there was one.
+- code: public string? CausationId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: CorrelationId
+  id: AceMq_Amqp_Envelope_CorrelationId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L60
+  metadata:
+    uid: AceMq.Amqp.Envelope.CorrelationId
+    commentId: P:AceMq.Amqp.Envelope.CorrelationId
+- markdown: Correlation identifier. Defaults to <xref href="AceMq.Amqp.Envelope.Id" data-throw-if-not-resolved="false"></xref> when not set.
+- code: public string CorrelationId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Error
+  id: AceMq_Amqp_Envelope_Error
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L75
+  metadata:
+    uid: AceMq.Amqp.Envelope.Error
+    commentId: P:AceMq.Amqp.Envelope.Error
+- markdown: Why the message was dead-lettered, when it was.
+- code: public string? Error { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: FirstSeen
+  id: AceMq_Amqp_Envelope_FirstSeen
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L69
+  metadata:
+    uid: AceMq.Amqp.Envelope.FirstSeen
+    commentId: P:AceMq.Amqp.Envelope.FirstSeen
+- markdown: When the message was first published.
+- code: public DateTimeOffset FirstSeen { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: DateTimeOffset
+      url: https://learn.microsoft.com/dotnet/api/system.datetimeoffset
+- api3: Headers
+  id: AceMq_Amqp_Envelope_Headers
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L78
+  metadata:
+    uid: AceMq.Amqp.Envelope.Headers
+    commentId: P:AceMq.Amqp.Envelope.Headers
+- markdown: Application headers. Never contains anything in the reserved namespace.
+- code: public IReadOnlyDictionary<string, object> Headers { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- api3: Id
+  id: AceMq_Amqp_Envelope_Id
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L51
+  metadata:
+    uid: AceMq.Amqp.Envelope.Id
+    commentId: P:AceMq.Amqp.Envelope.Id
+- markdown: Unique message identifier, and the default idempotency key.
+- code: public string Id { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Origin
+  id: AceMq_Amqp_Envelope_Origin
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L72
+  metadata:
+    uid: AceMq.Amqp.Envelope.Origin
+    commentId: P:AceMq.Amqp.Envelope.Origin
+- markdown: The publishing process, conventionally <code>service@host</code>.
+- code: public string? Origin { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Type
+  id: AceMq_Amqp_Envelope_Type
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L54
+  metadata:
+    uid: AceMq.Amqp.Envelope.Type
+    commentId: P:AceMq.Amqp.Envelope.Type
+- markdown: Logical message type. Defaults to the routing key when not set.
+- code: public string Type { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Version
+  id: AceMq_Amqp_Envelope_Version
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L57
+  metadata:
+    uid: AceMq.Amqp.Envelope.Version
+    commentId: P:AceMq.Amqp.Envelope.Version
+- markdown: Schema version of the payload. Starts at 1.
+- code: public int Version { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h2: Methods
+- api3: FromWire(IReadOnlyDictionary<string, object>, string?, string?)
+  id: AceMq_Amqp_Envelope_FromWire_System_Collections_Generic_IReadOnlyDictionary_System_String_System_Object__System_String_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L89
+  metadata:
+    uid: AceMq.Amqp.Envelope.FromWire(System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.String,System.String)
+    commentId: M:AceMq.Amqp.Envelope.FromWire(System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.String,System.String)
+- markdown: Reads an envelope back off the wire.
+- code: public static Envelope FromWire(IReadOnlyDictionary<string, object> headers, string? routingKey = null, string? messageId = null)
+- h4: Parameters
+- parameters:
+  - name: headers
+    type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+    description: Every header on the message, engine and application alike.
+  - name: routingKey
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+    description: Used for <xref href="AceMq.Amqp.Envelope.Type" data-throw-if-not-resolved="false"></xref> when the header is absent.
+    optional: true
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+    description: Used for <xref href="AceMq.Amqp.Envelope.Id" data-throw-if-not-resolved="false"></xref> when the header is absent.
+    optional: true
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+- api3: Of(string)
+  id: AceMq_Amqp_Envelope_Of_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L81
+  metadata:
+    uid: AceMq.Amqp.Envelope.Of(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Of(System.String)
+- markdown: Starts building an envelope for a message type.
+- code: public static Envelope.Builder Of(string type)
+- h4: Parameters
+- parameters:
+  - name: type
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: ToWire()
+  id: AceMq_Amqp_Envelope_ToWire
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L125
+  metadata:
+    uid: AceMq.Amqp.Envelope.ToWire
+    commentId: M:AceMq.Amqp.Envelope.ToWire
+- markdown: Renders this envelope as the headers to put on the wire.
+- code: public IDictionary<string, object> ToWire()
+- h4: Returns
+- parameters:
+  - type:
+    - text: IDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.idictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- h4: Remarks
+- markdown: >-
+    An absent value is an absent header, never a null one. The Java implementation
+
+    omits <code>x-acemq-causation</code> entirely when there is no causation rather than
+
+    writing a null, and a port that writes nulls produces messages that differ
+
+    from Java's for the same logical content.
+languageId: csharp
+metadata:
+  description: >-
+    What travels with a message besides its body: identity, causation, and the
+
+    counters the retry engine keeps.

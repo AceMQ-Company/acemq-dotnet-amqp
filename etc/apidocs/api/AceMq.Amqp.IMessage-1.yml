@@ -1,0 +1,195 @@
+### YamlMime:ApiPage
+title: Interface IMessage<T>
+body:
+- api1: Interface IMessage<T>
+  id: AceMq_Amqp_IMessage_1
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L86
+  metadata:
+    uid: AceMq.Amqp.IMessage`1
+    commentId: T:AceMq.Amqp.IMessage`1
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A decoded message and everything that arrived with it.
+- code: public interface IMessage<out T>
+- h4: Type Parameters
+- parameters:
+  - name: T
+- h2: Properties
+- api3: Attempt
+  id: AceMq_Amqp_IMessage_1_Attempt
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L121
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.Attempt
+    commentId: P:AceMq.Amqp.IMessage`1.Attempt
+- markdown: Delivery attempt, starting at 1.
+- code: int Attempt { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Remarks
+- markdown: >-
+    Counted by this consumer rather than read from the envelope, because a broker
+
+    redelivers the original bytes and the header a publisher wrote never advances.
+
+    The count is per process: a consumer restart begins it again.
+- api3: ContentType
+  id: AceMq_Amqp_IMessage_1_ContentType
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L125
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.ContentType
+    commentId: P:AceMq.Amqp.IMessage`1.ContentType
+- code: string? ContentType { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Envelope
+  id: AceMq_Amqp_IMessage_1_Envelope
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L91
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.Envelope
+    commentId: P:AceMq.Amqp.IMessage`1.Envelope
+- markdown: Identity, causation and the retry counters.
+- code: Envelope Envelope { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+- api3: Headers
+  id: AceMq_Amqp_IMessage_1_Headers
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L94
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.Headers
+    commentId: P:AceMq.Amqp.IMessage`1.Headers
+- markdown: Application headers. Never contains anything in the reserved namespace.
+- code: IReadOnlyDictionary<string, object> Headers { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- api3: IsFirstAttempt
+  id: AceMq_Amqp_IMessage_1_IsFirstAttempt
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L123
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.IsFirstAttempt
+    commentId: P:AceMq.Amqp.IMessage`1.IsFirstAttempt
+- code: bool IsFirstAttempt { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Payload
+  id: AceMq_Amqp_IMessage_1_Payload
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L88
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.Payload
+    commentId: P:AceMq.Amqp.IMessage`1.Payload
+- code: T Payload { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - T
+- api3: Queue
+  id: AceMq_Amqp_IMessage_1_Queue
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L109
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.Queue
+    commentId: P:AceMq.Amqp.IMessage`1.Queue
+- code: string Queue { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: ReceivedAt
+  id: AceMq_Amqp_IMessage_1_ReceivedAt
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L111
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.ReceivedAt
+    commentId: P:AceMq.Amqp.IMessage`1.ReceivedAt
+- code: DateTimeOffset ReceivedAt { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: DateTimeOffset
+      url: https://learn.microsoft.com/dotnet/api/system.datetimeoffset
+- api3: ReplyTo
+  id: AceMq_Amqp_IMessage_1_ReplyTo
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L127
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.ReplyTo
+    commentId: P:AceMq.Amqp.IMessage`1.ReplyTo
+- code: string? ReplyTo { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: RoutingKey
+  id: AceMq_Amqp_IMessage_1_RoutingKey
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L107
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.RoutingKey
+    commentId: P:AceMq.Amqp.IMessage`1.RoutingKey
+- code: string? RoutingKey { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: WireHeaders
+  id: AceMq_Amqp_IMessage_1_WireHeaders
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L105
+  metadata:
+    uid: AceMq.Amqp.IMessage`1.WireHeaders
+    commentId: P:AceMq.Amqp.IMessage`1.WireHeaders
+- markdown: Every header as it arrived, the reserved ones included.
+- code: IReadOnlyDictionary<string, object> WireHeaders { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- h4: Remarks
+- markdown: >-
+    <xref href="AceMq.Amqp.IMessage%601.Headers" data-throw-if-not-resolved="false"></xref> is what an application wrote and is the one to read
+
+    normally. This is the escape hatch for the engine's own headers — a routing
+
+    slip lives in them, and so does anything a newer version of the library adds
+
+    that this one does not materialise onto the envelope.
+languageId: csharp
+metadata:
+  description: A decoded message and everything that arrived with it.

@@ -288,3 +288,43 @@ jobs:
           else
             echo "landing page already current"
           fi
+
+  # A version that is published but did not finish its release is the genuinely
+  # dangerous state: consumers can already resolve it while the documentation and
+  # the landing page still name the previous one. That is worth interrupting
+  # someone for, which is why this fires on success as well as failure -- unlike
+  # the documentation build, where only failures are worth a message.
+  notify:
+    needs: [publish, announce, landing-page]
+    if: always() && needs.publish.outputs.published == 'true'
+    uses: AceMQ-Company/acemq-java-amqp/.github/workflows/slack-notify.yml@main
+    with:
+      status: >-
+        ${{ (needs.announce.result == 'success' && needs.landing-page.result == 'success')
+            && 'success' || 'failure' }}
+      title: >-
+        ${{ (needs.announce.result == 'success' && needs.landing-page.result == 'success')
+            && format('AceMQ for .NET {0} released', github.ref_name)
+            || format('AceMQ for .NET {0} is published but the release did not finish', github.ref_name) }}
+      message: >-
+        ${{ (needs.announce.result == 'success' && needs.landing-page.result == 'success')
+            && 'AceMq.Amqp, AceMq.Amqp.RabbitMq and AceMq.Amqp.Diagnostics are on the NuGet feed. Consumers need no credentials.'
+            || 'The packages are on the feed and consumers can resolve them, but a later step failed, so the release notes or the landing page may still name the previous version. Check the run.' }}
+      # Roadworks rather than a red dot for the half-finished case: the release is
+      # usable and unfinished, which is a different thing from broken and reads
+      # differently at a glance.
+      #
+      # Both branches name an emoji. Leaving the success branch empty to fall back
+      # on the status-derived tick does not work -- in GitHub's expression language
+      # `a && '' || b` yields b, because an empty string is falsy, so every
+      # successful release would be announced with roadworks. That cost the Java
+      # library nine releases before anyone noticed.
+      icon: >-
+        ${{ (needs.announce.result == 'success' && needs.landing-page.result == 'success')
+            && ':white_check_mark:' || ':construction:' }}
+      url: https://acemq.org/nuget/
+    secrets:
+      # Explicit, not `inherit`. A reusable workflow in another repository does not
+      # receive inherited secrets, so `inherit` produced a notify job that went
+      # green while sending nothing at all.
+      SLACK_DELIVERY_WEBHOOK: ${{ secrets.SLACK_DELIVERY_WEBHOOK }}

@@ -1,0 +1,29 @@
+### YamlMime:ApiPage
+title: Enum QueueType
+body:
+- api1: Enum QueueType
+  id: AceMq_Amqp_QueueType
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L34
+  metadata:
+    uid: AceMq.Amqp.QueueType
+    commentId: T:AceMq.Amqp.QueueType
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: The kinds of queue a transport may support.
+- code: public enum QueueType
+- h2: Fields
+- parameters:
+  - name: Classic
+    default: "0"
+  - name: Quorum
+    default: "1"
+  - name: Stream
+    default: "2"
+languageId: csharp
+metadata:
+  description: The kinds of queue a transport may support.

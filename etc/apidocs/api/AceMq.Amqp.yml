@@ -1,0 +1,451 @@
+### YamlMime:ApiPage
+title: Namespace AceMq.Amqp
+body:
+- api1: Namespace AceMq.Amqp
+  id: AceMq_Amqp
+  metadata:
+    uid: AceMq.Amqp
+    commentId: N:AceMq.Amqp
+- h3: Namespaces
+- parameters:
+  - type:
+      text: AceMq.Amqp.Diagnostics
+      url: AceMq.Amqp.Diagnostics.html
+  - type:
+      text: AceMq.Amqp.RabbitMq
+      url: AceMq.Amqp.RabbitMq.html
+- h3: Classes
+- parameters:
+  - type:
+      text: AceFatalException
+      url: AceMq.Amqp.AceFatalException.html
+    description: 'A failure no number of attempts will change: bad credentials, a malformed payload.'
+  - type:
+      text: AceHeaders
+      url: AceMq.Amqp.AceHeaders.html
+    description: The header names AceMQ puts on the wire.
+  - type:
+      text: AceMqConnection
+      url: AceMq.Amqp.AceMqConnection.html
+    description: A connection to a broker, and the entry point to everything else.
+  - type:
+      text: AceMqException
+      url: AceMq.Amqp.AceMqException.html
+    description: Base of every error this library raises.
+  - type:
+      text: AceMqTelemetry
+      url: AceMq.Amqp.AceMqTelemetry.html
+    description: The instruments this library records to.
+  - type:
+      text: AceRetryableException
+      url: AceMq.Amqp.AceRetryableException.html
+    description: >-
+      A failure that another attempt might survive: a dropped connection, a broker
+
+      that is busy, a timeout.
+  - type:
+      text: Ack
+      url: AceMq.Amqp.Ack.html
+    description: What to do with a message once the handler has seen it.
+  - type:
+      text: AggregateHealth
+      url: AceMq.Amqp.AggregateHealth.html
+    description: The health of everything reporting, taken together.
+  - type:
+      text: Topology.BindingSpec
+      url: AceMq.Amqp.Topology.BindingSpec.html
+    description: A binding to declare.
+  - type:
+      text: Envelope.Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+    description: Builds an envelope, applying the same defaults the Java library applies.
+  - type:
+      text: ConnectionConfig.Builder
+      url: AceMq.Amqp.ConnectionConfig.Builder.html
+    description: Builds a <xref href="AceMq.Amqp.ConnectionConfig" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: Topology.Builder
+      url: AceMq.Amqp.Topology.Builder.html
+    description: Builds a <xref href="AceMq.Amqp.Topology" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: BytesCodec
+      url: AceMq.Amqp.BytesCodec.html
+    description: Passes bytes through untouched, and strings as UTF-8.
+  - type:
+      text: CodecExtensions
+      url: AceMq.Amqp.CodecExtensions.html
+    description: Convenience over <xref href="AceMq.Amqp.ICodec" data-throw-if-not-resolved="false"></xref> for a known payload type.
+  - type:
+      text: CodecRegistry
+      url: AceMq.Amqp.CodecRegistry.html
+    description: The codecs available by name.
+  - type:
+      text: CompositeCodec
+      url: AceMq.Amqp.CompositeCodec.html
+    description: Several codecs, choosing between them by content type.
+  - type:
+      text: ConfirmResult
+      url: AceMq.Amqp.ConfirmResult.html
+    description: What the broker said about a publish.
+  - type:
+      text: ConnectionBlockedException
+      url: AceMq.Amqp.ConnectionBlockedException.html
+    description: >-
+      The broker has blocked the connection, normally because it is out of memory or
+
+      disk.
+  - type:
+      text: ConnectionConfig
+      url: AceMq.Amqp.ConnectionConfig.html
+    description: How to reach a broker, and how to behave once connected.
+  - type:
+      text: ConsumeContext
+      url: AceMq.Amqp.ConsumeContext.html
+    description: A message about to be handled.
+  - type:
+      text: ConsumeInterceptor
+      url: AceMq.Amqp.ConsumeInterceptor.html
+    description: A consume interceptor that does nothing, to inherit from.
+  - type:
+      text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+    description: How a consumer should behave.
+  - type:
+      text: Credentials
+      url: AceMq.Amqp.Credentials.html
+    description: A username and secret, kept out of logs.
+  - type:
+      text: CredentialsProviders
+      url: AceMq.Amqp.CredentialsProviders.html
+    description: Ready-made credential providers.
+  - type:
+      text: DbIdempotencyStore
+      url: AceMq.Amqp.DbIdempotencyStore.html
+    description: An idempotency store kept in a database.
+  - type:
+      text: DbOutboxStore
+      url: AceMq.Amqp.DbOutboxStore.html
+    description: An outbox kept in a database.
+  - type:
+      text: DbSchemaRegistry
+      url: AceMq.Amqp.DbSchemaRegistry.html
+    description: A schema registry kept in a database.
+  - type:
+      text: EncryptedCodec
+      url: AceMq.Amqp.EncryptedCodec.html
+    description: Encrypts the body another codec produced.
+  - type:
+      text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+    description: A named encryption key.
+  - type:
+      text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    description: >-
+      What travels with a message besides its body: identity, causation, and the
+
+      counters the retry engine keeps.
+  - type:
+      text: Topology.ExchangeSpec
+      url: AceMq.Amqp.Topology.ExchangeSpec.html
+    description: An exchange to declare.
+  - type:
+      text: HealthReport
+      url: AceMq.Amqp.HealthReport.html
+    description: What one part of the system reports about itself.
+  - type:
+      text: InMemoryIdempotencyStore
+      url: AceMq.Amqp.InMemoryIdempotencyStore.html
+    description: An idempotency store in memory, bounded by age and size.
+  - type:
+      text: InMemoryOutboxStore
+      url: AceMq.Amqp.InMemoryOutboxStore.html
+    description: An outbox store in memory, for tests and for demonstrating the shape.
+  - type:
+      text: InMemorySchemaRegistry
+      url: AceMq.Amqp.InMemorySchemaRegistry.html
+    description: A schema registry in memory.
+  - type:
+      text: InMemoryTransport
+      url: AceMq.Amqp.InMemoryTransport.html
+    description: A broker that exists only in this process, for tests.
+  - type:
+      text: InboundDelivery
+      url: AceMq.Amqp.InboundDelivery.html
+    description: A message as it arrived, before decoding.
+  - type:
+      text: JsonCodec
+      url: AceMq.Amqp.JsonCodec.html
+    description: JSON, and the default when nothing else is chosen.
+  - type:
+      text: Keyring
+      url: AceMq.Amqp.Keyring.html
+    description: A keyring holding a fixed set of keys.
+  - type:
+      text: Keyring.KeyringBuilder
+      url: AceMq.Amqp.Keyring.KeyringBuilder.html
+    description: Builds a <xref href="AceMq.Amqp.Keyring" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: MetricNames
+      url: AceMq.Amqp.MetricNames.html
+    description: The metric and tag names this library reports.
+  - type:
+      text: OrderedQueue<T>
+      url: AceMq.Amqp.OrderedQueue-1.html
+    description: A set of queues that preserve order per key.
+  - type:
+      text: OrderedQueueBuilder<T>
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    description: Builds an <xref href="AceMq.Amqp.OrderedQueue%601" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: OutboundMessage
+      url: AceMq.Amqp.OutboundMessage.html
+    description: A message on its way to the broker, after encoding.
+  - type:
+      text: OutboxRecord
+      url: AceMq.Amqp.OutboxRecord.html
+    description: A message written down to be published later.
+  - type:
+      text: OutboxRelay
+      url: AceMq.Amqp.OutboxRelay.html
+    description: Publishes what an <xref href="AceMq.Amqp.IOutboxStore" data-throw-if-not-resolved="false"></xref> has been given.
+  - type:
+      text: Partitioning
+      url: AceMq.Amqp.Partitioning.html
+    description: Decides which partition a key belongs to.
+  - type:
+      text: Pipeline<T>
+      url: AceMq.Amqp.Pipeline-1.html
+    description: A chain of steps, each on its own queue.
+  - type:
+      text: PipelineBuilder<TEntry, TCurrent>
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    description: Builds a <xref href="AceMq.Amqp.Pipeline%601" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: PublishContext
+      url: AceMq.Amqp.PublishContext.html
+    description: A message about to be published.
+  - type:
+      text: PublishFailedException
+      url: AceMq.Amqp.PublishFailedException.html
+    description: >-
+      A publish that was not confirmed by the broker, or that the broker could not
+
+      route.
+  - type:
+      text: PublishInterceptor
+      url: AceMq.Amqp.PublishInterceptor.html
+    description: A publish interceptor that does nothing, to inherit from.
+  - type:
+      text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+    description: How a message should be published.
+  - type:
+      text: PublishResult
+      url: AceMq.Amqp.PublishResult.html
+    description: What happened to a publish.
+  - type:
+      text: PublishingPausedException
+      url: AceMq.Amqp.PublishingPausedException.html
+    description: Publishing is paused, normally because the process is shutting down.
+  - type:
+      text: QueueCheck
+      url: AceMq.Amqp.QueueCheck.html
+    description: The result of comparing a declared queue against a specification.
+  - type:
+      text: Topology.QueueSpec
+      url: AceMq.Amqp.Topology.QueueSpec.html
+    description: A queue to declare.
+  - type:
+      text: Replay
+      url: AceMq.Amqp.Replay.html
+    description: Takes messages off a dead-letter queue and puts them back.
+  - type:
+      text: RequestTimedOutException
+      url: AceMq.Amqp.RequestTimedOutException.html
+    description: A request that was not answered in time.
+  - type:
+      text: Requester
+      url: AceMq.Amqp.Requester.html
+    description: Sends a request and waits for the reply.
+  - type:
+      text: Responder
+      url: AceMq.Amqp.Responder.html
+    description: Answers requests on a queue.
+  - type:
+      text: RetryPolicy
+      url: AceMq.Amqp.RetryPolicy.html
+    description: How long to wait before another attempt, and when to stop.
+  - type:
+      text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+    description: An itinerary a message carries with it.
+  - type:
+      text: SchemaDefinition
+      url: AceMq.Amqp.SchemaDefinition.html
+    description: What a message of some type looks like.
+  - type:
+      text: SecurityConfigurationException
+      url: AceMq.Amqp.SecurityConfigurationException.html
+    description: Something about the security configuration is wrong.
+  - type:
+      text: StreamOffset
+      url: AceMq.Amqp.StreamOffset.html
+    description: Where in a stream to start reading.
+  - type:
+      text: StreamReader<T>
+      url: AceMq.Amqp.StreamReader-1.html
+    description: Reads a stream queue from a chosen offset.
+  - type:
+      text: StringCodec
+      url: AceMq.Amqp.StringCodec.html
+    description: Text, as UTF-8.
+  - type:
+      text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+    description: How the connection is secured.
+  - type:
+      text: Topology
+      url: AceMq.Amqp.Topology.html
+    description: A description of the exchanges, queues and bindings a service needs.
+  - type:
+      text: TopologyAction
+      url: AceMq.Amqp.TopologyAction.html
+    description: One line of a <xref href="AceMq.Amqp.TopologyPlan" data-throw-if-not-resolved="false"></xref>.
+  - type:
+      text: TopologyPlan
+      url: AceMq.Amqp.TopologyPlan.html
+    description: What applying a <xref href="AceMq.Amqp.Topology" data-throw-if-not-resolved="false"></xref> would do, or did.
+  - type:
+      text: TransportException
+      url: AceMq.Amqp.TransportException.html
+    description: The transport could not carry out the operation.
+  - type:
+      text: Transports
+      url: AceMq.Amqp.Transports.html
+    description: >-
+      The transports available to <xref href="AceMq.Amqp.AceMqConnection.ConnectAsync(System.String)" data-throw-if-not-resolved="false"></xref>,
+
+      keyed by URL scheme.
+  - type:
+      text: XmlCodec
+      url: AceMq.Amqp.XmlCodec.html
+    description: XML, via <xref href="System.Xml.Serialization.XmlSerializer" data-throw-if-not-resolved="false"></xref>.
+- h3: Interfaces
+- parameters:
+  - type:
+      text: ICodec
+      url: AceMq.Amqp.ICodec.html
+    description: Turns a payload into bytes and back.
+  - type:
+      text: ICodecProvider
+      url: AceMq.Amqp.ICodecProvider.html
+    description: Something that can supply a codec by name.
+  - type:
+      text: IConsumeInterceptor
+      url: AceMq.Amqp.IConsumeInterceptor.html
+    description: Runs around every handled message.
+  - type:
+      text: ICredentialsProvider
+      url: AceMq.Amqp.ICredentialsProvider.html
+    description: Where credentials come from, asked each time a connection is made.
+  - type:
+      text: IHealthContributor
+      url: AceMq.Amqp.IHealthContributor.html
+    description: Something that can say whether it is working.
+  - type:
+      text: IIdempotencyStore
+      url: AceMq.Amqp.IIdempotencyStore.html
+    description: Remembers which messages have already been handled.
+  - type:
+      text: IKeyring
+      url: AceMq.Amqp.IKeyring.html
+    description: The keys a consumer might need.
+  - type:
+      text: IMessage<T>
+      url: AceMq.Amqp.IMessage-1.html
+    description: A decoded message and everything that arrived with it.
+  - type:
+      text: IMessageConsumer
+      url: AceMq.Amqp.IMessageConsumer.html
+    description: A running consumer. Disposing it stops delivery.
+  - type:
+      text: IOutboxStore
+      url: AceMq.Amqp.IOutboxStore.html
+    description: Where outbox records are kept between being written and being published.
+  - type:
+      text: IPublishInterceptor
+      url: AceMq.Amqp.IPublishInterceptor.html
+    description: Runs around every publish.
+  - type:
+      text: IPublisher<T>
+      url: AceMq.Amqp.IPublisher-1.html
+    description: Publishes payloads of one type to one exchange and routing key.
+  - type:
+      text: ISchemaRegistry
+      url: AceMq.Amqp.ISchemaRegistry.html
+    description: Maps schemas to short ids and back.
+  - type:
+      text: IStreamConsumer
+      url: AceMq.Amqp.IStreamConsumer.html
+    description: A running stream reader. Disposing it stops delivery.
+  - type:
+      text: ISubscription
+      url: AceMq.Amqp.ISubscription.html
+    description: A running subscription, cancelled by disposing it.
+  - type:
+      text: ITransport
+      url: AceMq.Amqp.ITransport.html
+    description: A broker this library can talk to.
+  - type:
+      text: ITransportConnection
+      url: AceMq.Amqp.ITransportConnection.html
+    description: >-
+      What the engine asks of a broker. Implement this to add a transport; nothing
+
+      above it knows which broker is underneath.
+- h3: Enums
+- parameters:
+  - type:
+      text: AckKind
+      url: AceMq.Amqp.AckKind.html
+    description: The dispositions a handler can return.
+  - type:
+      text: ApplyMode
+      url: AceMq.Amqp.ApplyMode.html
+    description: How much of a topology to apply.
+  - type:
+      text: Capability
+      url: AceMq.Amqp.Capability.html
+    description: What a broker can do, so callers can ask instead of assuming.
+  - type:
+      text: HealthStatus
+      url: AceMq.Amqp.HealthStatus.html
+    description: Whether something is working.
+  - type:
+      text: PartitionFailure
+      url: AceMq.Amqp.PartitionFailure.html
+    description: What an ordered queue does when a message fails.
+  - type:
+      text: QueueCheckResult
+      url: AceMq.Amqp.QueueCheckResult.html
+    description: What comparing a queue against a specification found.
+  - type:
+      text: QueueType
+      url: AceMq.Amqp.QueueType.html
+    description: The kinds of queue a transport may support.
+  - type:
+      text: TlsMode
+      url: AceMq.Amqp.TlsMode.html
+    description: How much the connection is protected.
+  - type:
+      text: TopologyActionKind
+      url: AceMq.Amqp.TopologyActionKind.html
+    description: What a planned action would do.
+- h3: Delegates
+- parameters:
+  - type:
+      text: ConnectionSupplier
+      url: AceMq.Amqp.ConnectionSupplier.html
+    description: Opens a connection to the database these stores use.
+languageId: csharp

@@ -1,0 +1,34 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../../src",
+          "files": [
+            "AceMq.Amqp/AceMq.Amqp.csproj",
+            "AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj",
+            "AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj"
+          ]
+        }
+      ],
+      "dest": "api",
+      "outputFormat": "apiPage",
+      "properties": { "TargetFramework": "netstandard2.0" }
+    }
+  ],
+  "build": {
+    "content": [
+      { "files": [ "api/**.yml", "api/index.md" ] },
+      { "files": [ "toc.yml", "index.md" ] }
+    ],
+    "output": "../../site/apidocs",
+    "template": [ "default", "modern" ],
+    "globalMetadata": {
+      "_appName": "AceMQ for .NET",
+      "_appTitle": "AceMQ for .NET API reference",
+      "_enableSearch": true,
+      "_disableContribution": true,
+      "_appFooter": "Apache-2.0. <a href=\"https://acemq.org/acemq-dotnet-amqp/\">Documentation</a> &middot; <a href=\"https://acemq.com\">Enterprise support</a>"
+    }
+  }
+}

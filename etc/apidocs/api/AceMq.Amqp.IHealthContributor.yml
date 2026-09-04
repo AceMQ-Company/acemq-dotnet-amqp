@@ -1,0 +1,54 @@
+### YamlMime:ApiPage
+title: Interface IHealthContributor
+body:
+- api1: Interface IHealthContributor
+  id: AceMq_Amqp_IHealthContributor
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L58
+  metadata:
+    uid: AceMq.Amqp.IHealthContributor
+    commentId: T:AceMq.Amqp.IHealthContributor
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Something that can say whether it is working.
+- code: public interface IHealthContributor
+- h2: Remarks
+- markdown: >-
+    Implement this and register it with
+
+    <xref href="AceMq.Amqp.AceMqConnection.RegisterHealth(AceMq.Amqp.IHealthContributor)" data-throw-if-not-resolved="false"></xref> to have it appear in the actuator's
+
+    health report alongside the library's own.
+- h2: Properties
+- api3: Name
+  id: AceMq_Amqp_IHealthContributor_Name
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L60
+  metadata:
+    uid: AceMq.Amqp.IHealthContributor.Name
+    commentId: P:AceMq.Amqp.IHealthContributor.Name
+- code: string Name { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: Report()
+  id: AceMq_Amqp_IHealthContributor_Report
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L62
+  metadata:
+    uid: AceMq.Amqp.IHealthContributor.Report
+    commentId: M:AceMq.Amqp.IHealthContributor.Report
+- code: HealthReport Report()
+- h4: Returns
+- parameters:
+  - type:
+    - text: HealthReport
+      url: AceMq.Amqp.HealthReport.html
+languageId: csharp
+metadata:
+  description: Something that can say whether it is working.

@@ -1,0 +1,371 @@
+### YamlMime:ApiPage
+title: Class RoutingSlip
+body:
+- api1: Class RoutingSlip
+  id: AceMq_Amqp_RoutingSlip
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L44
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip
+    commentId: T:AceMq.Amqp.RoutingSlip
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: An itinerary a message carries with it.
+- code: public sealed class RoutingSlip
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: RoutingSlip
+    url: AceMq.Amqp.RoutingSlip.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    A <xref href="AceMq.Amqp.Pipeline%601" data-throw-if-not-resolved="false"></xref> decides the route once, at build time, and every
+
+    message takes the same path. A routing slip is the other arrangement: the route
+
+    travels in the message's headers, so it can differ per message and be decided by
+
+    whatever handled the last step.
+
+    </p>
+
+    <p>
+
+    That is what it is for — an order that needs a fraud check only above a
+
+    threshold, or a document that visits different approvers depending on who
+
+    submitted it. Where every message takes the same path, a pipeline says so more
+
+    clearly and does not pay to carry the route around.
+
+    </p>
+
+    <p>
+
+    The slip is not a transaction. Each step commits as it finishes, so a failure at
+
+    step four does not undo steps one to three; if that matters, the route needs
+
+    compensating steps of its own.
+
+    </p>
+- h2: Fields
+- api3: PositionHeader
+  id: AceMq_Amqp_RoutingSlip_PositionHeader
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L50
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.PositionHeader
+    commentId: F:AceMq.Amqp.RoutingSlip.PositionHeader
+- markdown: Header carrying how far along the route the message is.
+- code: public const string PositionHeader = "x-acemq-route-position"
+- h4: Field Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: RouteHeader
+  id: AceMq_Amqp_RoutingSlip_RouteHeader
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L47
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.RouteHeader
+    commentId: F:AceMq.Amqp.RoutingSlip.RouteHeader
+- markdown: Header carrying the remaining steps, comma-separated.
+- code: public const string RouteHeader = "x-acemq-route"
+- h4: Field Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: RunIdHeader
+  id: AceMq_Amqp_RoutingSlip_RunIdHeader
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L53
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.RunIdHeader
+    commentId: F:AceMq.Amqp.RoutingSlip.RunIdHeader
+- markdown: Header identifying this journey, so its steps can be correlated.
+- code: public const string RunIdHeader = "x-acemq-route-id"
+- h4: Field Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Properties
+- api3: Current
+  id: AceMq_Amqp_RoutingSlip_Current
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L130
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Current
+    commentId: P:AceMq.Amqp.RoutingSlip.Current
+- markdown: The step the message is at, or null when the route is finished.
+- code: public string? Current { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: IsFinished
+  id: AceMq_Amqp_RoutingSlip_IsFinished
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L136
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.IsFinished
+    commentId: P:AceMq.Amqp.RoutingSlip.IsFinished
+- markdown: Whether every step has been done.
+- code: public bool IsFinished { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Next
+  id: AceMq_Amqp_RoutingSlip_Next
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L133
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Next
+    commentId: P:AceMq.Amqp.RoutingSlip.Next
+- markdown: The step after the current one, or null when this is the last.
+- code: public string? Next { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Position
+  id: AceMq_Amqp_RoutingSlip_Position
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L124
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Position
+    commentId: P:AceMq.Amqp.RoutingSlip.Position
+- markdown: How many steps have been completed.
+- code: public int Position { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: RunId
+  id: AceMq_Amqp_RoutingSlip_RunId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L127
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.RunId
+    commentId: P:AceMq.Amqp.RoutingSlip.RunId
+- markdown: Identifies this journey across its steps.
+- code: public string RunId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Steps
+  id: AceMq_Amqp_RoutingSlip_Steps
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L121
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Steps
+    commentId: P:AceMq.Amqp.RoutingSlip.Steps
+- markdown: The whole route, including the steps already done.
+- code: public IReadOnlyList<string> Steps { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- h2: Methods
+- api3: Advance()
+  id: AceMq_Amqp_RoutingSlip_Advance
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L139
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Advance
+    commentId: M:AceMq.Amqp.RoutingSlip.Advance
+- markdown: The slip one step further along.
+- code: public RoutingSlip Advance()
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+- api3: AdvanceTo(int)
+  id: AceMq_Amqp_RoutingSlip_AdvanceTo_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L149
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.AdvanceTo(System.Int32)
+    commentId: M:AceMq.Amqp.RoutingSlip.AdvanceTo(System.Int32)
+- markdown: The slip moved to a chosen position.
+- code: public RoutingSlip AdvanceTo(int position)
+- h4: Parameters
+- parameters:
+  - name: position
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+- h4: Remarks
+- markdown: >-
+    For skipping ahead — a step deciding the next two are unnecessary — or for
+
+    sending a message back to an earlier step. Going backwards will repeat work,
+
+    so the steps it revisits need to tolerate that.
+- api3: From(IReadOnlyDictionary<string, object>)
+  id: AceMq_Amqp_RoutingSlip_From_System_Collections_Generic_IReadOnlyDictionary_System_String_System_Object__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L90
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.From(System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+    commentId: M:AceMq.Amqp.RoutingSlip.From(System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+- markdown: Reads a slip off a message's headers, or null if it carries none.
+- code: public static RoutingSlip? From(IReadOnlyDictionary<string, object> headers)
+- h4: Parameters
+- parameters:
+  - name: headers
+    type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+    - '?'
+- api3: Of<T>(IMessage<T>)
+  id: AceMq_Amqp_RoutingSlip_Of__1_AceMq_Amqp_IMessage___0__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L117
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.Of``1(AceMq.Amqp.IMessage{``0})
+    commentId: M:AceMq.Amqp.RoutingSlip.Of``1(AceMq.Amqp.IMessage{``0})
+- markdown: The slip a message is carrying, or null if it carries none.
+- code: public static RoutingSlip? Of<T>(IMessage<T> message)
+- h4: Parameters
+- parameters:
+  - name: message
+    type:
+    - text: IMessage
+      url: AceMq.Amqp.IMessage-1.html
+    - <
+    - T
+    - '>'
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+    - '?'
+- h4: Type Parameters
+- parameters:
+  - name: T
+- api3: StartOf(params string[])
+  id: AceMq_Amqp_RoutingSlip_StartOf_System_String___
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L63
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.StartOf(System.String[])
+    commentId: M:AceMq.Amqp.RoutingSlip.StartOf(System.String[])
+- markdown: Starts a journey through these steps, in order.
+- code: public static RoutingSlip StartOf(params string[] steps)
+- h4: Parameters
+- parameters:
+  - name: steps
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '['
+    - ']'
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+- api3: StartOf(IReadOnlyList<string>)
+  id: AceMq_Amqp_RoutingSlip_StartOf_System_Collections_Generic_IReadOnlyList_System_String__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L66
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.StartOf(System.Collections.Generic.IReadOnlyList{System.String})
+    commentId: M:AceMq.Amqp.RoutingSlip.StartOf(System.Collections.Generic.IReadOnlyList{System.String})
+- code: public static RoutingSlip StartOf(IReadOnlyList<string> steps)
+- h4: Parameters
+- parameters:
+  - name: steps
+    type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- h4: Returns
+- parameters:
+  - type:
+    - text: RoutingSlip
+      url: AceMq.Amqp.RoutingSlip.html
+- api3: ToHeaders()
+  id: AceMq_Amqp_RoutingSlip_ToHeaders
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L156
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.ToHeaders
+    commentId: M:AceMq.Amqp.RoutingSlip.ToHeaders
+- markdown: The headers this slip travels in.
+- code: public IReadOnlyDictionary<string, object> ToHeaders()
+- h4: Returns
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- api3: ToString()
+  id: AceMq_Amqp_RoutingSlip_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RoutingSlip.cs#L164
+  metadata:
+    uid: AceMq.Amqp.RoutingSlip.ToString
+    commentId: M:AceMq.Amqp.RoutingSlip.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: An itinerary a message carries with it.

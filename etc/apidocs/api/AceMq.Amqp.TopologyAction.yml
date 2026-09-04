@@ -1,0 +1,79 @@
+### YamlMime:ApiPage
+title: Class TopologyAction
+body:
+- api1: Class TopologyAction
+  id: AceMq_Amqp_TopologyAction
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L240
+  metadata:
+    uid: AceMq.Amqp.TopologyAction
+    commentId: T:AceMq.Amqp.TopologyAction
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: One line of a <xref href="AceMq.Amqp.TopologyPlan" data-throw-if-not-resolved="false"></xref>.
+- code: public sealed class TopologyAction
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: TopologyAction
+    url: AceMq.Amqp.TopologyAction.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Description
+  id: AceMq_Amqp_TopologyAction_Description
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L249
+  metadata:
+    uid: AceMq.Amqp.TopologyAction.Description
+    commentId: P:AceMq.Amqp.TopologyAction.Description
+- code: public string Description { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Kind
+  id: AceMq_Amqp_TopologyAction_Kind
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L248
+  metadata:
+    uid: AceMq.Amqp.TopologyAction.Kind
+    commentId: P:AceMq.Amqp.TopologyAction.Kind
+- code: public TopologyActionKind Kind { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TopologyActionKind
+      url: AceMq.Amqp.TopologyActionKind.html
+- h2: Methods
+- api3: ToString()
+  id: AceMq_Amqp_TopologyAction_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L251
+  metadata:
+    uid: AceMq.Amqp.TopologyAction.ToString
+    commentId: M:AceMq.Amqp.TopologyAction.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: One line of a .

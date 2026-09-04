@@ -1,0 +1,83 @@
+### YamlMime:ApiPage
+title: Class AggregateHealth
+body:
+- api1: Class AggregateHealth
+  id: AceMq_Amqp_AggregateHealth
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L66
+  metadata:
+    uid: AceMq.Amqp.AggregateHealth
+    commentId: T:AceMq.Amqp.AggregateHealth
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: The health of everything reporting, taken together.
+- code: public sealed class AggregateHealth
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: AggregateHealth
+    url: AceMq.Amqp.AggregateHealth.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Reports
+  id: AceMq_Amqp_AggregateHealth_Reports
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L79
+  metadata:
+    uid: AceMq.Amqp.AggregateHealth.Reports
+    commentId: P:AceMq.Amqp.AggregateHealth.Reports
+- code: public IReadOnlyList<HealthReport> Reports { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: HealthReport
+      url: AceMq.Amqp.HealthReport.html
+    - '>'
+- api3: Status
+  id: AceMq_Amqp_AggregateHealth_Status
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L78
+  metadata:
+    uid: AceMq.Amqp.AggregateHealth.Status
+    commentId: P:AceMq.Amqp.AggregateHealth.Status
+- code: public HealthStatus Status { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: HealthStatus
+      url: AceMq.Amqp.HealthStatus.html
+- h2: Methods
+- api3: ToString()
+  id: AceMq_Amqp_AggregateHealth_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L81
+  metadata:
+    uid: AceMq.Amqp.AggregateHealth.ToString
+    commentId: M:AceMq.Amqp.AggregateHealth.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: The health of everything reporting, taken together.

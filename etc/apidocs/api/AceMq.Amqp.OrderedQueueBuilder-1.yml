@@ -1,0 +1,195 @@
+### YamlMime:ApiPage
+title: Class OrderedQueueBuilder<T>
+body:
+- api1: Class OrderedQueueBuilder<T>
+  id: AceMq_Amqp_OrderedQueueBuilder_1
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L289
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1
+    commentId: T:AceMq.Amqp.OrderedQueueBuilder`1
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Builds an <xref href="AceMq.Amqp.OrderedQueue%601" data-throw-if-not-resolved="false"></xref>.
+- code: public sealed class OrderedQueueBuilder<T>
+- h4: Type Parameters
+- parameters:
+  - name: T
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: OrderedQueueBuilder<T>
+    url: AceMq.Amqp.OrderedQueueBuilder-1.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Methods
+- api3: DeclareAsync()
+  id: AceMq_Amqp_OrderedQueueBuilder_1_DeclareAsync
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L346
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.DeclareAsync
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.DeclareAsync
+- markdown: Declares the partition queues and returns the ordered queue.
+- code: public Task<OrderedQueue<T>> DeclareAsync()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: OrderedQueue
+      url: AceMq.Amqp.OrderedQueue-1.html
+    - <
+    - T
+    - '>'
+    - '>'
+- api3: KeyedBy(Func<T, string>)
+  id: AceMq_Amqp_OrderedQueueBuilder_1_KeyedBy_System_Func__0_System_String__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L322
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.KeyedBy(System.Func{`0,System.String})
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.KeyedBy(System.Func{`0,System.String})
+- markdown: How to get the ordering key out of a payload.
+- code: public OrderedQueueBuilder<T> KeyedBy(Func<T, string> key)
+- h4: Parameters
+- parameters:
+  - name: key
+    type:
+    - text: Func
+      url: https://learn.microsoft.com/dotnet/api/system.func-2
+    - <
+    - T
+    - ','
+    - " "
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- h4: Returns
+- parameters:
+  - type:
+    - text: OrderedQueueBuilder
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    - <
+    - T
+    - '>'
+- h4: Remarks
+- markdown: >-
+    Everything with the same key is ordered against everything else with that
+
+    key, and nothing else. Choosing the key is choosing what ordering means:
+
+    an account id orders one account's operations, a constant orders everything
+
+    and gives up all parallelism.
+- api3: OnFailure(PartitionFailure)
+  id: AceMq_Amqp_OrderedQueueBuilder_1_OnFailure_AceMq_Amqp_PartitionFailure_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L334
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.OnFailure(AceMq.Amqp.PartitionFailure)
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.OnFailure(AceMq.Amqp.PartitionFailure)
+- code: public OrderedQueueBuilder<T> OnFailure(PartitionFailure onFailure)
+- h4: Parameters
+- parameters:
+  - name: onFailure
+    type:
+    - text: PartitionFailure
+      url: AceMq.Amqp.PartitionFailure.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: OrderedQueueBuilder
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    - <
+    - T
+    - '>'
+- api3: OnFailure(PartitionFailure, int, TimeSpan)
+  id: AceMq_Amqp_OrderedQueueBuilder_1_OnFailure_AceMq_Amqp_PartitionFailure_System_Int32_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L337
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.OnFailure(AceMq.Amqp.PartitionFailure,System.Int32,System.TimeSpan)
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.OnFailure(AceMq.Amqp.PartitionFailure,System.Int32,System.TimeSpan)
+- code: public OrderedQueueBuilder<T> OnFailure(PartitionFailure onFailure, int attempts, TimeSpan delay)
+- h4: Parameters
+- parameters:
+  - name: onFailure
+    type:
+    - text: PartitionFailure
+      url: AceMq.Amqp.PartitionFailure.html
+  - name: attempts
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+  - name: delay
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h4: Returns
+- parameters:
+  - type:
+    - text: OrderedQueueBuilder
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    - <
+    - T
+    - '>'
+- api3: Partitions(int)
+  id: AceMq_Amqp_OrderedQueueBuilder_1_Partitions_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L306
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.Partitions(System.Int32)
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.Partitions(System.Int32)
+- code: public OrderedQueueBuilder<T> Partitions(int partitions)
+- h4: Parameters
+- parameters:
+  - name: partitions
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: OrderedQueueBuilder
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    - <
+    - T
+    - '>'
+- api3: Prefetch(int)
+  id: AceMq_Amqp_OrderedQueueBuilder_1_Prefetch_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/OrderedQueue.cs#L328
+  metadata:
+    uid: AceMq.Amqp.OrderedQueueBuilder`1.Prefetch(System.Int32)
+    commentId: M:AceMq.Amqp.OrderedQueueBuilder`1.Prefetch(System.Int32)
+- code: public OrderedQueueBuilder<T> Prefetch(int prefetch)
+- h4: Parameters
+- parameters:
+  - name: prefetch
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: OrderedQueueBuilder
+      url: AceMq.Amqp.OrderedQueueBuilder-1.html
+    - <
+    - T
+    - '>'
+languageId: csharp
+metadata:
+  description: Builds an .

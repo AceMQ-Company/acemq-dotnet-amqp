@@ -1,0 +1,251 @@
+### YamlMime:ApiPage
+title: Class Envelope.Builder
+body:
+- api1: Class Envelope.Builder
+  id: AceMq_Amqp_Envelope_Builder
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L159
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder
+    commentId: T:AceMq.Amqp.Envelope.Builder
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Builds an envelope, applying the same defaults the Java library applies.
+- code: public sealed class Envelope.Builder
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Envelope.Builder
+    url: AceMq.Amqp.Envelope.Builder.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Methods
+- api3: Attempt(int)
+  id: AceMq_Amqp_Envelope_Builder_Attempt_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L179
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Attempt(System.Int32)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Attempt(System.Int32)
+- code: public Envelope.Builder Attempt(int attempt)
+- h4: Parameters
+- parameters:
+  - name: attempt
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Build()
+  id: AceMq_Amqp_Envelope_Builder_Build
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L196
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Build
+    commentId: M:AceMq.Amqp.Envelope.Builder.Build
+- code: public Envelope Build()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+- api3: CausationId(string?)
+  id: AceMq_Amqp_Envelope_Builder_CausationId_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L178
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.CausationId(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Builder.CausationId(System.String)
+- code: public Envelope.Builder CausationId(string? id)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: CorrelationId(string?)
+  id: AceMq_Amqp_Envelope_Builder_CorrelationId_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L177
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.CorrelationId(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Builder.CorrelationId(System.String)
+- code: public Envelope.Builder CorrelationId(string? id)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Error(string?)
+  id: AceMq_Amqp_Envelope_Builder_Error_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L182
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Error(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Error(System.String)
+- code: public Envelope.Builder Error(string? error)
+- h4: Parameters
+- parameters:
+  - name: error
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: FirstSeen(DateTimeOffset)
+  id: AceMq_Amqp_Envelope_Builder_FirstSeen_System_DateTimeOffset_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L180
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.FirstSeen(System.DateTimeOffset)
+    commentId: M:AceMq.Amqp.Envelope.Builder.FirstSeen(System.DateTimeOffset)
+- code: public Envelope.Builder FirstSeen(DateTimeOffset when)
+- h4: Parameters
+- parameters:
+  - name: when
+    type:
+    - text: DateTimeOffset
+      url: https://learn.microsoft.com/dotnet/api/system.datetimeoffset
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Header(string, object)
+  id: AceMq_Amqp_Envelope_Builder_Header_System_String_System_Object_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L184
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Header(System.String,System.Object)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Header(System.String,System.Object)
+- code: public Envelope.Builder Header(string name, object value)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: value
+    type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Id(string)
+  id: AceMq_Amqp_Envelope_Builder_Id_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L175
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Id(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Id(System.String)
+- code: public Envelope.Builder Id(string id)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Origin(string?)
+  id: AceMq_Amqp_Envelope_Builder_Origin_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L181
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Origin(System.String)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Origin(System.String)
+- code: public Envelope.Builder Origin(string? origin)
+- h4: Parameters
+- parameters:
+  - name: origin
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+- api3: Version(int)
+  id: AceMq_Amqp_Envelope_Builder_Version_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Envelope.cs#L176
+  metadata:
+    uid: AceMq.Amqp.Envelope.Builder.Version(System.Int32)
+    commentId: M:AceMq.Amqp.Envelope.Builder.Version(System.Int32)
+- code: public Envelope.Builder Version(int version)
+- h4: Parameters
+- parameters:
+  - name: version
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Envelope.Builder.html
+languageId: csharp
+metadata:
+  description: Builds an envelope, applying the same defaults the Java library applies.

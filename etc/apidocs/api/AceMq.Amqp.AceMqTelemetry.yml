@@ -1,0 +1,94 @@
+### YamlMime:ApiPage
+title: Class AceMqTelemetry
+body:
+- api1: Class AceMqTelemetry
+  id: AceMq_Amqp_AceMqTelemetry
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Telemetry.cs#L45
+  metadata:
+    uid: AceMq.Amqp.AceMqTelemetry
+    commentId: T:AceMq.Amqp.AceMqTelemetry
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: The instruments this library records to.
+- code: public static class AceMqTelemetry
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: AceMqTelemetry
+    url: AceMq.Amqp.AceMqTelemetry.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.MemberwiseClone()
+    url: https://learn.microsoft.com/dotnet/api/system.object.memberwiseclone
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    Built on <xref href="System.Diagnostics.Metrics.Meter" data-throw-if-not-resolved="false"></xref> and
+
+    <xref href="System.Diagnostics.ActivitySource" data-throw-if-not-resolved="false"></xref> — the runtime's own instrumentation
+
+    APIs — and on nothing else. There is no OpenTelemetry dependency and no Prometheus
+
+    dependency, because the application has to own its exporter and its SDK version.
+
+    A library that pins those causes exactly the version conflicts that make it painful
+
+    to adopt.
+
+    </p>
+
+    <p>
+
+    Instrumentation is always on. An instrument nobody is listening to costs a
+
+    null check per call, so there is no switch to forget to turn on in production and
+
+    no configuration that makes the metrics disappear.
+
+    </p>
+
+    <p>
+
+    To collect: point the OpenTelemetry SDK at the meter named
+
+    <xref href="AceMq.Amqp.MetricNames.Meter" data-throw-if-not-resolved="false"></xref>, or use <code>AceMq.Amqp.Diagnostics</code>, which serves
+
+    them over HTTP without an SDK at all.
+
+    </p>
+- h2: Properties
+- api3: InFlight
+  id: AceMq_Amqp_AceMqTelemetry_InFlight
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Telemetry.cs#L91
+  metadata:
+    uid: AceMq.Amqp.AceMqTelemetry.InFlight
+    commentId: P:AceMq.Amqp.AceMqTelemetry.InFlight
+- markdown: Messages currently inside a handler.
+- code: public static long InFlight { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+languageId: csharp
+metadata:
+  description: The instruments this library records to.

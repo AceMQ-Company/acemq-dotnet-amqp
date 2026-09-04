@@ -1,0 +1,85 @@
+### YamlMime:ApiPage
+title: Interface IConsumeInterceptor
+body:
+- api1: Interface IConsumeInterceptor
+  id: AceMq_Amqp_IConsumeInterceptor
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L94
+  metadata:
+    uid: AceMq.Amqp.IConsumeInterceptor
+    commentId: T:AceMq.Amqp.IConsumeInterceptor
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Runs around every handled message.
+- code: public interface IConsumeInterceptor
+- h2: Properties
+- api3: Order
+  id: AceMq_Amqp_IConsumeInterceptor_Order
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L105
+  metadata:
+    uid: AceMq.Amqp.IConsumeInterceptor.Order
+    commentId: P:AceMq.Amqp.IConsumeInterceptor.Order
+- markdown: Lower runs first.
+- code: int Order { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h2: Methods
+- api3: AfterHandle(ConsumeContext, Ack)
+  id: AceMq_Amqp_IConsumeInterceptor_AfterHandle_AceMq_Amqp_ConsumeContext_AceMq_Amqp_Ack_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L99
+  metadata:
+    uid: AceMq.Amqp.IConsumeInterceptor.AfterHandle(AceMq.Amqp.ConsumeContext,AceMq.Amqp.Ack)
+    commentId: M:AceMq.Amqp.IConsumeInterceptor.AfterHandle(AceMq.Amqp.ConsumeContext,AceMq.Amqp.Ack)
+- markdown: Called with the disposition the handler returned.
+- code: void AfterHandle(ConsumeContext context, Ack ack)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: ConsumeContext
+      url: AceMq.Amqp.ConsumeContext.html
+  - name: ack
+    type:
+    - text: Ack
+      url: AceMq.Amqp.Ack.html
+- api3: BeforeHandle(ConsumeContext)
+  id: AceMq_Amqp_IConsumeInterceptor_BeforeHandle_AceMq_Amqp_ConsumeContext_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L96
+  metadata:
+    uid: AceMq.Amqp.IConsumeInterceptor.BeforeHandle(AceMq.Amqp.ConsumeContext)
+    commentId: M:AceMq.Amqp.IConsumeInterceptor.BeforeHandle(AceMq.Amqp.ConsumeContext)
+- code: void BeforeHandle(ConsumeContext context)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: ConsumeContext
+      url: AceMq.Amqp.ConsumeContext.html
+- api3: OnError(ConsumeContext, Exception)
+  id: AceMq_Amqp_IConsumeInterceptor_OnError_AceMq_Amqp_ConsumeContext_System_Exception_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L102
+  metadata:
+    uid: AceMq.Amqp.IConsumeInterceptor.OnError(AceMq.Amqp.ConsumeContext,System.Exception)
+    commentId: M:AceMq.Amqp.IConsumeInterceptor.OnError(AceMq.Amqp.ConsumeContext,System.Exception)
+- markdown: Called when the handler threw rather than returning.
+- code: void OnError(ConsumeContext context, Exception failure)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: ConsumeContext
+      url: AceMq.Amqp.ConsumeContext.html
+  - name: failure
+    type:
+    - text: Exception
+      url: https://learn.microsoft.com/dotnet/api/system.exception
+languageId: csharp
+metadata:
+  description: Runs around every handled message.

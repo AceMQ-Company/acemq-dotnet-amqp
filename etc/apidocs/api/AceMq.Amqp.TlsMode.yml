@@ -1,0 +1,44 @@
+### YamlMime:ApiPage
+title: Enum TlsMode
+body:
+- api1: Enum TlsMode
+  id: AceMq_Amqp_TlsMode
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L30
+  metadata:
+    uid: AceMq.Amqp.TlsMode
+    commentId: T:AceMq.Amqp.TlsMode
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How much the connection is protected.
+- code: public enum TlsMode
+- h2: Fields
+- parameters:
+  - name: Disabled
+    default: "0"
+    description: >+
+      No TLS. Credentials and message bodies travel in clear text.
+
+  - name: Insecure
+    default: "2"
+    description: >-
+      TLS with verification turned off. Encrypted, but not authenticated.
+
+
+      Anything able to intercept the connection can present its own certificate and
+
+      read everything, including the credentials used to authenticate. This is a
+
+      development convenience, not a weaker form of security.
+  - name: Required
+    default: "1"
+    description: >+
+      TLS with the server's certificate and hostname both verified.
+
+languageId: csharp
+metadata:
+  description: How much the connection is protected.

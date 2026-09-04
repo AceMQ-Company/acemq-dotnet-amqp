@@ -78,6 +78,8 @@ missing reference the compiler tells you about.
 
 ## Where to next
 
+- [Tutorials](tutorials.md) — four of them, in order, each ending with something that runs
+
 - [Publishing](publishing.md) — confirms, unroutable messages, options
 - [Consuming](consuming.md) — dispositions, retries, dead-lettering
 - [Exchanges, queues and bindings](topology.md) — routing, queue types, dead-letter wiring

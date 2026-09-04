@@ -1,0 +1,23 @@
+### YamlMime:ApiPage
+title: Namespace AceMq.Amqp.Diagnostics
+body:
+- api1: Namespace AceMq.Amqp.Diagnostics
+  id: AceMq_Amqp_Diagnostics
+  metadata:
+    uid: AceMq.Amqp.Diagnostics
+    commentId: N:AceMq.Amqp.Diagnostics
+- h3: Classes
+- parameters:
+  - type:
+      text: AceMqActuator
+      url: AceMq.Amqp.Diagnostics.AceMqActuator.html
+    description: Serves AceMQ's metrics, health and version over HTTP.
+  - type:
+      text: ActuatorOptions
+      url: AceMq.Amqp.Diagnostics.ActuatorOptions.html
+    description: How the actuator is exposed.
+  - type:
+      text: PrometheusCollector
+      url: AceMq.Amqp.Diagnostics.PrometheusCollector.html
+    description: Aggregates this process's AceMQ instruments and renders them for Prometheus.
+languageId: csharp

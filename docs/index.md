@@ -8,6 +8,9 @@ metric names as the [JVM libraries](https://acemq.org/), with an API that reads 
 > the outbox, replay and streams all work against a real broker, with an integration
 > suite that runs against RabbitMQ in CI. The API is still free to change.
 
+New here? The [tutorials](tutorials.md) start with nothing and finish with a
+working service. The rest of this site is reference.
+
 ## What it looks like
 
 ```csharp

@@ -1,0 +1,129 @@
+### YamlMime:ApiPage
+title: Class ActuatorOptions
+body:
+- api1: Class ActuatorOptions
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L26
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions
+    commentId: T:AceMq.Amqp.Diagnostics.ActuatorOptions
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp.Diagnostics
+      url: AceMq.Amqp.Diagnostics.html
+  - name: Assembly
+    value: AceMq.Amqp.Diagnostics.dll
+- markdown: How the actuator is exposed.
+- code: public sealed class ActuatorOptions
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: ActuatorOptions
+    url: AceMq.Amqp.Diagnostics.ActuatorOptions.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: HealthPath
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions_HealthPath
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L56
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions.HealthPath
+    commentId: P:AceMq.Amqp.Diagnostics.ActuatorOptions.HealthPath
+- markdown: Path the health report is served from.
+- code: public string HealthPath { get; set; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Host
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions_Host
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L42
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions.Host
+    commentId: P:AceMq.Amqp.Diagnostics.ActuatorOptions.Host
+- markdown: Host to bind. Loopback by default.
+- code: public string Host { get; set; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Remarks
+- markdown: >-
+    <strong>These endpoints are unauthenticated.</strong> They report queue names,
+
+    broker state and traffic rates, and binding to <code>+</code> or <code>0.0.0.0</code>
+
+    publishes that to anything that can reach the port. Bind to loopback and let
+
+    the scraper reach it through the same host, a sidecar, or a network policy —
+
+    and if it must be reachable from elsewhere, put something in front that
+
+    authenticates.
+- api3: InfoPath
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions_InfoPath
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L59
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions.InfoPath
+    commentId: P:AceMq.Amqp.Diagnostics.ActuatorOptions.InfoPath
+- markdown: Path the build and transport information is served from.
+- code: public string InfoPath { get; set; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: MetricsPath
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions_MetricsPath
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L53
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions.MetricsPath
+    commentId: P:AceMq.Amqp.Diagnostics.ActuatorOptions.MetricsPath
+- markdown: Path the metrics are served from.
+- code: public string MetricsPath { get; set; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Remarks
+- markdown: >-
+    Namespaced by default so it cannot collide with an application's own
+
+    <code>/metrics</code>. Change it if you like — but the scrape configuration has to
+
+    change with it, and a Prometheus job pointed at the old path reports the
+
+    target as down rather than as misconfigured.
+- api3: Port
+  id: AceMq_Amqp_Diagnostics_ActuatorOptions_Port
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp.Diagnostics/AceMqActuator.cs#L29
+  metadata:
+    uid: AceMq.Amqp.Diagnostics.ActuatorOptions.Port
+    commentId: P:AceMq.Amqp.Diagnostics.ActuatorOptions.Port
+- markdown: Port to listen on. 9464 is the OpenTelemetry Prometheus convention.
+- code: public int Port { get; set; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+languageId: csharp
+metadata:
+  description: How the actuator is exposed.

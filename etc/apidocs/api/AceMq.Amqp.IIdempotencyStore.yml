@@ -1,0 +1,134 @@
+### YamlMime:ApiPage
+title: Interface IIdempotencyStore
+body:
+- api1: Interface IIdempotencyStore
+  id: AceMq_Amqp_IIdempotencyStore
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L41
+  metadata:
+    uid: AceMq.Amqp.IIdempotencyStore
+    commentId: T:AceMq.Amqp.IIdempotencyStore
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Remembers which messages have already been handled.
+- code: public interface IIdempotencyStore
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    Every broker worth using delivers at least once, so a consumer will eventually see
+
+    the same message twice: a redelivery after a crash, a retry that actually
+
+    succeeded, an outbox relay that published before it recorded doing so. If handling
+
+    a message twice is not safe, something has to remember.
+
+    </p>
+
+    <p>
+
+    The three states matter. <xref href="AceMq.Amqp.IIdempotencyStore.ClaimAsync(System.String)" data-throw-if-not-resolved="false"></xref> takes the message and returns
+
+    false if somebody already has it; <xref href="AceMq.Amqp.IIdempotencyStore.ConfirmAsync(System.String)" data-throw-if-not-resolved="false"></xref> records that it
+
+    finished; <xref href="AceMq.Amqp.IIdempotencyStore.ReleaseAsync(System.String)" data-throw-if-not-resolved="false"></xref> gives the claim back when it did not, so a
+
+    retry is not mistaken for a duplicate. A store with only "seen" and "not seen"
+
+    cannot tell a message that failed from one that succeeded, and will drop the
+
+    retry of a message that never completed.
+
+    </p>
+- h2: Methods
+- api3: ClaimAsync(string)
+  id: AceMq_Amqp_IIdempotencyStore_ClaimAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L44
+  metadata:
+    uid: AceMq.Amqp.IIdempotencyStore.ClaimAsync(System.String)
+    commentId: M:AceMq.Amqp.IIdempotencyStore.ClaimAsync(System.String)
+- markdown: Takes the message. False when it is already claimed or confirmed.
+- code: Task<bool> ClaimAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+    - '>'
+- api3: ConfirmAsync(string)
+  id: AceMq_Amqp_IIdempotencyStore_ConfirmAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L47
+  metadata:
+    uid: AceMq.Amqp.IIdempotencyStore.ConfirmAsync(System.String)
+    commentId: M:AceMq.Amqp.IIdempotencyStore.ConfirmAsync(System.String)
+- markdown: Records that handling finished.
+- code: Task ConfirmAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+- api3: IsConfirmedAsync(string)
+  id: AceMq_Amqp_IIdempotencyStore_IsConfirmedAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L52
+  metadata:
+    uid: AceMq.Amqp.IIdempotencyStore.IsConfirmedAsync(System.String)
+    commentId: M:AceMq.Amqp.IIdempotencyStore.IsConfirmedAsync(System.String)
+- code: Task<bool> IsConfirmedAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+    - '>'
+- api3: ReleaseAsync(string)
+  id: AceMq_Amqp_IIdempotencyStore_ReleaseAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L50
+  metadata:
+    uid: AceMq.Amqp.IIdempotencyStore.ReleaseAsync(System.String)
+    commentId: M:AceMq.Amqp.IIdempotencyStore.ReleaseAsync(System.String)
+- markdown: Gives the claim back, so a later attempt may take it.
+- code: Task ReleaseAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+languageId: csharp
+metadata:
+  description: Remembers which messages have already been handled.

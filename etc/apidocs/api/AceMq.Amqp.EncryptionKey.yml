@@ -1,0 +1,126 @@
+### YamlMime:ApiPage
+title: Class EncryptionKey
+body:
+- api1: Class EncryptionKey
+  id: AceMq_Amqp_EncryptionKey
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L29
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey
+    commentId: T:AceMq.Amqp.EncryptionKey
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A named encryption key.
+- code: public sealed class EncryptionKey
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: EncryptionKey
+    url: AceMq.Amqp.EncryptionKey.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    The id travels with the message so a consumer knows which key to reach for. It
+
+    is not a secret — it identifies the key, it does not reveal it.
+- h2: Constructors
+- api3: EncryptionKey(string, byte[])
+  id: AceMq_Amqp_EncryptionKey__ctor_System_String_System_Byte___
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L34
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey.#ctor(System.String,System.Byte[])
+    commentId: M:AceMq.Amqp.EncryptionKey.#ctor(System.String,System.Byte[])
+- code: public EncryptionKey(string id, byte[] key)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: key
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+- h2: Fields
+- api3: KeySize
+  id: AceMq_Amqp_EncryptionKey_KeySize
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L32
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey.KeySize
+    commentId: F:AceMq.Amqp.EncryptionKey.KeySize
+- markdown: Bytes a key must have.
+- code: public const int KeySize = 32
+- h4: Field Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h2: Properties
+- api3: Id
+  id: AceMq_Amqp_EncryptionKey_Id
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L61
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey.Id
+    commentId: P:AceMq.Amqp.EncryptionKey.Id
+- code: public string Id { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: Generate(string)
+  id: AceMq_Amqp_EncryptionKey_Generate_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L54
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey.Generate(System.String)
+    commentId: M:AceMq.Amqp.EncryptionKey.Generate(System.String)
+- markdown: Generates a key with the platform's cryptographic random source.
+- code: public static EncryptionKey Generate(string id)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+- api3: ToString()
+  id: AceMq_Amqp_EncryptionKey_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L66
+  metadata:
+    uid: AceMq.Amqp.EncryptionKey.ToString
+    commentId: M:AceMq.Amqp.EncryptionKey.ToString
+- markdown: Never includes the key.
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A named encryption key.

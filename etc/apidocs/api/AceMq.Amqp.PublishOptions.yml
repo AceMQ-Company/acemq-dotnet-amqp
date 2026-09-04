@@ -1,0 +1,180 @@
+### YamlMime:ApiPage
+title: Class PublishOptions
+body:
+- api1: Class PublishOptions
+  id: AceMq_Amqp_PublishOptions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L25
+  metadata:
+    uid: AceMq.Amqp.PublishOptions
+    commentId: T:AceMq.Amqp.PublishOptions
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How a message should be published.
+- code: public sealed class PublishOptions
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: PublishOptions
+    url: AceMq.Amqp.PublishOptions.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Expiration
+  id: AceMq_Amqp_PublishOptions_Expiration
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L66
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.Expiration
+    commentId: P:AceMq.Amqp.PublishOptions.Expiration
+- code: public TimeSpan? Expiration { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+    - '?'
+- api3: Mandatory
+  id: AceMq_Amqp_PublishOptions_Mandatory
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L65
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.Mandatory
+    commentId: P:AceMq.Amqp.PublishOptions.Mandatory
+- code: public bool Mandatory { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Persistent
+  id: AceMq_Amqp_PublishOptions_Persistent
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L64
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.Persistent
+    commentId: P:AceMq.Amqp.PublishOptions.Persistent
+- code: public bool Persistent { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Priority
+  id: AceMq_Amqp_PublishOptions_Priority
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L67
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.Priority
+    commentId: P:AceMq.Amqp.PublishOptions.Priority
+- code: public int? Priority { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '?'
+- h2: Methods
+- api3: AllowUnroutable()
+  id: AceMq_Amqp_PublishOptions_AllowUnroutable
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L55
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.AllowUnroutable
+    commentId: M:AceMq.Amqp.PublishOptions.AllowUnroutable
+- markdown: Lets the broker discard a message that matches no binding.
+- code: public PublishOptions AllowUnroutable()
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+- h4: Remarks
+- markdown: >-
+    The default reports it as a failure instead, because an unroutable message
+
+    is nearly always a topology mistake and this is the cheapest moment to find
+
+    out. Use this where the discard is the intent.
+- api3: Defaults()
+  id: AceMq_Amqp_PublishOptions_Defaults
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L36
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.Defaults
+    commentId: M:AceMq.Amqp.PublishOptions.Defaults
+- markdown: Persistent, and unroutable messages reported rather than dropped.
+- code: public static PublishOptions Defaults()
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+- api3: ExpiringAfter(TimeSpan)
+  id: AceMq_Amqp_PublishOptions_ExpiringAfter_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L58
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.ExpiringAfter(System.TimeSpan)
+    commentId: M:AceMq.Amqp.PublishOptions.ExpiringAfter(System.TimeSpan)
+- code: public PublishOptions ExpiringAfter(TimeSpan expiration)
+- h4: Parameters
+- parameters:
+  - name: expiration
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+- api3: TransientDelivery()
+  id: AceMq_Amqp_PublishOptions_TransientDelivery
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L45
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.TransientDelivery
+    commentId: M:AceMq.Amqp.PublishOptions.TransientDelivery
+- markdown: 'Not written to disk: faster, and lost on a broker restart.'
+- code: public static PublishOptions TransientDelivery()
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+- h4: Remarks
+- markdown: >-
+    Reasonable for telemetry that is superseded within seconds. Not reasonable
+
+    for anything a person would notice the absence of.
+- api3: WithPriority(int)
+  id: AceMq_Amqp_PublishOptions_WithPriority_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L61
+  metadata:
+    uid: AceMq.Amqp.PublishOptions.WithPriority(System.Int32)
+    commentId: M:AceMq.Amqp.PublishOptions.WithPriority(System.Int32)
+- code: public PublishOptions WithPriority(int priority)
+- h4: Parameters
+- parameters:
+  - name: priority
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishOptions
+      url: AceMq.Amqp.PublishOptions.html
+languageId: csharp
+metadata:
+  description: How a message should be published.

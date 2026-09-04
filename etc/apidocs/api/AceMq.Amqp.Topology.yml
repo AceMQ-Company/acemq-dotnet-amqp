@@ -1,0 +1,147 @@
+### YamlMime:ApiPage
+title: Class Topology
+body:
+- api1: Class Topology
+  id: AceMq_Amqp_Topology
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L36
+  metadata:
+    uid: AceMq.Amqp.Topology
+    commentId: T:AceMq.Amqp.Topology
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A description of the exchanges, queues and bindings a service needs.
+- code: public sealed class Topology
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Topology
+    url: AceMq.Amqp.Topology.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    Declaring topology as data rather than as a sequence of calls buys two things.
+
+    It can be inspected before it is applied — see <xref href="AceMq.Amqp.TopologyPlan" data-throw-if-not-resolved="false"></xref> — and a
+
+    dead-letter queue can be declared as one unit with the queue that dead-letters
+
+    into it. That second point is not cosmetic: <xref href="AceMq.Amqp.Ack.DeadLetter(System.String)" data-throw-if-not-resolved="false"></xref> nacks
+
+    without requeueing, and a queue with no dead-letter exchange configured discards
+
+    the message. Wiring the two by hand and forgetting one line loses messages
+
+    silently, which is the failure this library exists to avoid.
+
+    </p>
+- h2: Properties
+- api3: Bindings
+  id: AceMq_Amqp_Topology_Bindings
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L50
+  metadata:
+    uid: AceMq.Amqp.Topology.Bindings
+    commentId: P:AceMq.Amqp.Topology.Bindings
+- code: public IReadOnlyList<Topology.BindingSpec> Bindings { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: BindingSpec
+      url: AceMq.Amqp.Topology.BindingSpec.html
+    - '>'
+- api3: Exchanges
+  id: AceMq_Amqp_Topology_Exchanges
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L48
+  metadata:
+    uid: AceMq.Amqp.Topology.Exchanges
+    commentId: P:AceMq.Amqp.Topology.Exchanges
+- code: public IReadOnlyList<Topology.ExchangeSpec> Exchanges { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: ExchangeSpec
+      url: AceMq.Amqp.Topology.ExchangeSpec.html
+    - '>'
+- api3: Queues
+  id: AceMq_Amqp_Topology_Queues
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L49
+  metadata:
+    uid: AceMq.Amqp.Topology.Queues
+    commentId: P:AceMq.Amqp.Topology.Queues
+- code: public IReadOnlyList<Topology.QueueSpec> Queues { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: QueueSpec
+      url: AceMq.Amqp.Topology.QueueSpec.html
+    - '>'
+- h2: Methods
+- api3: Define()
+  id: AceMq_Amqp_Topology_Define
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L53
+  metadata:
+    uid: AceMq.Amqp.Topology.Define
+    commentId: M:AceMq.Amqp.Topology.Define
+- markdown: Starts describing a topology.
+- code: public static Topology.Builder Define()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: ToString()
+  id: AceMq_Amqp_Topology_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L55
+  metadata:
+    uid: AceMq.Amqp.Topology.ToString
+    commentId: M:AceMq.Amqp.Topology.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A description of the exchanges, queues and bindings a service needs.

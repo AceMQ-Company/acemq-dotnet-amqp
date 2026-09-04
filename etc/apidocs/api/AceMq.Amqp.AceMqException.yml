@@ -1,0 +1,123 @@
+### YamlMime:ApiPage
+title: Class AceMqException
+body:
+- api1: Class AceMqException
+  id: AceMq_Amqp_AceMqException
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Errors.cs#L20
+  metadata:
+    uid: AceMq.Amqp.AceMqException
+    commentId: T:AceMq.Amqp.AceMqException
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Base of every error this library raises.
+- code: 'public class AceMqException : Exception, ISerializable'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Exception
+    url: https://learn.microsoft.com/dotnet/api/system.exception
+  - text: AceMqException
+    url: AceMq.Amqp.AceMqException.html
+- h4: Derived
+- list:
+  - text: AceFatalException
+    url: AceMq.Amqp.AceFatalException.html
+  - text: AceRetryableException
+    url: AceMq.Amqp.AceRetryableException.html
+  - text: PublishFailedException
+    url: AceMq.Amqp.PublishFailedException.html
+  - text: PublishingPausedException
+    url: AceMq.Amqp.PublishingPausedException.html
+  - text: RequestTimedOutException
+    url: AceMq.Amqp.RequestTimedOutException.html
+  - text: SecurityConfigurationException
+    url: AceMq.Amqp.SecurityConfigurationException.html
+  - text: TransportException
+    url: AceMq.Amqp.TransportException.html
+- h4: Implements
+- list:
+  - text: ISerializable
+    url: https://learn.microsoft.com/dotnet/api/system.runtime.serialization.iserializable
+- h4: Inherited Members
+- list:
+  - text: Exception.GetBaseException()
+    url: https://learn.microsoft.com/dotnet/api/system.exception.getbaseexception
+  - text: Exception.GetObjectData(SerializationInfo, StreamingContext)
+    url: https://learn.microsoft.com/dotnet/api/system.exception.getobjectdata
+  - text: Exception.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.exception.gettype
+  - text: Exception.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.exception.tostring
+  - text: Exception.Data
+    url: https://learn.microsoft.com/dotnet/api/system.exception.data
+  - text: Exception.HelpLink
+    url: https://learn.microsoft.com/dotnet/api/system.exception.helplink
+  - text: Exception.HResult
+    url: https://learn.microsoft.com/dotnet/api/system.exception.hresult
+  - text: Exception.InnerException
+    url: https://learn.microsoft.com/dotnet/api/system.exception.innerexception
+  - text: Exception.Message
+    url: https://learn.microsoft.com/dotnet/api/system.exception.message
+  - text: Exception.Source
+    url: https://learn.microsoft.com/dotnet/api/system.exception.source
+  - text: Exception.StackTrace
+    url: https://learn.microsoft.com/dotnet/api/system.exception.stacktrace
+  - text: Exception.TargetSite
+    url: https://learn.microsoft.com/dotnet/api/system.exception.targetsite
+  - text: Exception.SerializeObjectState
+    url: https://learn.microsoft.com/dotnet/api/system.exception.serializeobjectstate
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.MemberwiseClone()
+    url: https://learn.microsoft.com/dotnet/api/system.object.memberwiseclone
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Constructors
+- api3: AceMqException(string)
+  id: AceMq_Amqp_AceMqException__ctor_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Errors.cs#L22
+  metadata:
+    uid: AceMq.Amqp.AceMqException.#ctor(System.String)
+    commentId: M:AceMq.Amqp.AceMqException.#ctor(System.String)
+- code: public AceMqException(string message)
+- h4: Parameters
+- parameters:
+  - name: message
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: AceMqException(string, Exception?)
+  id: AceMq_Amqp_AceMqException__ctor_System_String_System_Exception_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Errors.cs#L23
+  metadata:
+    uid: AceMq.Amqp.AceMqException.#ctor(System.String,System.Exception)
+    commentId: M:AceMq.Amqp.AceMqException.#ctor(System.String,System.Exception)
+- code: public AceMqException(string message, Exception? cause)
+- h4: Parameters
+- parameters:
+  - name: message
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: cause
+    type:
+    - text: Exception
+      url: https://learn.microsoft.com/dotnet/api/system.exception
+    - '?'
+languageId: csharp
+metadata:
+  description: Base of every error this library raises.

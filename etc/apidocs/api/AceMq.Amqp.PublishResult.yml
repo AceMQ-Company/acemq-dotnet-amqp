@@ -1,0 +1,116 @@
+### YamlMime:ApiPage
+title: Class PublishResult
+body:
+- api1: Class PublishResult
+  id: AceMq_Amqp_PublishResult
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L71
+  metadata:
+    uid: AceMq.Amqp.PublishResult
+    commentId: T:AceMq.Amqp.PublishResult
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: What happened to a publish.
+- code: public sealed class PublishResult
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: PublishResult
+    url: AceMq.Amqp.PublishResult.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Constructors
+- api3: PublishResult(string, bool, TimeSpan)
+  id: AceMq_Amqp_PublishResult__ctor_System_String_System_Boolean_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L73
+  metadata:
+    uid: AceMq.Amqp.PublishResult.#ctor(System.String,System.Boolean,System.TimeSpan)
+    commentId: M:AceMq.Amqp.PublishResult.#ctor(System.String,System.Boolean,System.TimeSpan)
+- code: public PublishResult(string messageId, bool routed, TimeSpan latency)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: routed
+    type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+  - name: latency
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h2: Properties
+- api3: Latency
+  id: AceMq_Amqp_PublishResult_Latency
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L87
+  metadata:
+    uid: AceMq.Amqp.PublishResult.Latency
+    commentId: P:AceMq.Amqp.PublishResult.Latency
+- markdown: Time from the call to the broker's confirmation.
+- code: public TimeSpan Latency { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- api3: MessageId
+  id: AceMq_Amqp_PublishResult_MessageId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L81
+  metadata:
+    uid: AceMq.Amqp.PublishResult.MessageId
+    commentId: P:AceMq.Amqp.PublishResult.MessageId
+- markdown: The envelope id the message went out with.
+- code: public string MessageId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Routed
+  id: AceMq_Amqp_PublishResult_Routed
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L84
+  metadata:
+    uid: AceMq.Amqp.PublishResult.Routed
+    commentId: P:AceMq.Amqp.PublishResult.Routed
+- markdown: Whether the broker put it on at least one queue.
+- code: public bool Routed { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- h2: Methods
+- api3: ToString()
+  id: AceMq_Amqp_PublishResult_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Publishing.cs#L89
+  metadata:
+    uid: AceMq.Amqp.PublishResult.ToString
+    commentId: M:AceMq.Amqp.PublishResult.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: What happened to a publish.

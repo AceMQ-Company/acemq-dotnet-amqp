@@ -1,0 +1,229 @@
+### YamlMime:ApiPage
+title: Class Ack
+body:
+- api1: Class Ack
+  id: AceMq_Amqp_Ack
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L31
+  metadata:
+    uid: AceMq.Amqp.Ack
+    commentId: T:AceMq.Amqp.Ack
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: What to do with a message once the handler has seen it.
+- code: public sealed class Ack
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Ack
+    url: AceMq.Amqp.Ack.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    A handler returns one of these rather than throwing to signal success or
+
+    failure. An exception escaping the handler is still handled — it is treated as
+
+    <xref href="AceMq.Amqp.Ack.Retry(System.TimeSpan%2cSystem.String)" data-throw-if-not-resolved="false"></xref> — but returning the disposition says what was meant, and
+
+    distinguishes "this will never work" from "try again shortly", which an
+
+    exception on its own cannot.
+
+    </p>
+- h2: Properties
+- api3: Delay
+  id: AceMq_Amqp_Ack_Delay
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L62
+  metadata:
+    uid: AceMq.Amqp.Ack.Delay
+    commentId: P:AceMq.Amqp.Ack.Delay
+- markdown: How long to wait before redelivery, when this is a retry.
+- code: public TimeSpan? Delay { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+    - '?'
+- api3: IsAccept
+  id: AceMq_Amqp_Ack_IsAccept
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L67
+  metadata:
+    uid: AceMq.Amqp.Ack.IsAccept
+    commentId: P:AceMq.Amqp.Ack.IsAccept
+- code: public bool IsAccept { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: IsDeadLetter
+  id: AceMq_Amqp_Ack_IsDeadLetter
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L69
+  metadata:
+    uid: AceMq.Amqp.Ack.IsDeadLetter
+    commentId: P:AceMq.Amqp.Ack.IsDeadLetter
+- code: public bool IsDeadLetter { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: IsRelease
+  id: AceMq_Amqp_Ack_IsRelease
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L70
+  metadata:
+    uid: AceMq.Amqp.Ack.IsRelease
+    commentId: P:AceMq.Amqp.Ack.IsRelease
+- code: public bool IsRelease { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: IsRetry
+  id: AceMq_Amqp_Ack_IsRetry
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L68
+  metadata:
+    uid: AceMq.Amqp.Ack.IsRetry
+    commentId: P:AceMq.Amqp.Ack.IsRetry
+- code: public bool IsRetry { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Kind
+  id: AceMq_Amqp_Ack_Kind
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L59
+  metadata:
+    uid: AceMq.Amqp.Ack.Kind
+    commentId: P:AceMq.Amqp.Ack.Kind
+- code: public AckKind Kind { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: AckKind
+      url: AceMq.Amqp.AckKind.html
+- api3: Reason
+  id: AceMq_Amqp_Ack_Reason
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L65
+  metadata:
+    uid: AceMq.Amqp.Ack.Reason
+    commentId: P:AceMq.Amqp.Ack.Reason
+- markdown: Why, when there is a why. Carried onto the dead-letter header.
+- code: public string? Reason { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h2: Methods
+- api3: Accept()
+  id: AceMq_Amqp_Ack_Accept
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L41
+  metadata:
+    uid: AceMq.Amqp.Ack.Accept
+    commentId: M:AceMq.Amqp.Ack.Accept
+- markdown: Handled. The broker may forget it.
+- code: public static Ack Accept()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Ack
+      url: AceMq.Amqp.Ack.html
+- api3: DeadLetter(string)
+  id: AceMq_Amqp_Ack_DeadLetter_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L51
+  metadata:
+    uid: AceMq.Amqp.Ack.DeadLetter(System.String)
+    commentId: M:AceMq.Amqp.Ack.DeadLetter(System.String)
+- markdown: >-
+    Send it to the dead-letter queue: this message will never succeed, and
+
+    retrying only delays the discovery.
+- code: public static Ack DeadLetter(string reason)
+- h4: Parameters
+- parameters:
+  - name: reason
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Ack
+      url: AceMq.Amqp.Ack.html
+- api3: Release()
+  id: AceMq_Amqp_Ack_Release
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L57
+  metadata:
+    uid: AceMq.Amqp.Ack.Release
+    commentId: M:AceMq.Amqp.Ack.Release
+- markdown: Give it back to the broker for someone else, without counting an attempt.
+- code: public static Ack Release()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Ack
+      url: AceMq.Amqp.Ack.html
+- api3: Retry(TimeSpan, string)
+  id: AceMq_Amqp_Ack_Retry_System_TimeSpan_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L44
+  metadata:
+    uid: AceMq.Amqp.Ack.Retry(System.TimeSpan,System.String)
+    commentId: M:AceMq.Amqp.Ack.Retry(System.TimeSpan,System.String)
+- markdown: Deliver it again after a delay, because this attempt failed recoverably.
+- code: public static Ack Retry(TimeSpan after, string reason)
+- h4: Parameters
+- parameters:
+  - name: after
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+  - name: reason
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Ack
+      url: AceMq.Amqp.Ack.html
+- api3: ToString()
+  id: AceMq_Amqp_Ack_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L72
+  metadata:
+    uid: AceMq.Amqp.Ack.ToString
+    commentId: M:AceMq.Amqp.Ack.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: What to do with a message once the handler has seen it.

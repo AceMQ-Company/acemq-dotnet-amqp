@@ -1,0 +1,15 @@
+### YamlMime:ApiPage
+title: Namespace AceMq.Amqp.RabbitMq
+body:
+- api1: Namespace AceMq.Amqp.RabbitMq
+  id: AceMq_Amqp_RabbitMq
+  metadata:
+    uid: AceMq.Amqp.RabbitMq
+    commentId: N:AceMq.Amqp.RabbitMq
+- h3: Classes
+- parameters:
+  - type:
+      text: RabbitMqTransport
+      url: AceMq.Amqp.RabbitMq.RabbitMqTransport.html
+    description: Talks to RabbitMQ, over <code>amqp://</code> and <code>amqps://</code>.
+languageId: csharp

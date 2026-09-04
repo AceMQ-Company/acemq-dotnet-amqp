@@ -1,0 +1,35 @@
+### YamlMime:ApiPage
+title: Enum Capability
+body:
+- api1: Enum Capability
+  id: AceMq_Amqp_Capability
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L23
+  metadata:
+    uid: AceMq.Amqp.Capability
+    commentId: T:AceMq.Amqp.Capability
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: What a broker can do, so callers can ask instead of assuming.
+- code: public enum Capability
+- h2: Fields
+- parameters:
+  - name: DeadLettering
+    default: "1"
+  - name: DelayedDelivery
+    default: "2"
+  - name: Priority
+    default: "4"
+  - name: PublisherConfirms
+    default: "0"
+  - name: Streams
+    default: "3"
+  - name: Transactions
+    default: "5"
+languageId: csharp
+metadata:
+  description: What a broker can do, so callers can ask instead of assuming.

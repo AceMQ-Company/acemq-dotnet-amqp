@@ -1,0 +1,70 @@
+### YamlMime:ApiPage
+title: Class CodecExtensions
+body:
+- api1: Class CodecExtensions
+  id: AceMq_Amqp_CodecExtensions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L40
+  metadata:
+    uid: AceMq.Amqp.CodecExtensions
+    commentId: T:AceMq.Amqp.CodecExtensions
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Convenience over <xref href="AceMq.Amqp.ICodec" data-throw-if-not-resolved="false"></xref> for a known payload type.
+- code: public static class CodecExtensions
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: CodecExtensions
+    url: AceMq.Amqp.CodecExtensions.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.MemberwiseClone()
+    url: https://learn.microsoft.com/dotnet/api/system.object.memberwiseclone
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Methods
+- api3: Decode<T>(ICodec, byte[])
+  id: AceMq_Amqp_CodecExtensions_Decode__1_AceMq_Amqp_ICodec_System_Byte___
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L42
+  metadata:
+    uid: AceMq.Amqp.CodecExtensions.Decode``1(AceMq.Amqp.ICodec,System.Byte[])
+    commentId: M:AceMq.Amqp.CodecExtensions.Decode``1(AceMq.Amqp.ICodec,System.Byte[])
+- code: public static T Decode<T>(this ICodec codec, byte[] body)
+- h4: Parameters
+- parameters:
+  - name: codec
+    type:
+    - text: ICodec
+      url: AceMq.Amqp.ICodec.html
+  - name: body
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+- h4: Returns
+- parameters:
+  - type:
+    - T
+- h4: Type Parameters
+- parameters:
+  - name: T
+languageId: csharp
+metadata:
+  description: Convenience over  for a known payload type.

@@ -1,0 +1,32 @@
+### YamlMime:ApiPage
+title: Enum HealthStatus
+body:
+- api1: Enum HealthStatus
+  id: AceMq_Amqp_HealthStatus
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Health.cs#L22
+  metadata:
+    uid: AceMq.Amqp.HealthStatus
+    commentId: T:AceMq.Amqp.HealthStatus
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Whether something is working.
+- code: public enum HealthStatus
+- h2: Fields
+- parameters:
+  - name: Degraded
+    default: "1"
+    description: >+
+      Working, but something needs attention before it stops working.
+
+  - name: Down
+    default: "2"
+  - name: Up
+    default: "0"
+languageId: csharp
+metadata:
+  description: Whether something is working.

@@ -1,0 +1,95 @@
+### YamlMime:ApiPage
+title: Interface ITransport
+body:
+- api1: Interface ITransport
+  id: AceMq_Amqp_ITransport
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L211
+  metadata:
+    uid: AceMq.Amqp.ITransport
+    commentId: T:AceMq.Amqp.ITransport
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A broker this library can talk to.
+- code: public interface ITransport
+- h2: Properties
+- api3: Capabilities
+  id: AceMq_Amqp_ITransport_Capabilities
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L219
+  metadata:
+    uid: AceMq.Amqp.ITransport.Capabilities
+    commentId: P:AceMq.Amqp.ITransport.Capabilities
+- code: IReadOnlyCollection<Capability> Capabilities { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyCollection
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlycollection-1
+    - <
+    - text: Capability
+      url: AceMq.Amqp.Capability.html
+    - '>'
+- api3: Name
+  id: AceMq_Amqp_ITransport_Name
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L217
+  metadata:
+    uid: AceMq.Amqp.ITransport.Name
+    commentId: P:AceMq.Amqp.ITransport.Name
+- markdown: Name for logs and metrics.
+- code: string Name { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Schemes
+  id: AceMq_Amqp_ITransport_Schemes
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L214
+  metadata:
+    uid: AceMq.Amqp.ITransport.Schemes
+    commentId: P:AceMq.Amqp.ITransport.Schemes
+- markdown: URL schemes this transport answers to.
+- code: IReadOnlyCollection<string> Schemes { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyCollection
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlycollection-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- h2: Methods
+- api3: ConnectAsync(ConnectionConfig, CancellationToken)
+  id: AceMq_Amqp_ITransport_ConnectAsync_AceMq_Amqp_ConnectionConfig_System_Threading_CancellationToken_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L221
+  metadata:
+    uid: AceMq.Amqp.ITransport.ConnectAsync(AceMq.Amqp.ConnectionConfig,System.Threading.CancellationToken)
+    commentId: M:AceMq.Amqp.ITransport.ConnectAsync(AceMq.Amqp.ConnectionConfig,System.Threading.CancellationToken)
+- code: Task<ITransportConnection> ConnectAsync(ConnectionConfig config, CancellationToken cancellationToken)
+- h4: Parameters
+- parameters:
+  - name: config
+    type:
+    - text: ConnectionConfig
+      url: AceMq.Amqp.ConnectionConfig.html
+  - name: cancellationToken
+    type:
+    - text: CancellationToken
+      url: https://learn.microsoft.com/dotnet/api/system.threading.cancellationtoken
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: ITransportConnection
+      url: AceMq.Amqp.ITransportConnection.html
+    - '>'
+languageId: csharp
+metadata:
+  description: A broker this library can talk to.

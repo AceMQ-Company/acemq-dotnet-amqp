@@ -1,0 +1,227 @@
+### YamlMime:ApiPage
+title: Class PipelineBuilder<TEntry, TCurrent>
+body:
+- api1: Class PipelineBuilder<TEntry, TCurrent>
+  id: AceMq_Amqp_PipelineBuilder_2
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L231
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2
+    commentId: T:AceMq.Amqp.PipelineBuilder`2
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Builds a <xref href="AceMq.Amqp.Pipeline%601" data-throw-if-not-resolved="false"></xref>.
+- code: public sealed class PipelineBuilder<TEntry, TCurrent>
+- h4: Type Parameters
+- parameters:
+  - name: TEntry
+    description: What enters the pipeline.
+  - name: TCurrent
+    description: What the step added so far produces.
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: PipelineBuilder<TEntry, TCurrent>
+    url: AceMq.Amqp.PipelineBuilder-2.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    The two type parameters are what make the chain check at compile time: a step
+
+    added after one producing <code>Order</code> can only accept an <code>Order</code>. A
+
+    mismatch is a compile error rather than a decode failure at the third step in
+
+    production.
+- h2: Methods
+- api3: BuildAsync()
+  id: AceMq_Amqp_PipelineBuilder_2_BuildAsync
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L329
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.BuildAsync
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.BuildAsync
+- markdown: Declares the step queues and starts consuming them.
+- code: public Task<Pipeline<TEntry>> BuildAsync()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: Pipeline
+      url: AceMq.Amqp.Pipeline-1.html
+    - <
+    - TEntry
+    - '>'
+    - '>'
+- api3: Idempotent(IIdempotencyStore)
+  id: AceMq_Amqp_PipelineBuilder_2_Idempotent_AceMq_Amqp_IIdempotencyStore_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L322
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.Idempotent(AceMq.Amqp.IIdempotencyStore)
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.Idempotent(AceMq.Amqp.IIdempotencyStore)
+- markdown: Skips a message a step has already handled.
+- code: public PipelineBuilder<TEntry, TCurrent> Idempotent(IIdempotencyStore store)
+- h4: Parameters
+- parameters:
+  - name: store
+    type:
+    - text: IIdempotencyStore
+      url: AceMq.Amqp.IIdempotencyStore.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: PipelineBuilder
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    - <
+    - TEntry
+    - ','
+    - " "
+    - TCurrent
+    - '>'
+- h4: Remarks
+- markdown: >-
+    Applies to every step, and each step claims under its own key, so a message
+
+    re-entering step three is not mistaken for one that already cleared step one.
+
+    Without that, a retry anywhere in the chain would be treated as a duplicate
+
+    everywhere in it.
+- api3: Prefetch(int)
+  id: AceMq_Amqp_PipelineBuilder_2_Prefetch_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L294
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.Prefetch(System.Int32)
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.Prefetch(System.Int32)
+- code: public PipelineBuilder<TEntry, TCurrent> Prefetch(int prefetch)
+- h4: Parameters
+- parameters:
+  - name: prefetch
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: PipelineBuilder
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    - <
+    - TEntry
+    - ','
+    - " "
+    - TCurrent
+    - '>'
+- api3: Step<TOut>(string, Func<TCurrent, Task<TOut?>>)
+  id: AceMq_Amqp_PipelineBuilder_2_Step__1_System_String_System_Func__1_System_Threading_Tasks_Task___0___
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L275
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.Step``1(System.String,System.Func{`1,System.Threading.Tasks.Task{``0}})
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.Step``1(System.String,System.Func{`1,System.Threading.Tasks.Task{``0}})
+- markdown: Adds a step. Returning null from the handler ends the message here.
+- code: 'public PipelineBuilder<TEntry, TOut> Step<TOut>(string stepName, Func<TCurrent, Task<TOut?>> handler) where TOut : class'
+- h4: Parameters
+- parameters:
+  - name: stepName
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: handler
+    type:
+    - text: Func
+      url: https://learn.microsoft.com/dotnet/api/system.func-2
+    - <
+    - TCurrent
+    - ','
+    - " "
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - TOut
+    - '?'
+    - '>'
+    - '>'
+- h4: Returns
+- parameters:
+  - type:
+    - text: PipelineBuilder
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    - <
+    - TEntry
+    - ','
+    - " "
+    - TOut
+    - '>'
+- h4: Type Parameters
+- parameters:
+  - name: TOut
+- api3: WithRetry(RetryPolicy)
+  id: AceMq_Amqp_PipelineBuilder_2_WithRetry_AceMq_Amqp_RetryPolicy_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L307
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.WithRetry(AceMq.Amqp.RetryPolicy)
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.WithRetry(AceMq.Amqp.RetryPolicy)
+- markdown: Backs off between attempts and gives up according to a policy.
+- code: public PipelineBuilder<TEntry, TCurrent> WithRetry(RetryPolicy policy)
+- h4: Parameters
+- parameters:
+  - name: policy
+    type:
+    - text: RetryPolicy
+      url: AceMq.Amqp.RetryPolicy.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: PipelineBuilder
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    - <
+    - TEntry
+    - ','
+    - " "
+    - TCurrent
+    - '>'
+- api3: WithRetryDelay(TimeSpan)
+  id: AceMq_Amqp_PipelineBuilder_2_WithRetryDelay_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L300
+  metadata:
+    uid: AceMq.Amqp.PipelineBuilder`2.WithRetryDelay(System.TimeSpan)
+    commentId: M:AceMq.Amqp.PipelineBuilder`2.WithRetryDelay(System.TimeSpan)
+- code: public PipelineBuilder<TEntry, TCurrent> WithRetryDelay(TimeSpan delay)
+- h4: Parameters
+- parameters:
+  - name: delay
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h4: Returns
+- parameters:
+  - type:
+    - text: PipelineBuilder
+      url: AceMq.Amqp.PipelineBuilder-2.html
+    - <
+    - TEntry
+    - ','
+    - " "
+    - TCurrent
+    - '>'
+languageId: csharp
+metadata:
+  description: Builds a .

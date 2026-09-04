@@ -1,0 +1,110 @@
+### YamlMime:ApiPage
+title: Interface IStreamConsumer
+body:
+- api1: Interface IStreamConsumer
+  id: AceMq_Amqp_IStreamConsumer
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L58
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer
+    commentId: T:AceMq.Amqp.IStreamConsumer
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A running stream reader. Disposing it stops delivery.
+- code: 'public interface IStreamConsumer : IDisposable'
+- h4: Implements
+- list:
+  - text: IDisposable
+    url: https://learn.microsoft.com/dotnet/api/system.idisposable
+- h2: Properties
+- api3: Failed
+  id: AceMq_Amqp_IStreamConsumer_Failed
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L77
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.Failed
+    commentId: P:AceMq.Amqp.IStreamConsumer.Failed
+- code: long Failed { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: Handled
+  id: AceMq_Amqp_IStreamConsumer_Handled
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L75
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.Handled
+    commentId: P:AceMq.Amqp.IStreamConsumer.Handled
+- code: long Handled { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: IsActive
+  id: AceMq_Amqp_IStreamConsumer_IsActive
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L62
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.IsActive
+    commentId: P:AceMq.Amqp.IStreamConsumer.IsActive
+- code: bool IsActive { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: LastHandledOffset
+  id: AceMq_Amqp_IStreamConsumer_LastHandledOffset
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L73
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.LastHandledOffset
+    commentId: P:AceMq.Amqp.IStreamConsumer.LastHandledOffset
+- markdown: The offset of the last message handled, or null before any has been.
+- code: long? LastHandledOffset { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+    - '?'
+- h4: Remarks
+- markdown: >-
+    Nothing stores this for you. A reader starts where it is told to every time
+
+    it starts, so resuming exactly where a previous run stopped means recording
+
+    this value as part of handling each message and passing it to
+
+    <xref href="AceMq.Amqp.StreamReader%601.FromOffset(System.Int64)" data-throw-if-not-resolved="false"></xref> next time.
+- api3: Queue
+  id: AceMq_Amqp_IStreamConsumer_Queue
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L60
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.Queue
+    commentId: P:AceMq.Amqp.IStreamConsumer.Queue
+- code: string Queue { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Skipped
+  id: AceMq_Amqp_IStreamConsumer_Skipped
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Streams.cs#L80
+  metadata:
+    uid: AceMq.Amqp.IStreamConsumer.Skipped
+    commentId: P:AceMq.Amqp.IStreamConsumer.Skipped
+- markdown: Messages skipped because the handler failed and failures are skipped.
+- code: long Skipped { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+languageId: csharp
+metadata:
+  description: A running stream reader. Disposing it stops delivery.

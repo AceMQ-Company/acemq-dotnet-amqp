@@ -1,0 +1,125 @@
+### YamlMime:ApiPage
+title: Class Keyring
+body:
+- api1: Class Keyring
+  id: AceMq_Amqp_Keyring
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L85
+  metadata:
+    uid: AceMq.Amqp.Keyring
+    commentId: T:AceMq.Amqp.Keyring
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A keyring holding a fixed set of keys.
+- code: 'public sealed class Keyring : IKeyring'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Keyring
+    url: AceMq.Amqp.Keyring.html
+- h4: Implements
+- list:
+  - text: IKeyring
+    url: AceMq.Amqp.IKeyring.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Current
+  id: AceMq_Amqp_Keyring_Current
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L99
+  metadata:
+    uid: AceMq.Amqp.Keyring.Current
+    commentId: P:AceMq.Amqp.Keyring.Current
+- markdown: The key new messages are encrypted with.
+- code: public EncryptionKey Current { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+- h2: Methods
+- api3: Builder()
+  id: AceMq_Amqp_Keyring_Builder
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L97
+  metadata:
+    uid: AceMq.Amqp.Keyring.Builder
+    commentId: M:AceMq.Amqp.Keyring.Builder
+- code: public static Keyring.KeyringBuilder Builder()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Keyring
+      url: AceMq.Amqp.Keyring.html
+    - .
+    - text: KeyringBuilder
+      url: AceMq.Amqp.Keyring.KeyringBuilder.html
+- api3: KeyFor(string)
+  id: AceMq_Amqp_Keyring_KeyFor_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L101
+  metadata:
+    uid: AceMq.Amqp.Keyring.KeyFor(System.String)
+    commentId: M:AceMq.Amqp.Keyring.KeyFor(System.String)
+- markdown: The key with an id, or null if this keyring does not have it.
+- code: public EncryptionKey? KeyFor(string keyId)
+- h4: Parameters
+- parameters:
+  - name: keyId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+    - '?'
+- api3: Of(EncryptionKey)
+  id: AceMq_Amqp_Keyring_Of_AceMq_Amqp_EncryptionKey_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L95
+  metadata:
+    uid: AceMq.Amqp.Keyring.Of(AceMq.Amqp.EncryptionKey)
+    commentId: M:AceMq.Amqp.Keyring.Of(AceMq.Amqp.EncryptionKey)
+- code: public static IKeyring Of(EncryptionKey key)
+- h4: Parameters
+- parameters:
+  - name: key
+    type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: IKeyring
+      url: AceMq.Amqp.IKeyring.html
+- api3: ToString()
+  id: AceMq_Amqp_Keyring_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L104
+  metadata:
+    uid: AceMq.Amqp.Keyring.ToString
+    commentId: M:AceMq.Amqp.Keyring.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A keyring holding a fixed set of keys.

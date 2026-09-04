@@ -1,0 +1,223 @@
+### YamlMime:ApiPage
+title: Class Replay
+body:
+- api1: Class Replay
+  id: AceMq_Amqp_Replay
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L38
+  metadata:
+    uid: AceMq.Amqp.Replay
+    commentId: T:AceMq.Amqp.Replay
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Takes messages off a dead-letter queue and puts them back.
+- code: public sealed class Replay
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Replay
+    url: AceMq.Amqp.Replay.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    The point of dead-lettering is that the messages are still there. This is how
+
+    they get another run once whatever broke has been fixed.
+
+    </p>
+
+    <p>
+
+    Messages are pulled one at a time rather than consumed with a subscription. A
+
+    subscription on the source queue would immediately be handed the messages the
+
+    replay had just republished if the two queues are connected, and there would be
+
+    no way to replay a bounded number and stop.
+
+    </p>
+- h2: Properties
+- api3: From
+  id: AceMq_Amqp_Replay_From
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L55
+  metadata:
+    uid: AceMq.Amqp.Replay.From
+    commentId: P:AceMq.Amqp.Replay.From
+- markdown: The queue being drained.
+- code: public string From { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: To
+  id: AceMq_Amqp_Replay_To
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L58
+  metadata:
+    uid: AceMq.Amqp.Replay.To
+    commentId: P:AceMq.Amqp.Replay.To
+- markdown: Where the messages are being sent.
+- code: public string To { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: Into(string)
+  id: AceMq_Amqp_Replay_Into_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L61
+  metadata:
+    uid: AceMq.Amqp.Replay.Into(System.String)
+    commentId: M:AceMq.Amqp.Replay.Into(System.String)
+- markdown: Sends them to a named queue rather than the default destination.
+- code: public Replay Into(string queue)
+- h4: Parameters
+- parameters:
+  - name: queue
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Replay
+      url: AceMq.Amqp.Replay.html
+- api3: PendingAsync()
+  id: AceMq_Amqp_Replay_PendingAsync
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L68
+  metadata:
+    uid: AceMq.Amqp.Replay.PendingAsync
+    commentId: M:AceMq.Amqp.Replay.PendingAsync
+- markdown: How many messages are waiting to be replayed.
+- code: public Task<long> PendingAsync()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+    - '>'
+- api3: ReplayAllAsync()
+  id: AceMq_Amqp_Replay_ReplayAllAsync
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L72
+  metadata:
+    uid: AceMq.Amqp.Replay.ReplayAllAsync
+    commentId: M:AceMq.Amqp.Replay.ReplayAllAsync
+- markdown: Replays everything currently on the queue.
+- code: public Task<int> ReplayAllAsync()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '>'
+- api3: ReplayAsync(int)
+  id: AceMq_Amqp_Replay_ReplayAsync_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L75
+  metadata:
+    uid: AceMq.Amqp.Replay.ReplayAsync(System.Int32)
+    commentId: M:AceMq.Amqp.Replay.ReplayAsync(System.Int32)
+- markdown: Replays at most <code class="paramref">max</code> messages.
+- code: public Task<int> ReplayAsync(int max)
+- h4: Parameters
+- parameters:
+  - name: max
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '>'
+- api3: ReplayAsync(int, Func<InboundDelivery, bool>?)
+  id: AceMq_Amqp_Replay_ReplayAsync_System_Int32_System_Func_AceMq_Amqp_InboundDelivery_System_Boolean__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L86
+  metadata:
+    uid: AceMq.Amqp.Replay.ReplayAsync(System.Int32,System.Func{AceMq.Amqp.InboundDelivery,System.Boolean})
+    commentId: M:AceMq.Amqp.Replay.ReplayAsync(System.Int32,System.Func{AceMq.Amqp.InboundDelivery,System.Boolean})
+- markdown: Replays at most <code class="paramref">max</code> messages that match a filter.
+- code: public Task<int> ReplayAsync(int max, Func<InboundDelivery, bool>? filter)
+- h4: Parameters
+- parameters:
+  - name: max
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+  - name: filter
+    type:
+    - text: Func
+      url: https://learn.microsoft.com/dotnet/api/system.func-2
+    - <
+    - text: InboundDelivery
+      url: AceMq.Amqp.InboundDelivery.html
+    - ','
+    - " "
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+    - '>'
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '>'
+- h4: Remarks
+- markdown: >-
+    A message the filter rejects is left where it is rather than discarded.
+
+    Replaying selectively is normally about picking out one tenant or one kind of
+
+    failure, and losing the rest as a side effect of looking at them would be a
+
+    poor trade.
+- api3: ToString()
+  id: AceMq_Amqp_Replay_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Replay.cs#L164
+  metadata:
+    uid: AceMq.Amqp.Replay.ToString
+    commentId: M:AceMq.Amqp.Replay.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: Takes messages off a dead-letter queue and puts them back.

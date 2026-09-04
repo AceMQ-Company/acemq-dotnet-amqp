@@ -1,0 +1,115 @@
+### YamlMime:ApiPage
+title: Class ConsumeContext
+body:
+- api1: Class ConsumeContext
+  id: AceMq_Amqp_ConsumeContext
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L53
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext
+    commentId: T:AceMq.Amqp.ConsumeContext
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A message about to be handled.
+- code: public sealed class ConsumeContext
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: ConsumeContext
+    url: AceMq.Amqp.ConsumeContext.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Constructors
+- api3: ConsumeContext(string, Envelope, object?)
+  id: AceMq_Amqp_ConsumeContext__ctor_System_String_AceMq_Amqp_Envelope_System_Object_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L55
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext.#ctor(System.String,AceMq.Amqp.Envelope,System.Object)
+    commentId: M:AceMq.Amqp.ConsumeContext.#ctor(System.String,AceMq.Amqp.Envelope,System.Object)
+- code: public ConsumeContext(string queue, Envelope envelope, object? payload)
+- h4: Parameters
+- parameters:
+  - name: queue
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: envelope
+    type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+  - name: payload
+    type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '?'
+- h2: Properties
+- api3: Envelope
+  id: AceMq_Amqp_ConsumeContext_Envelope
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L63
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext.Envelope
+    commentId: P:AceMq.Amqp.ConsumeContext.Envelope
+- code: public Envelope Envelope { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+- api3: Payload
+  id: AceMq_Amqp_ConsumeContext_Payload
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L64
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext.Payload
+    commentId: P:AceMq.Amqp.ConsumeContext.Payload
+- code: public object? Payload { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '?'
+- api3: Queue
+  id: AceMq_Amqp_ConsumeContext_Queue
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L62
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext.Queue
+    commentId: P:AceMq.Amqp.ConsumeContext.Queue
+- code: public string Queue { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: ToString()
+  id: AceMq_Amqp_ConsumeContext_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L66
+  metadata:
+    uid: AceMq.Amqp.ConsumeContext.ToString
+    commentId: M:AceMq.Amqp.ConsumeContext.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A message about to be handled.

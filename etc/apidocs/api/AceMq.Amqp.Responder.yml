@@ -1,0 +1,98 @@
+### YamlMime:ApiPage
+title: Class Responder
+body:
+- api1: Class Responder
+  id: AceMq_Amqp_Responder
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RequestReply.cs#L179
+  metadata:
+    uid: AceMq.Amqp.Responder
+    commentId: T:AceMq.Amqp.Responder
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Answers requests on a queue.
+- code: 'public sealed class Responder : IDisposable'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Responder
+    url: AceMq.Amqp.Responder.html
+- h4: Implements
+- list:
+  - text: IDisposable
+    url: https://learn.microsoft.com/dotnet/api/system.idisposable
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    A request whose sender named no reply queue is counted as unanswerable and
+
+    accepted rather than retried. Nothing about redelivering it makes a reply
+
+    address appear, so retrying only moves the same message round the same loop.
+- h2: Properties
+- api3: Answered
+  id: AceMq_Amqp_Responder_Answered
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RequestReply.cs#L226
+  metadata:
+    uid: AceMq.Amqp.Responder.Answered
+    commentId: P:AceMq.Amqp.Responder.Answered
+- code: public long Answered { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: IsRunning
+  id: AceMq_Amqp_Responder_IsRunning
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RequestReply.cs#L231
+  metadata:
+    uid: AceMq.Amqp.Responder.IsRunning
+    commentId: P:AceMq.Amqp.Responder.IsRunning
+- code: public bool IsRunning { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Unanswerable
+  id: AceMq_Amqp_Responder_Unanswerable
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RequestReply.cs#L229
+  metadata:
+    uid: AceMq.Amqp.Responder.Unanswerable
+    commentId: P:AceMq.Amqp.Responder.Unanswerable
+- markdown: Requests that arrived with no reply queue named.
+- code: public long Unanswerable { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- h2: Methods
+- api3: Dispose()
+  id: AceMq_Amqp_Responder_Dispose
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/RequestReply.cs#L233
+  metadata:
+    uid: AceMq.Amqp.Responder.Dispose
+    commentId: M:AceMq.Amqp.Responder.Dispose
+- code: public void Dispose()
+languageId: csharp
+metadata:
+  description: Answers requests on a queue.

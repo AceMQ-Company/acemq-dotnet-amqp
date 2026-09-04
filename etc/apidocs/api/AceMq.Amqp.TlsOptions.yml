@@ -1,0 +1,332 @@
+### YamlMime:ApiPage
+title: Class TlsOptions
+body:
+- api1: Class TlsOptions
+  id: AceMq_Amqp_TlsOptions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L180
+  metadata:
+    uid: AceMq.Amqp.TlsOptions
+    commentId: T:AceMq.Amqp.TlsOptions
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How the connection is secured.
+- code: public sealed class TlsOptions
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: TlsOptions
+    url: AceMq.Amqp.TlsOptions.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    An <code>amqps://</code> URL turns TLS on with verification. <code>amqp://</code> leaves it
+
+    off. Everything here is for the cases that need more than that: a private
+
+    certificate authority, a client certificate, or a deliberate relaxation in
+
+    development.
+
+    </p>
+- h2: Properties
+- api3: CertificateAuthority
+  id: AceMq_Amqp_TlsOptions_CertificateAuthority
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L211
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.CertificateAuthority
+    commentId: P:AceMq.Amqp.TlsOptions.CertificateAuthority
+- markdown: The certificate authority to trust in addition to the system's, if any.
+- code: public X509Certificate2? CertificateAuthority { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: X509Certificate2
+      url: https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509certificate2
+    - '?'
+- api3: CheckRevocation
+  id: AceMq_Amqp_TlsOptions_CheckRevocation
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L220
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.CheckRevocation
+    commentId: P:AceMq.Amqp.TlsOptions.CheckRevocation
+- markdown: Whether the certificate is checked against revocation lists.
+- code: public bool CheckRevocation { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: ClientCertificates
+  id: AceMq_Amqp_TlsOptions_ClientCertificates
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L214
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.ClientCertificates
+    commentId: P:AceMq.Amqp.TlsOptions.ClientCertificates
+- markdown: Client certificates, for brokers that authenticate with EXTERNAL.
+- code: public X509CertificateCollection ClientCertificates { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: X509CertificateCollection
+      url: https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509certificatecollection
+- api3: Mode
+  id: AceMq_Amqp_TlsOptions_Mode
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L208
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.Mode
+    commentId: P:AceMq.Amqp.TlsOptions.Mode
+- code: public TlsMode Mode { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TlsMode
+      url: AceMq.Amqp.TlsMode.html
+- api3: ServerName
+  id: AceMq_Amqp_TlsOptions_ServerName
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L217
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.ServerName
+    commentId: P:AceMq.Amqp.TlsOptions.ServerName
+- markdown: The name the server's certificate must match. Defaults to the URL's host.
+- code: public string? ServerName { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h2: Methods
+- api3: Disabled()
+  id: AceMq_Amqp_TlsOptions_Disabled
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L194
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.Disabled
+    commentId: M:AceMq.Amqp.TlsOptions.Disabled
+- markdown: No TLS.
+- code: public static TlsOptions Disabled()
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: Insecure()
+  id: AceMq_Amqp_TlsOptions_Insecure
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L206
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.Insecure
+    commentId: M:AceMq.Amqp.TlsOptions.Insecure
+- markdown: TLS with no verification at all. <strong>Development only.</strong>
+- code: public static TlsOptions Insecure()
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- h4: Remarks
+- markdown: >-
+    Encrypted but unauthenticated: anything that can intercept the connection can
+
+    present its own certificate, and will be handed the credentials used to
+
+    authenticate. Reach for <xref href="AceMq.Amqp.TlsOptions.TrustCertificateAuthority(System.Security.Cryptography.X509Certificates.X509Certificate2)" data-throw-if-not-resolved="false"></xref> before this —
+
+    a private CA is almost always the actual problem, and trusting it keeps
+
+    verification switched on.
+- api3: Required()
+  id: AceMq_Amqp_TlsOptions_Required
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L191
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.Required
+    commentId: M:AceMq.Amqp.TlsOptions.Required
+- markdown: TLS, with the certificate and hostname verified. The normal choice.
+- code: public static TlsOptions Required()
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: ToString()
+  id: AceMq_Amqp_TlsOptions_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L319
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.ToString
+    commentId: M:AceMq.Amqp.TlsOptions.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: TrustCertificateAuthority(X509Certificate2)
+  id: AceMq_Amqp_TlsOptions_TrustCertificateAuthority_System_Security_Cryptography_X509Certificates_X509Certificate2_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L237
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.TrustCertificateAuthority(System.Security.Cryptography.X509Certificates.X509Certificate2)
+    commentId: M:AceMq.Amqp.TlsOptions.TrustCertificateAuthority(System.Security.Cryptography.X509Certificates.X509Certificate2)
+- markdown: Trusts a private certificate authority, keeping verification on.
+- code: public TlsOptions TrustCertificateAuthority(X509Certificate2 authority)
+- h4: Parameters
+- parameters:
+  - name: authority
+    type:
+    - text: X509Certificate2
+      url: https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509certificate2
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- h4: Remarks
+- markdown: >-
+    <p>
+
+    This is what to use when the broker has an internally issued certificate. The
+
+    chain is rebuilt against this authority and the hostname is still checked, so
+
+    a broker presenting somebody else's certificate is still rejected.
+
+    </p>
+
+    <p>
+
+    It is deliberately not the same as turning validation off, which is what most
+
+    people do at this point. <xref href="AceMq.Amqp.TlsMode.Insecure" data-throw-if-not-resolved="false"></xref> accepts any
+
+    certificate at all; this accepts exactly the ones your authority issued.
+
+    </p>
+- api3: TrustCertificateAuthority(string)
+  id: AceMq_Amqp_TlsOptions_TrustCertificateAuthority_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L244
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.TrustCertificateAuthority(System.String)
+    commentId: M:AceMq.Amqp.TlsOptions.TrustCertificateAuthority(System.String)
+- markdown: Trusts a certificate authority read from a PEM or DER file.
+- code: public TlsOptions TrustCertificateAuthority(string path)
+- h4: Parameters
+- parameters:
+  - name: path
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: WithClientCertificate(X509Certificate2)
+  id: AceMq_Amqp_TlsOptions_WithClientCertificate_System_Security_Cryptography_X509Certificates_X509Certificate2_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L261
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.WithClientCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2)
+    commentId: M:AceMq.Amqp.TlsOptions.WithClientCertificate(System.Security.Cryptography.X509Certificates.X509Certificate2)
+- markdown: Presents a client certificate, for a broker configured for EXTERNAL auth.
+- code: public TlsOptions WithClientCertificate(X509Certificate2 certificate)
+- h4: Parameters
+- parameters:
+  - name: certificate
+    type:
+    - text: X509Certificate2
+      url: https://learn.microsoft.com/dotnet/api/system.security.cryptography.x509certificates.x509certificate2
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: WithClientCertificate(string, string?)
+  id: AceMq_Amqp_TlsOptions_WithClientCertificate_System_String_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L276
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.WithClientCertificate(System.String,System.String)
+    commentId: M:AceMq.Amqp.TlsOptions.WithClientCertificate(System.String,System.String)
+- markdown: Loads a client certificate from a PKCS#12 file.
+- code: public TlsOptions WithClientCertificate(string path, string? password)
+- h4: Parameters
+- parameters:
+  - name: path
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: password
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- api3: WithServerName(string)
+  id: AceMq_Amqp_TlsOptions_WithServerName_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L298
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.WithServerName(System.String)
+    commentId: M:AceMq.Amqp.TlsOptions.WithServerName(System.String)
+- markdown: Verifies the certificate against this name rather than the URL's host.
+- code: public TlsOptions WithServerName(string serverName)
+- h4: Parameters
+- parameters:
+  - name: serverName
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- h4: Remarks
+- markdown: >-
+    Needed when connecting through an address the certificate does not name — a
+
+    load balancer, or a host reached by IP.
+- api3: WithoutRevocationChecking()
+  id: AceMq_Amqp_TlsOptions_WithoutRevocationChecking
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Security.cs#L313
+  metadata:
+    uid: AceMq.Amqp.TlsOptions.WithoutRevocationChecking
+    commentId: M:AceMq.Amqp.TlsOptions.WithoutRevocationChecking
+- markdown: Turns revocation checking off.
+- code: public TlsOptions WithoutRevocationChecking()
+- h4: Returns
+- parameters:
+  - type:
+    - text: TlsOptions
+      url: AceMq.Amqp.TlsOptions.html
+- h4: Remarks
+- markdown: >-
+    A deliberate weakening: a certificate that has been revoked because its key
+
+    leaked will still be accepted. The case that justifies it is an isolated
+
+    network with no route to the issuer's responder, where the check does not fail
+
+    closed so much as hang.
+languageId: csharp
+metadata:
+  description: How the connection is secured.

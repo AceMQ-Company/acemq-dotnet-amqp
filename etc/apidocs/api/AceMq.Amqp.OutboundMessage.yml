@@ -1,0 +1,259 @@
+### YamlMime:ApiPage
+title: Class OutboundMessage
+body:
+- api1: Class OutboundMessage
+  id: AceMq_Amqp_OutboundMessage
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L42
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage
+    commentId: T:AceMq.Amqp.OutboundMessage
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A message on its way to the broker, after encoding.
+- code: public sealed class OutboundMessage
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: OutboundMessage
+    url: AceMq.Amqp.OutboundMessage.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Constructors
+- api3: OutboundMessage(string, string, byte[], IReadOnlyDictionary<string, object>, string?, string?, bool, bool, TimeSpan?, int?, string?)
+  id: AceMq_Amqp_OutboundMessage__ctor_System_String_System_String_System_Byte___System_Collections_Generic_IReadOnlyDictionary_System_String_System_Object__System_String_System_String_System_Boolean_System_Boolean_System_Nullable_System_TimeSpan__System_Nullable_System_Int32__System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L44
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.#ctor(System.String,System.String,System.Byte[],System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.String,System.String,System.Boolean,System.Boolean,System.Nullable{System.TimeSpan},System.Nullable{System.Int32},System.String)
+    commentId: M:AceMq.Amqp.OutboundMessage.#ctor(System.String,System.String,System.Byte[],System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object},System.String,System.String,System.Boolean,System.Boolean,System.Nullable{System.TimeSpan},System.Nullable{System.Int32},System.String)
+- code: public OutboundMessage(string exchange, string routingKey, byte[] body, IReadOnlyDictionary<string, object> headers, string? messageId, string? contentType, bool persistent, bool mandatory, TimeSpan? expiration, int? priority, string? replyTo)
+- h4: Parameters
+- parameters:
+  - name: exchange
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: routingKey
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: body
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+  - name: headers
+    type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+  - name: contentType
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+  - name: persistent
+    type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+  - name: mandatory
+    type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+  - name: expiration
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+    - '?'
+  - name: priority
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '?'
+  - name: replyTo
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h2: Properties
+- api3: Body
+  id: AceMq_Amqp_OutboundMessage_Body
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L66
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Body
+    commentId: P:AceMq.Amqp.OutboundMessage.Body
+- code: public byte[] Body { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+- api3: ContentType
+  id: AceMq_Amqp_OutboundMessage_ContentType
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L69
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.ContentType
+    commentId: P:AceMq.Amqp.OutboundMessage.ContentType
+- code: public string? ContentType { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Exchange
+  id: AceMq_Amqp_OutboundMessage_Exchange
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L64
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Exchange
+    commentId: P:AceMq.Amqp.OutboundMessage.Exchange
+- code: public string Exchange { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Expiration
+  id: AceMq_Amqp_OutboundMessage_Expiration
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L75
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Expiration
+    commentId: P:AceMq.Amqp.OutboundMessage.Expiration
+- code: public TimeSpan? Expiration { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+    - '?'
+- api3: Headers
+  id: AceMq_Amqp_OutboundMessage_Headers
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L67
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Headers
+    commentId: P:AceMq.Amqp.OutboundMessage.Headers
+- code: public IReadOnlyDictionary<string, object> Headers { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- api3: Mandatory
+  id: AceMq_Amqp_OutboundMessage_Mandatory
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L73
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Mandatory
+    commentId: P:AceMq.Amqp.OutboundMessage.Mandatory
+- markdown: Whether the broker must report the message as unroutable rather than dropping it.
+- code: public bool Mandatory { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: MessageId
+  id: AceMq_Amqp_OutboundMessage_MessageId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L68
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.MessageId
+    commentId: P:AceMq.Amqp.OutboundMessage.MessageId
+- code: public string? MessageId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Persistent
+  id: AceMq_Amqp_OutboundMessage_Persistent
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L70
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Persistent
+    commentId: P:AceMq.Amqp.OutboundMessage.Persistent
+- code: public bool Persistent { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Priority
+  id: AceMq_Amqp_OutboundMessage_Priority
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L76
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.Priority
+    commentId: P:AceMq.Amqp.OutboundMessage.Priority
+- code: public int? Priority { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+    - '?'
+- api3: ReplyTo
+  id: AceMq_Amqp_OutboundMessage_ReplyTo
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L77
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.ReplyTo
+    commentId: P:AceMq.Amqp.OutboundMessage.ReplyTo
+- code: public string? ReplyTo { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: RoutingKey
+  id: AceMq_Amqp_OutboundMessage_RoutingKey
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Transport.cs#L65
+  metadata:
+    uid: AceMq.Amqp.OutboundMessage.RoutingKey
+    commentId: P:AceMq.Amqp.OutboundMessage.RoutingKey
+- code: public string RoutingKey { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A message on its way to the broker, after encoding.

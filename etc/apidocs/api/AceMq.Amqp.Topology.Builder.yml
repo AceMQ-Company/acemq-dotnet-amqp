@@ -1,0 +1,268 @@
+### YamlMime:ApiPage
+title: Class Topology.Builder
+body:
+- api1: Class Topology.Builder
+  id: AceMq_Amqp_Topology_Builder
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L107
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder
+    commentId: T:AceMq.Amqp.Topology.Builder
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Builds a <xref href="AceMq.Amqp.Topology" data-throw-if-not-resolved="false"></xref>.
+- code: public sealed class Topology.Builder
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Topology.Builder
+    url: AceMq.Amqp.Topology.Builder.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Methods
+- api3: Bind(string, string, string)
+  id: AceMq_Amqp_Topology_Builder_Bind_System_String_System_String_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L135
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Bind(System.String,System.String,System.String)
+    commentId: M:AceMq.Amqp.Topology.Builder.Bind(System.String,System.String,System.String)
+- code: public Topology.Builder Bind(string queue, string exchange, string routingKey)
+- h4: Parameters
+- parameters:
+  - name: queue
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: exchange
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: routingKey
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: Build()
+  id: AceMq_Amqp_Topology_Builder_Build
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L176
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Build
+    commentId: M:AceMq.Amqp.Topology.Builder.Build
+- code: public Topology Build()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+- api3: Exchange(string, string)
+  id: AceMq_Amqp_Topology_Builder_Exchange_System_String_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L115
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Exchange(System.String,System.String)
+    commentId: M:AceMq.Amqp.Topology.Builder.Exchange(System.String,System.String)
+- code: public Topology.Builder Exchange(string name, string type)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: type
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: Queue(string)
+  id: AceMq_Amqp_Topology_Builder_Queue_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L121
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Queue(System.String)
+    commentId: M:AceMq.Amqp.Topology.Builder.Queue(System.String)
+- code: public Topology.Builder Queue(string name)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: Queue(string, QueueType)
+  id: AceMq_Amqp_Topology_Builder_Queue_System_String_AceMq_Amqp_QueueType_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L124
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Queue(System.String,AceMq.Amqp.QueueType)
+    commentId: M:AceMq.Amqp.Topology.Builder.Queue(System.String,AceMq.Amqp.QueueType)
+- code: public Topology.Builder Queue(string name, QueueType type)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: type
+    type:
+    - text: QueueType
+      url: AceMq.Amqp.QueueType.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: Queue(string, QueueType, IReadOnlyDictionary<string, object>?)
+  id: AceMq_Amqp_Topology_Builder_Queue_System_String_AceMq_Amqp_QueueType_System_Collections_Generic_IReadOnlyDictionary_System_String_System_Object__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L127
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.Queue(System.String,AceMq.Amqp.QueueType,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+    commentId: M:AceMq.Amqp.Topology.Builder.Queue(System.String,AceMq.Amqp.QueueType,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+- code: public Topology.Builder Queue(string name, QueueType type, IReadOnlyDictionary<string, object>? arguments)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: type
+    type:
+    - text: QueueType
+      url: AceMq.Amqp.QueueType.html
+  - name: arguments
+    type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- api3: QueueWithDeadLetter(string)
+  id: AceMq_Amqp_Topology_Builder_QueueWithDeadLetter_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L153
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.QueueWithDeadLetter(System.String)
+    commentId: M:AceMq.Amqp.Topology.Builder.QueueWithDeadLetter(System.String)
+- markdown: >-
+    Declares a queue together with the dead-letter exchange and queue that
+
+    receive what it gives up on.
+- code: public Topology.Builder QueueWithDeadLetter(string name)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+- h4: Remarks
+- markdown: >-
+    Three declarations and a binding, as one call, because they are only
+
+    correct together. A queue whose <code>x-dead-letter-exchange</code> points at an
+
+    exchange nobody declared, or at one with no queue bound to it, throws
+
+    messages away exactly as if dead-lettering had never been configured — and
+
+    nothing reports it. The dead-letter queue is named after the queue it
+
+    serves, so the pairing is visible in the broker's UI.
+- api3: QueueWithDeadLetter(string, QueueType, IReadOnlyDictionary<string, object>?)
+  id: AceMq_Amqp_Topology_Builder_QueueWithDeadLetter_System_String_AceMq_Amqp_QueueType_System_Collections_Generic_IReadOnlyDictionary_System_String_System_Object__
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L156
+  metadata:
+    uid: AceMq.Amqp.Topology.Builder.QueueWithDeadLetter(System.String,AceMq.Amqp.QueueType,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+    commentId: M:AceMq.Amqp.Topology.Builder.QueueWithDeadLetter(System.String,AceMq.Amqp.QueueType,System.Collections.Generic.IReadOnlyDictionary{System.String,System.Object})
+- code: public Topology.Builder QueueWithDeadLetter(string name, QueueType type, IReadOnlyDictionary<string, object>? arguments)
+- h4: Parameters
+- parameters:
+  - name: name
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: type
+    type:
+    - text: QueueType
+      url: AceMq.Amqp.QueueType.html
+  - name: arguments
+    type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Topology
+      url: AceMq.Amqp.Topology.html
+    - .
+    - text: Builder
+      url: AceMq.Amqp.Topology.Builder.html
+languageId: csharp
+metadata:
+  description: Builds a .

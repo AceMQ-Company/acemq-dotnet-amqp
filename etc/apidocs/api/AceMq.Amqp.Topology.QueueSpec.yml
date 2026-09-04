@@ -1,0 +1,98 @@
+### YamlMime:ApiPage
+title: Class Topology.QueueSpec
+body:
+- api1: Class Topology.QueueSpec
+  id: AceMq_Amqp_Topology_QueueSpec
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L74
+  metadata:
+    uid: AceMq.Amqp.Topology.QueueSpec
+    commentId: T:AceMq.Amqp.Topology.QueueSpec
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A queue to declare.
+- code: public sealed class Topology.QueueSpec
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Topology.QueueSpec
+    url: AceMq.Amqp.Topology.QueueSpec.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Arguments
+  id: AceMq_Amqp_Topology_QueueSpec_Arguments
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L88
+  metadata:
+    uid: AceMq.Amqp.Topology.QueueSpec.Arguments
+    commentId: P:AceMq.Amqp.Topology.QueueSpec.Arguments
+- code: public IReadOnlyDictionary<string, object> Arguments { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyDictionary
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlydictionary-2
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - ','
+    - " "
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+    - '>'
+- api3: Durable
+  id: AceMq_Amqp_Topology_QueueSpec_Durable
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L87
+  metadata:
+    uid: AceMq.Amqp.Topology.QueueSpec.Durable
+    commentId: P:AceMq.Amqp.Topology.QueueSpec.Durable
+- code: public bool Durable { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Name
+  id: AceMq_Amqp_Topology_QueueSpec_Name
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L85
+  metadata:
+    uid: AceMq.Amqp.Topology.QueueSpec.Name
+    commentId: P:AceMq.Amqp.Topology.QueueSpec.Name
+- code: public string Name { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Type
+  id: AceMq_Amqp_Topology_QueueSpec_Type
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L86
+  metadata:
+    uid: AceMq.Amqp.Topology.QueueSpec.Type
+    commentId: P:AceMq.Amqp.Topology.QueueSpec.Type
+- code: public QueueType Type { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: QueueType
+      url: AceMq.Amqp.QueueType.html
+languageId: csharp
+metadata:
+  description: A queue to declare.

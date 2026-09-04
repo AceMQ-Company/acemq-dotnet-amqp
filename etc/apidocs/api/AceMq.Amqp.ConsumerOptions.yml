@@ -1,0 +1,285 @@
+### YamlMime:ApiPage
+title: Class ConsumerOptions
+body:
+- api1: Class ConsumerOptions
+  id: AceMq_Amqp_ConsumerOptions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L160
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions
+    commentId: T:AceMq.Amqp.ConsumerOptions
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How a consumer should behave.
+- code: public sealed class ConsumerOptions
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: ConsumerOptions
+    url: AceMq.Amqp.ConsumerOptions.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Properties
+- api3: Codec
+  id: AceMq_Amqp_ConsumerOptions_Codec
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L234
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.Codec
+    commentId: P:AceMq.Amqp.ConsumerOptions.Codec
+- code: public ICodec? Codec { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: ICodec
+      url: AceMq.Amqp.ICodec.html
+    - '?'
+- api3: Idempotency
+  id: AceMq_Amqp_ConsumerOptions_Idempotency
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L241
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.Idempotency
+    commentId: P:AceMq.Amqp.ConsumerOptions.Idempotency
+- markdown: Where already-handled message ids are remembered, or null for none.
+- code: public IIdempotencyStore? Idempotency { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IIdempotencyStore
+      url: AceMq.Amqp.IIdempotencyStore.html
+    - '?'
+- api3: PrefetchCount
+  id: AceMq_Amqp_ConsumerOptions_PrefetchCount
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L233
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.PrefetchCount
+    commentId: P:AceMq.Amqp.ConsumerOptions.PrefetchCount
+- code: public int PrefetchCount { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: RequeueOnFailure
+  id: AceMq_Amqp_ConsumerOptions_RequeueOnFailure
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L235
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.RequeueOnFailure
+    commentId: P:AceMq.Amqp.ConsumerOptions.RequeueOnFailure
+- code: public bool RequeueOnFailure { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: RetryDelay
+  id: AceMq_Amqp_ConsumerOptions_RetryDelay
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L244
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.RetryDelay
+    commentId: P:AceMq.Amqp.ConsumerOptions.RetryDelay
+- markdown: Delay applied when a handler throws rather than returning a disposition.
+- code: public TimeSpan RetryDelay { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- api3: RetryPolicy
+  id: AceMq_Amqp_ConsumerOptions_RetryPolicy
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L238
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.RetryPolicy
+    commentId: P:AceMq.Amqp.ConsumerOptions.RetryPolicy
+- markdown: How to back off and when to give up, or null for a fixed delay forever.
+- code: public RetryPolicy? RetryPolicy { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: RetryPolicy
+      url: AceMq.Amqp.RetryPolicy.html
+    - '?'
+- h2: Methods
+- api3: As(ICodec)
+  id: AceMq_Amqp_ConsumerOptions_As_AceMq_Amqp_ICodec_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L196
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.As(AceMq.Amqp.ICodec)
+    commentId: M:AceMq.Amqp.ConsumerOptions.As(AceMq.Amqp.ICodec)
+- markdown: Decodes with this codec rather than the connection's.
+- code: public ConsumerOptions As(ICodec codec)
+- h4: Parameters
+- parameters:
+  - name: codec
+    type:
+    - text: ICodec
+      url: AceMq.Amqp.ICodec.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- api3: Defaults()
+  id: AceMq_Amqp_ConsumerOptions_Defaults
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L174
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.Defaults
+    commentId: M:AceMq.Amqp.ConsumerOptions.Defaults
+- code: public static ConsumerOptions Defaults()
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- api3: Idempotent(IIdempotencyStore)
+  id: AceMq_Amqp_ConsumerOptions_Idempotent_AceMq_Amqp_IIdempotencyStore_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L217
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.Idempotent(AceMq.Amqp.IIdempotencyStore)
+    commentId: M:AceMq.Amqp.ConsumerOptions.Idempotent(AceMq.Amqp.IIdempotencyStore)
+- markdown: Skips a message this store says has already been handled.
+- code: public ConsumerOptions Idempotent(IIdempotencyStore store)
+- h4: Parameters
+- parameters:
+  - name: store
+    type:
+    - text: IIdempotencyStore
+      url: AceMq.Amqp.IIdempotencyStore.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- h4: Remarks
+- markdown: >-
+    Every broker delivers at least once, so a consumer will see the same message
+
+    twice eventually. This is what makes that safe when handling it twice is not.
+- api3: Prefetch(int)
+  id: AceMq_Amqp_ConsumerOptions_Prefetch_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L186
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.Prefetch(System.Int32)
+    commentId: M:AceMq.Amqp.ConsumerOptions.Prefetch(System.Int32)
+- markdown: >-
+    How many unacknowledged messages the broker may have outstanding with this
+
+    consumer.
+- code: public static ConsumerOptions Prefetch(int prefetch)
+- h4: Parameters
+- parameters:
+  - name: prefetch
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- h4: Remarks
+- markdown: >-
+    The default of 20 is deliberately modest. An unbounded prefetch hands a
+
+    single consumer the whole queue, which turns a rolling deploy into a stall
+
+    while one instance works through everything it was given.
+- api3: RequeueingOnFailure()
+  id: AceMq_Amqp_ConsumerOptions_RequeueingOnFailure
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L227
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.RequeueingOnFailure
+    commentId: M:AceMq.Amqp.ConsumerOptions.RequeueingOnFailure
+- markdown: Returns a failed message to the queue rather than dead-lettering it.
+- code: public ConsumerOptions RequeueingOnFailure()
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- h4: Remarks
+- markdown: >-
+    Off by default, because requeueing a message that fails deterministically
+
+    produces a hot loop that looks like throughput.
+- api3: WithPrefetch(int)
+  id: AceMq_Amqp_ConsumerOptions_WithPrefetch_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L192
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.WithPrefetch(System.Int32)
+    commentId: M:AceMq.Amqp.ConsumerOptions.WithPrefetch(System.Int32)
+- code: public ConsumerOptions WithPrefetch(int prefetch)
+- h4: Parameters
+- parameters:
+  - name: prefetch
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- api3: WithRetry(RetryPolicy)
+  id: AceMq_Amqp_ConsumerOptions_WithRetry_AceMq_Amqp_RetryPolicy_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L207
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.WithRetry(AceMq.Amqp.RetryPolicy)
+    commentId: M:AceMq.Amqp.ConsumerOptions.WithRetry(AceMq.Amqp.RetryPolicy)
+- markdown: Backs off between attempts and gives up according to a policy.
+- code: public ConsumerOptions WithRetry(RetryPolicy policy)
+- h4: Parameters
+- parameters:
+  - name: policy
+    type:
+    - text: RetryPolicy
+      url: AceMq.Amqp.RetryPolicy.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+- h4: Remarks
+- markdown: >-
+    Without one, a handler that throws is retried after a fixed delay forever. A
+
+    policy is what turns that into a bounded number of attempts with growing gaps,
+
+    after which the message is dead-lettered rather than retried into eternity.
+- api3: WithRetryDelay(TimeSpan)
+  id: AceMq_Amqp_ConsumerOptions_WithRetryDelay_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Consuming.cs#L230
+  metadata:
+    uid: AceMq.Amqp.ConsumerOptions.WithRetryDelay(System.TimeSpan)
+    commentId: M:AceMq.Amqp.ConsumerOptions.WithRetryDelay(System.TimeSpan)
+- code: public ConsumerOptions WithRetryDelay(TimeSpan delay)
+- h4: Parameters
+- parameters:
+  - name: delay
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h4: Returns
+- parameters:
+  - type:
+    - text: ConsumerOptions
+      url: AceMq.Amqp.ConsumerOptions.html
+languageId: csharp
+metadata:
+  description: How a consumer should behave.

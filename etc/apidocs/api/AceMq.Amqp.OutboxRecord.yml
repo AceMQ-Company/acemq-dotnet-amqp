@@ -1,0 +1,275 @@
+### YamlMime:ApiPage
+title: Class OutboxRecord
+body:
+- api1: Class OutboxRecord
+  id: AceMq_Amqp_OutboxRecord
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L24
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord
+    commentId: T:AceMq.Amqp.OutboxRecord
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A message written down to be published later.
+- code: public sealed class OutboxRecord
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: OutboxRecord
+    url: AceMq.Amqp.OutboxRecord.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Constructors
+- api3: OutboxRecord(string, string, string, string, string, string?, string?, DateTimeOffset, int, string?)
+  id: AceMq_Amqp_OutboxRecord__ctor_System_String_System_String_System_String_System_String_System_String_System_String_System_String_System_DateTimeOffset_System_Int32_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L26
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.#ctor(System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.DateTimeOffset,System.Int32,System.String)
+    commentId: M:AceMq.Amqp.OutboxRecord.#ctor(System.String,System.String,System.String,System.String,System.String,System.String,System.String,System.DateTimeOffset,System.Int32,System.String)
+- code: public OutboxRecord(string id, string exchange, string routingKey, string type, string payload, string? correlationId, string? causationId, DateTimeOffset createdAt, int attempts, string? lastError)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: exchange
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: routingKey
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: type
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: payload
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: correlationId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+  - name: causationId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+  - name: createdAt
+    type:
+    - text: DateTimeOffset
+      url: https://learn.microsoft.com/dotnet/api/system.datetimeoffset
+  - name: attempts
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+  - name: lastError
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h2: Properties
+- api3: Attempts
+  id: AceMq_Amqp_OutboxRecord_Attempts
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L59
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Attempts
+    commentId: P:AceMq.Amqp.OutboxRecord.Attempts
+- code: public int Attempts { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: CausationId
+  id: AceMq_Amqp_OutboxRecord_CausationId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L57
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.CausationId
+    commentId: P:AceMq.Amqp.OutboxRecord.CausationId
+- code: public string? CausationId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: CorrelationId
+  id: AceMq_Amqp_OutboxRecord_CorrelationId
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L56
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.CorrelationId
+    commentId: P:AceMq.Amqp.OutboxRecord.CorrelationId
+- code: public string? CorrelationId { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: CreatedAt
+  id: AceMq_Amqp_OutboxRecord_CreatedAt
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L58
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.CreatedAt
+    commentId: P:AceMq.Amqp.OutboxRecord.CreatedAt
+- code: public DateTimeOffset CreatedAt { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: DateTimeOffset
+      url: https://learn.microsoft.com/dotnet/api/system.datetimeoffset
+- api3: Exchange
+  id: AceMq_Amqp_OutboxRecord_Exchange
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L49
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Exchange
+    commentId: P:AceMq.Amqp.OutboxRecord.Exchange
+- code: public string Exchange { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Id
+  id: AceMq_Amqp_OutboxRecord_Id
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L48
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Id
+    commentId: P:AceMq.Amqp.OutboxRecord.Id
+- code: public string Id { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: LastError
+  id: AceMq_Amqp_OutboxRecord_LastError
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L60
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.LastError
+    commentId: P:AceMq.Amqp.OutboxRecord.LastError
+- code: public string? LastError { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- api3: Payload
+  id: AceMq_Amqp_OutboxRecord_Payload
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L54
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Payload
+    commentId: P:AceMq.Amqp.OutboxRecord.Payload
+- markdown: The encoded body, as text, so a store can hold it in one column.
+- code: public string Payload { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: RoutingKey
+  id: AceMq_Amqp_OutboxRecord_RoutingKey
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L50
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.RoutingKey
+    commentId: P:AceMq.Amqp.OutboxRecord.RoutingKey
+- code: public string RoutingKey { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: Type
+  id: AceMq_Amqp_OutboxRecord_Type
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L51
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Type
+    commentId: P:AceMq.Amqp.OutboxRecord.Type
+- code: public string Type { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: Envelope()
+  id: AceMq_Amqp_OutboxRecord_Envelope
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L63
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Envelope
+    commentId: M:AceMq.Amqp.OutboxRecord.Envelope
+- markdown: The envelope this record was written with.
+- code: public Envelope Envelope()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+- api3: Of(string, string, Envelope, string)
+  id: AceMq_Amqp_OutboxRecord_Of_System_String_System_String_AceMq_Amqp_Envelope_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L43
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.Of(System.String,System.String,AceMq.Amqp.Envelope,System.String)
+    commentId: M:AceMq.Amqp.OutboxRecord.Of(System.String,System.String,AceMq.Amqp.Envelope,System.String)
+- code: public static OutboxRecord Of(string exchange, string routingKey, Envelope envelope, string payload)
+- h4: Parameters
+- parameters:
+  - name: exchange
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: routingKey
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: envelope
+    type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+  - name: payload
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: OutboxRecord
+      url: AceMq.Amqp.OutboxRecord.html
+- api3: ToString()
+  id: AceMq_Amqp_OutboxRecord_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L71
+  metadata:
+    uid: AceMq.Amqp.OutboxRecord.ToString
+    commentId: M:AceMq.Amqp.OutboxRecord.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A message written down to be published later.

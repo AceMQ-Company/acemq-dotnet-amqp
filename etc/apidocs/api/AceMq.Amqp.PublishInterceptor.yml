@@ -1,0 +1,126 @@
+### YamlMime:ApiPage
+title: Class PublishInterceptor
+body:
+- api1: Class PublishInterceptor
+  id: AceMq_Amqp_PublishInterceptor
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L117
+  metadata:
+    uid: AceMq.Amqp.PublishInterceptor
+    commentId: T:AceMq.Amqp.PublishInterceptor
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A publish interceptor that does nothing, to inherit from.
+- code: 'public abstract class PublishInterceptor : IPublishInterceptor'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: PublishInterceptor
+    url: AceMq.Amqp.PublishInterceptor.html
+- h4: Implements
+- list:
+  - text: IPublishInterceptor
+    url: AceMq.Amqp.IPublishInterceptor.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.MemberwiseClone()
+    url: https://learn.microsoft.com/dotnet/api/system.object.memberwiseclone
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    C# interfaces cannot carry implementations on <code>netstandard2.0</code>, so an
+
+    interceptor that only cares about one of the three moments would otherwise have
+
+    to write two empty methods. VB cannot use default interface members either, which
+
+    settles it.
+- h2: Properties
+- api3: Order
+  id: AceMq_Amqp_PublishInterceptor_Order
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L125
+  metadata:
+    uid: AceMq.Amqp.PublishInterceptor.Order
+    commentId: P:AceMq.Amqp.PublishInterceptor.Order
+- markdown: Lower runs first.
+- code: public virtual int Order { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h2: Methods
+- api3: AfterConfirm(PublishContext, PublishResult)
+  id: AceMq_Amqp_PublishInterceptor_AfterConfirm_AceMq_Amqp_PublishContext_AceMq_Amqp_PublishResult_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L121
+  metadata:
+    uid: AceMq.Amqp.PublishInterceptor.AfterConfirm(AceMq.Amqp.PublishContext,AceMq.Amqp.PublishResult)
+    commentId: M:AceMq.Amqp.PublishInterceptor.AfterConfirm(AceMq.Amqp.PublishContext,AceMq.Amqp.PublishResult)
+- markdown: Called once the broker has confirmed it.
+- code: public virtual void AfterConfirm(PublishContext context, PublishResult result)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: PublishContext
+      url: AceMq.Amqp.PublishContext.html
+  - name: result
+    type:
+    - text: PublishResult
+      url: AceMq.Amqp.PublishResult.html
+- api3: BeforePublish(PublishContext)
+  id: AceMq_Amqp_PublishInterceptor_BeforePublish_AceMq_Amqp_PublishContext_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L119
+  metadata:
+    uid: AceMq.Amqp.PublishInterceptor.BeforePublish(AceMq.Amqp.PublishContext)
+    commentId: M:AceMq.Amqp.PublishInterceptor.BeforePublish(AceMq.Amqp.PublishContext)
+- markdown: Called before the message is encoded. Return the context to publish.
+- code: public virtual PublishContext BeforePublish(PublishContext context)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: PublishContext
+      url: AceMq.Amqp.PublishContext.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: PublishContext
+      url: AceMq.Amqp.PublishContext.html
+- api3: OnError(PublishContext, Exception)
+  id: AceMq_Amqp_PublishInterceptor_OnError_AceMq_Amqp_PublishContext_System_Exception_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Interceptors.cs#L123
+  metadata:
+    uid: AceMq.Amqp.PublishInterceptor.OnError(AceMq.Amqp.PublishContext,System.Exception)
+    commentId: M:AceMq.Amqp.PublishInterceptor.OnError(AceMq.Amqp.PublishContext,System.Exception)
+- markdown: Called when the publish failed.
+- code: public virtual void OnError(PublishContext context, Exception failure)
+- h4: Parameters
+- parameters:
+  - name: context
+    type:
+    - text: PublishContext
+      url: AceMq.Amqp.PublishContext.html
+  - name: failure
+    type:
+    - text: Exception
+      url: https://learn.microsoft.com/dotnet/api/system.exception
+languageId: csharp
+metadata:
+  description: A publish interceptor that does nothing, to inherit from.

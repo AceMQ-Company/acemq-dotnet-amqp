@@ -1,0 +1,33 @@
+### YamlMime:ApiPage
+title: Enum ApplyMode
+body:
+- api1: Enum ApplyMode
+  id: AceMq_Amqp_ApplyMode
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Topology.cs#L294
+  metadata:
+    uid: AceMq.Amqp.ApplyMode
+    commentId: T:AceMq.Amqp.ApplyMode
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: How much of a topology to apply.
+- code: public enum ApplyMode
+- h2: Fields
+- parameters:
+  - name: Declare
+    default: "0"
+    description: >+
+      Declare everything. Existing objects that match are left alone.
+
+  - name: DryRun
+    default: "1"
+    description: >+
+      Report what would happen and change nothing.
+
+languageId: csharp
+metadata:
+  description: How much of a topology to apply.

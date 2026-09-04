@@ -96,6 +96,11 @@ CI compiles *and runs* both examples, which has already caught two differences:
 `Dim envelope = Envelope.Of(...)` fails with BC30980 because VB is
 case-insensitive, and VB has no async `Main`. Both compile fine in C#.
 
+## Documentation
+
+**<https://acemq.org/acemq-dotnet-amqp/>** — the guide, four tutorials, and the
+[API reference](https://acemq.org/acemq-dotnet-amqp/apidocs/).
+
 ## Building
 
 ```bash

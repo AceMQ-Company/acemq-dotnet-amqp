@@ -1,0 +1,214 @@
+### YamlMime:ApiPage
+title: Class CompositeCodec
+body:
+- api1: Class CompositeCodec
+  id: AceMq_Amqp_CompositeCodec
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L135
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec
+    commentId: T:AceMq.Amqp.CompositeCodec
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Several codecs, choosing between them by content type.
+- code: 'public sealed class CompositeCodec : ICodec'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: CompositeCodec
+    url: AceMq.Amqp.CompositeCodec.html
+- h4: Implements
+- list:
+  - text: ICodec
+    url: AceMq.Amqp.ICodec.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h4: Extension Methods
+- list:
+  - text: CodecExtensions.Decode<T>(ICodec, byte[])
+    url: AceMq.Amqp.CodecExtensions.html#AceMq_Amqp_CodecExtensions_Decode__1_AceMq_Amqp_ICodec_System_Byte___
+- h2: Remarks
+- markdown: >-
+    What to use during a format migration: publish in the new format while still
+
+    reading both, until nothing is left that speaks the old one. The first codec
+
+    encodes; all of them can decode.
+- h2: Properties
+- api3: Codecs
+  id: AceMq_Amqp_CompositeCodec_Codecs
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L151
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.Codecs
+    commentId: P:AceMq.Amqp.CompositeCodec.Codecs
+- markdown: The codecs, in the order they are tried. The first one encodes.
+- code: public IReadOnlyList<ICodec> Codecs { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: ICodec
+      url: AceMq.Amqp.ICodec.html
+    - '>'
+- api3: ContentType
+  id: AceMq_Amqp_CompositeCodec_ContentType
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L153
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.ContentType
+    commentId: P:AceMq.Amqp.CompositeCodec.ContentType
+- markdown: Content type this codec writes, and recognises on the way back.
+- code: public string ContentType { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: CanDecode(string?)
+  id: AceMq_Amqp_CompositeCodec_CanDecode_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L171
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.CanDecode(System.String)
+    commentId: M:AceMq.Amqp.CompositeCodec.CanDecode(System.String)
+- markdown: Whether this codec can read a message with the given content type.
+- code: public bool CanDecode(string? contentType)
+- h4: Parameters
+- parameters:
+  - name: contentType
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Decode(byte[], Type)
+  id: AceMq_Amqp_CompositeCodec_Decode_System_Byte___System_Type_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L157
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.Decode(System.Byte[],System.Type)
+    commentId: M:AceMq.Amqp.CompositeCodec.Decode(System.Byte[],System.Type)
+- code: public object Decode(byte[] body, Type target)
+- h4: Parameters
+- parameters:
+  - name: body
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+  - name: target
+    type:
+    - text: Type
+      url: https://learn.microsoft.com/dotnet/api/system.type
+- h4: Returns
+- parameters:
+  - type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- api3: Decode(byte[], Type, string?)
+  id: AceMq_Amqp_CompositeCodec_Decode_System_Byte___System_Type_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L160
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.Decode(System.Byte[],System.Type,System.String)
+    commentId: M:AceMq.Amqp.CompositeCodec.Decode(System.Byte[],System.Type,System.String)
+- markdown: Decodes with whichever codec recognises the content type.
+- code: public object Decode(byte[] body, Type target, string? contentType)
+- h4: Parameters
+- parameters:
+  - name: body
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+  - name: target
+    type:
+    - text: Type
+      url: https://learn.microsoft.com/dotnet/api/system.type
+  - name: contentType
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- api3: Encode(object)
+  id: AceMq_Amqp_CompositeCodec_Encode_System_Object_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L155
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.Encode(System.Object)
+    commentId: M:AceMq.Amqp.CompositeCodec.Encode(System.Object)
+- code: public byte[] Encode(object payload)
+- h4: Parameters
+- parameters:
+  - name: payload
+    type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- h4: Returns
+- parameters:
+  - type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+- api3: Of(params ICodec[])
+  id: AceMq_Amqp_CompositeCodec_Of_AceMq_Amqp_ICodec___
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L141
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.Of(AceMq.Amqp.ICodec[])
+    commentId: M:AceMq.Amqp.CompositeCodec.Of(AceMq.Amqp.ICodec[])
+- code: public static CompositeCodec Of(params ICodec[] codecs)
+- h4: Parameters
+- parameters:
+  - name: codecs
+    type:
+    - text: ICodec
+      url: AceMq.Amqp.ICodec.html
+    - '['
+    - ']'
+- h4: Returns
+- parameters:
+  - type:
+    - text: CompositeCodec
+      url: AceMq.Amqp.CompositeCodec.html
+- api3: ToString()
+  id: AceMq_Amqp_CompositeCodec_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codecs.cs#L173
+  metadata:
+    uid: AceMq.Amqp.CompositeCodec.ToString
+    commentId: M:AceMq.Amqp.CompositeCodec.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: Several codecs, choosing between them by content type.

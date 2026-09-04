@@ -1,0 +1,98 @@
+### YamlMime:ApiPage
+title: Class Keyring.KeyringBuilder
+body:
+- api1: Class Keyring.KeyringBuilder
+  id: AceMq_Amqp_Keyring_KeyringBuilder
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L108
+  metadata:
+    uid: AceMq.Amqp.Keyring.KeyringBuilder
+    commentId: T:AceMq.Amqp.Keyring.KeyringBuilder
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Builds a <xref href="AceMq.Amqp.Keyring" data-throw-if-not-resolved="false"></xref>.
+- code: public sealed class Keyring.KeyringBuilder
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Keyring.KeyringBuilder
+    url: AceMq.Amqp.Keyring.KeyringBuilder.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Methods
+- api3: Add(EncryptionKey)
+  id: AceMq_Amqp_Keyring_KeyringBuilder_Add_AceMq_Amqp_EncryptionKey_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L117
+  metadata:
+    uid: AceMq.Amqp.Keyring.KeyringBuilder.Add(AceMq.Amqp.EncryptionKey)
+    commentId: M:AceMq.Amqp.Keyring.KeyringBuilder.Add(AceMq.Amqp.EncryptionKey)
+- markdown: Adds a key that can still be read but is no longer used to encrypt.
+- code: public Keyring.KeyringBuilder Add(EncryptionKey key)
+- h4: Parameters
+- parameters:
+  - name: key
+    type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: Keyring
+      url: AceMq.Amqp.Keyring.html
+    - .
+    - text: KeyringBuilder
+      url: AceMq.Amqp.Keyring.KeyringBuilder.html
+- api3: Build()
+  id: AceMq_Amqp_Keyring_KeyringBuilder_Build
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L131
+  metadata:
+    uid: AceMq.Amqp.Keyring.KeyringBuilder.Build
+    commentId: M:AceMq.Amqp.Keyring.KeyringBuilder.Build
+- code: public IKeyring Build()
+- h4: Returns
+- parameters:
+  - type:
+    - text: IKeyring
+      url: AceMq.Amqp.IKeyring.html
+- api3: Current(EncryptionKey)
+  id: AceMq_Amqp_Keyring_KeyringBuilder_Current_AceMq_Amqp_EncryptionKey_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Encryption.cs#L124
+  metadata:
+    uid: AceMq.Amqp.Keyring.KeyringBuilder.Current(AceMq.Amqp.EncryptionKey)
+    commentId: M:AceMq.Amqp.Keyring.KeyringBuilder.Current(AceMq.Amqp.EncryptionKey)
+- markdown: Sets the key new messages are encrypted with.
+- code: public Keyring.KeyringBuilder Current(EncryptionKey key)
+- h4: Parameters
+- parameters:
+  - name: key
+    type:
+    - text: EncryptionKey
+      url: AceMq.Amqp.EncryptionKey.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: Keyring
+      url: AceMq.Amqp.Keyring.html
+    - .
+    - text: KeyringBuilder
+      url: AceMq.Amqp.Keyring.KeyringBuilder.html
+languageId: csharp
+metadata:
+  description: Builds a .

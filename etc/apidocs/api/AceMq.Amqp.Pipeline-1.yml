@@ -1,0 +1,241 @@
+### YamlMime:ApiPage
+title: Class Pipeline<T>
+body:
+- api1: Class Pipeline<T>
+  id: AceMq_Amqp_Pipeline_1
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L40
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1
+    commentId: T:AceMq.Amqp.Pipeline`1
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: A chain of steps, each on its own queue.
+- code: 'public sealed class Pipeline<T> : IDisposable'
+- h4: Type Parameters
+- parameters:
+  - name: T
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: Pipeline<T>
+    url: AceMq.Amqp.Pipeline-1.html
+- h4: Implements
+- list:
+  - text: IDisposable
+    url: https://learn.microsoft.com/dotnet/api/system.idisposable
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <p>
+
+    A message enters at the first step and moves to the next queue as each step
+
+    finishes. Every step is a queue, which is what separates this from calling three
+
+    methods in a row: a step that fails retries on its own, a slow step builds a
+
+    visible backlog instead of blocking the ones before it, and each step scales
+
+    independently.
+
+    </p>
+
+    <p>
+
+    A step returning <code>null</code> ends the message's journey there, which is how a
+
+    filter is expressed — a validation step that rejects a message stops it rather
+
+    than throwing, because being rejected is a normal outcome and a failure is not.
+
+    </p>
+- h2: Properties
+- api3: Completed
+  id: AceMq_Amqp_Pipeline_1_Completed
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L75
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.Completed
+    commentId: P:AceMq.Amqp.Pipeline`1.Completed
+- markdown: Messages that reached the end of the last step.
+- code: public long Completed { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: EndedEarly
+  id: AceMq_Amqp_Pipeline_1_EndedEarly
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L78
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.EndedEarly
+    commentId: P:AceMq.Amqp.Pipeline`1.EndedEarly
+- markdown: Messages a step stopped by returning null.
+- code: public long EndedEarly { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: Entered
+  id: AceMq_Amqp_Pipeline_1_Entered
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L72
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.Entered
+    commentId: P:AceMq.Amqp.Pipeline`1.Entered
+- markdown: Messages that entered the pipeline.
+- code: public long Entered { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: InFlight
+  id: AceMq_Amqp_Pipeline_1_InFlight
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L81
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.InFlight
+    commentId: P:AceMq.Amqp.Pipeline`1.InFlight
+- markdown: Messages somewhere between the first and last step.
+- code: public long InFlight { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- api3: Name
+  id: AceMq_Amqp_Pipeline_1_Name
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L64
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.Name
+    commentId: P:AceMq.Amqp.Pipeline`1.Name
+- code: public string Name { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: StepNames
+  id: AceMq_Amqp_Pipeline_1_StepNames
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L66
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.StepNames
+    commentId: P:AceMq.Amqp.Pipeline`1.StepNames
+- code: public IReadOnlyList<string> StepNames { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- h2: Methods
+- api3: Dispose()
+  id: AceMq_Amqp_Pipeline_1_Dispose
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L184
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.Dispose
+    commentId: M:AceMq.Amqp.Pipeline`1.Dispose
+- code: public void Dispose()
+- api3: QueueFor(string)
+  id: AceMq_Amqp_Pipeline_1_QueueFor_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L69
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.QueueFor(System.String)
+    commentId: M:AceMq.Amqp.Pipeline`1.QueueFor(System.String)
+- markdown: The queue a step reads from.
+- code: public string QueueFor(string step)
+- h4: Parameters
+- parameters:
+  - name: step
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- api3: SendAsync(T)
+  id: AceMq_Amqp_Pipeline_1_SendAsync__0_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L169
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.SendAsync(`0)
+    commentId: M:AceMq.Amqp.Pipeline`1.SendAsync(`0)
+- markdown: Puts a payload in at the first step.
+- code: public Task<string> SendAsync(T payload)
+- h4: Parameters
+- parameters:
+  - name: payload
+    type:
+    - T
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- api3: SendAsync(T, Envelope?)
+  id: AceMq_Amqp_Pipeline_1_SendAsync__0_AceMq_Amqp_Envelope_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L171
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.SendAsync(`0,AceMq.Amqp.Envelope)
+    commentId: M:AceMq.Amqp.Pipeline`1.SendAsync(`0,AceMq.Amqp.Envelope)
+- code: public Task<string> SendAsync(T payload, Envelope? envelope)
+- h4: Parameters
+- parameters:
+  - name: payload
+    type:
+    - T
+  - name: envelope
+    type:
+    - text: Envelope
+      url: AceMq.Amqp.Envelope.html
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '>'
+- api3: ToString()
+  id: AceMq_Amqp_Pipeline_1_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Pipeline.cs#L195
+  metadata:
+    uid: AceMq.Amqp.Pipeline`1.ToString
+    commentId: M:AceMq.Amqp.Pipeline`1.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: A chain of steps, each on its own queue.

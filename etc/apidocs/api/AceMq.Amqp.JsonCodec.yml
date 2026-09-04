@@ -1,0 +1,183 @@
+### YamlMime:ApiPage
+title: Class JsonCodec
+body:
+- api1: Class JsonCodec
+  id: AceMq_Amqp_JsonCodec
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L47
+  metadata:
+    uid: AceMq.Amqp.JsonCodec
+    commentId: T:AceMq.Amqp.JsonCodec
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: JSON, and the default when nothing else is chosen.
+- code: 'public sealed class JsonCodec : ICodec'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: JsonCodec
+    url: AceMq.Amqp.JsonCodec.html
+- h4: Implements
+- list:
+  - text: ICodec
+    url: AceMq.Amqp.ICodec.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h4: Extension Methods
+- list:
+  - text: CodecExtensions.Decode<T>(ICodec, byte[])
+    url: AceMq.Amqp.CodecExtensions.html#AceMq_Amqp_CodecExtensions_Decode__1_AceMq_Amqp_ICodec_System_Byte___
+- h2: Constructors
+- api3: JsonCodec()
+  id: AceMq_Amqp_JsonCodec__ctor
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L51
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.#ctor
+    commentId: M:AceMq.Amqp.JsonCodec.#ctor
+- code: public JsonCodec()
+- api3: JsonCodec(JsonSerializerOptions)
+  id: AceMq_Amqp_JsonCodec__ctor_System_Text_Json_JsonSerializerOptions_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L53
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.#ctor(System.Text.Json.JsonSerializerOptions)
+    commentId: M:AceMq.Amqp.JsonCodec.#ctor(System.Text.Json.JsonSerializerOptions)
+- code: public JsonCodec(JsonSerializerOptions options)
+- h4: Parameters
+- parameters:
+  - name: options
+    type:
+    - text: JsonSerializerOptions
+      url: https://learn.microsoft.com/dotnet/api/system.text.json.jsonserializeroptions
+- h2: Properties
+- api3: ContentType
+  id: AceMq_Amqp_JsonCodec_ContentType
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L71
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.ContentType
+    commentId: P:AceMq.Amqp.JsonCodec.ContentType
+- markdown: Content type this codec writes, and recognises on the way back.
+- code: public string ContentType { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h2: Methods
+- api3: CanDecode(string?)
+  id: AceMq_Amqp_JsonCodec_CanDecode_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L83
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.CanDecode(System.String)
+    commentId: M:AceMq.Amqp.JsonCodec.CanDecode(System.String)
+- markdown: Whether this codec can read a message with the given content type.
+- code: public bool CanDecode(string? contentType)
+- h4: Parameters
+- parameters:
+  - name: contentType
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+    - '?'
+- h4: Returns
+- parameters:
+  - type:
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+- api3: Decode(byte[], Type)
+  id: AceMq_Amqp_JsonCodec_Decode_System_Byte___System_Type_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L76
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.Decode(System.Byte[],System.Type)
+    commentId: M:AceMq.Amqp.JsonCodec.Decode(System.Byte[],System.Type)
+- code: public object Decode(byte[] body, Type target)
+- h4: Parameters
+- parameters:
+  - name: body
+    type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+  - name: target
+    type:
+    - text: Type
+      url: https://learn.microsoft.com/dotnet/api/system.type
+- h4: Returns
+- parameters:
+  - type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- api3: DefaultOptions()
+  id: AceMq_Amqp_JsonCodec_DefaultOptions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L65
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.DefaultOptions
+    commentId: M:AceMq.Amqp.JsonCodec.DefaultOptions
+- markdown: The serializer settings the library uses when none are supplied.
+- code: public static JsonSerializerOptions DefaultOptions()
+- h4: Returns
+- parameters:
+  - type:
+    - text: JsonSerializerOptions
+      url: https://learn.microsoft.com/dotnet/api/system.text.json.jsonserializeroptions
+- h4: Remarks
+- markdown: >-
+    Property names are camelCased and matched case-insensitively on the way in,
+
+    so a C# <code>OrderId</code> and a Java <code>orderId</code> are the same field on the
+
+    wire. Getting this wrong is the most common way a port stops being able to
+
+    read the other language's messages, and it is invisible until it happens.
+- api3: Encode(object)
+  id: AceMq_Amqp_JsonCodec_Encode_System_Object_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L73
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.Encode(System.Object)
+    commentId: M:AceMq.Amqp.JsonCodec.Encode(System.Object)
+- code: public byte[] Encode(object payload)
+- h4: Parameters
+- parameters:
+  - name: payload
+    type:
+    - text: object
+      url: https://learn.microsoft.com/dotnet/api/system.object
+- h4: Returns
+- parameters:
+  - type:
+    - text: byte
+      url: https://learn.microsoft.com/dotnet/api/system.byte
+    - '['
+    - ']'
+- api3: ToString()
+  id: AceMq_Amqp_JsonCodec_ToString
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Codec.cs#L87
+  metadata:
+    uid: AceMq.Amqp.JsonCodec.ToString
+    commentId: M:AceMq.Amqp.JsonCodec.ToString
+- code: public override string ToString()
+- h4: Returns
+- parameters:
+  - type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+languageId: csharp
+metadata:
+  description: JSON, and the default when nothing else is chosen.

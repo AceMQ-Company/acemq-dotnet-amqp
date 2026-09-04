@@ -1,0 +1,215 @@
+### YamlMime:ApiPage
+title: Class InMemoryIdempotencyStore
+body:
+- api1: Class InMemoryIdempotencyStore
+  id: AceMq_Amqp_InMemoryIdempotencyStore
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L62
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore
+    commentId: T:AceMq.Amqp.InMemoryIdempotencyStore
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: An idempotency store in memory, bounded by age and size.
+- code: 'public sealed class InMemoryIdempotencyStore : IIdempotencyStore'
+- h4: Inheritance
+- inheritance:
+  - text: object
+    url: https://learn.microsoft.com/dotnet/api/system.object
+  - text: InMemoryIdempotencyStore
+    url: AceMq.Amqp.InMemoryIdempotencyStore.html
+- h4: Implements
+- list:
+  - text: IIdempotencyStore
+    url: AceMq.Amqp.IIdempotencyStore.html
+- h4: Inherited Members
+- list:
+  - text: object.Equals(object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object)
+  - text: object.Equals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.equals#system-object-equals(system-object-system-object)
+  - text: object.GetHashCode()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gethashcode
+  - text: object.GetType()
+    url: https://learn.microsoft.com/dotnet/api/system.object.gettype
+  - text: object.ReferenceEquals(object, object)
+    url: https://learn.microsoft.com/dotnet/api/system.object.referenceequals
+  - text: object.ToString()
+    url: https://learn.microsoft.com/dotnet/api/system.object.tostring
+- h2: Remarks
+- markdown: >-
+    <strong>Per process, and lost on restart.</strong> It deduplicates the redeliveries
+
+    a single running consumer sees, which is most of them. It cannot deduplicate across
+
+    instances or across a restart — for that the store has to be the database the
+
+    handler already writes to, ideally in the same transaction as the work.
+- h2: Constructors
+- api3: InMemoryIdempotencyStore(TimeSpan)
+  id: AceMq_Amqp_InMemoryIdempotencyStore__ctor_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L70
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.#ctor(System.TimeSpan)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.#ctor(System.TimeSpan)
+- code: public InMemoryIdempotencyStore(TimeSpan retention)
+- h4: Parameters
+- parameters:
+  - name: retention
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- api3: InMemoryIdempotencyStore(TimeSpan, int)
+  id: AceMq_Amqp_InMemoryIdempotencyStore__ctor_System_TimeSpan_System_Int32_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L72
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.#ctor(System.TimeSpan,System.Int32)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.#ctor(System.TimeSpan,System.Int32)
+- code: public InMemoryIdempotencyStore(TimeSpan retention, int maxEntries)
+- h4: Parameters
+- parameters:
+  - name: retention
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+  - name: maxEntries
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- h2: Properties
+- api3: Count
+  id: AceMq_Amqp_InMemoryIdempotencyStore_Count
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L128
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.Count
+    commentId: P:AceMq.Amqp.InMemoryIdempotencyStore.Count
+- code: public int Count { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+- api3: Evictions
+  id: AceMq_Amqp_InMemoryIdempotencyStore_Evictions
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L131
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.Evictions
+    commentId: P:AceMq.Amqp.InMemoryIdempotencyStore.Evictions
+- markdown: Entries dropped because the store was full or they had aged out.
+- code: public long Evictions { get; }
+- h4: Property Value
+- parameters:
+  - type:
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+- h2: Methods
+- api3: ClaimAsync(string)
+  id: AceMq_Amqp_InMemoryIdempotencyStore_ClaimAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L90
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.ClaimAsync(System.String)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.ClaimAsync(System.String)
+- markdown: Takes the message. False when it is already claimed or confirmed.
+- code: public Task<bool> ClaimAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+    - '>'
+- api3: ConfirmAsync(string)
+  id: AceMq_Amqp_InMemoryIdempotencyStore_ConfirmAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L105
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.ConfirmAsync(System.String)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.ConfirmAsync(System.String)
+- markdown: Records that handling finished.
+- code: public Task ConfirmAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+- api3: ForOneDay()
+  id: AceMq_Amqp_InMemoryIdempotencyStore_ForOneDay
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L87
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.ForOneDay
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.ForOneDay
+- markdown: Keeps message ids for a day.
+- code: public static InMemoryIdempotencyStore ForOneDay()
+- h4: Returns
+- parameters:
+  - type:
+    - text: InMemoryIdempotencyStore
+      url: AceMq.Amqp.InMemoryIdempotencyStore.html
+- h4: Remarks
+- markdown: >-
+    Retention is the window duplicates are caught in. Too short and a redelivery
+
+    after a long outage is handled twice; too long and the store grows without
+
+    bound. A day covers the redeliveries a broker actually produces.
+- api3: IsConfirmedAsync(string)
+  id: AceMq_Amqp_InMemoryIdempotencyStore_IsConfirmedAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L117
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.IsConfirmedAsync(System.String)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.IsConfirmedAsync(System.String)
+- code: public Task<bool> IsConfirmedAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: bool
+      url: https://learn.microsoft.com/dotnet/api/system.boolean
+    - '>'
+- api3: ReleaseAsync(string)
+  id: AceMq_Amqp_InMemoryIdempotencyStore_ReleaseAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Idempotency.cs#L111
+  metadata:
+    uid: AceMq.Amqp.InMemoryIdempotencyStore.ReleaseAsync(System.String)
+    commentId: M:AceMq.Amqp.InMemoryIdempotencyStore.ReleaseAsync(System.String)
+- markdown: Gives the claim back, so a later attempt may take it.
+- code: public Task ReleaseAsync(string messageId)
+- h4: Parameters
+- parameters:
+  - name: messageId
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+languageId: csharp
+metadata:
+  description: An idempotency store in memory, bounded by age and size.

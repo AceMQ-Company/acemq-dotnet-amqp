@@ -1,0 +1,139 @@
+### YamlMime:ApiPage
+title: Interface IOutboxStore
+body:
+- api1: Interface IOutboxStore
+  id: AceMq_Amqp_IOutboxStore
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L81
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore
+    commentId: T:AceMq.Amqp.IOutboxStore
+- facts:
+  - name: Namespace
+    value:
+      text: AceMq.Amqp
+      url: AceMq.Amqp.html
+  - name: Assembly
+    value: AceMq.Amqp.dll
+- markdown: Where outbox records are kept between being written and being published.
+- code: public interface IOutboxStore
+- h2: Remarks
+- markdown: >-
+    The store is expected to be the same database as the business data, written in
+
+    the same transaction. That is the whole point: a record and the message announcing
+
+    it either both exist or neither does. A store in a different database is not an
+
+    outbox, it is a second thing that can fail.
+- h2: Methods
+- api3: AddAsync(OutboxRecord)
+  id: AceMq_Amqp_IOutboxStore_AddAsync_AceMq_Amqp_OutboxRecord_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L83
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore.AddAsync(AceMq.Amqp.OutboxRecord)
+    commentId: M:AceMq.Amqp.IOutboxStore.AddAsync(AceMq.Amqp.OutboxRecord)
+- code: Task AddAsync(OutboxRecord record)
+- h4: Parameters
+- parameters:
+  - name: record
+    type:
+    - text: OutboxRecord
+      url: AceMq.Amqp.OutboxRecord.html
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+- api3: ClaimBatchAsync(int, TimeSpan)
+  id: AceMq_Amqp_IOutboxStore_ClaimBatchAsync_System_Int32_System_TimeSpan_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L89
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore.ClaimBatchAsync(System.Int32,System.TimeSpan)
+    commentId: M:AceMq.Amqp.IOutboxStore.ClaimBatchAsync(System.Int32,System.TimeSpan)
+- markdown: >-
+    Takes up to <code class="paramref">batchSize</code> unpublished records and holds them
+
+    for <code class="paramref">lease</code>, so two relays do not publish the same message.
+- code: Task<IReadOnlyList<OutboxRecord>> ClaimBatchAsync(int batchSize, TimeSpan lease)
+- h4: Parameters
+- parameters:
+  - name: batchSize
+    type:
+    - text: int
+      url: https://learn.microsoft.com/dotnet/api/system.int32
+  - name: lease
+    type:
+    - text: TimeSpan
+      url: https://learn.microsoft.com/dotnet/api/system.timespan
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: IReadOnlyList
+      url: https://learn.microsoft.com/dotnet/api/system.collections.generic.ireadonlylist-1
+    - <
+    - text: OutboxRecord
+      url: AceMq.Amqp.OutboxRecord.html
+    - '>'
+    - '>'
+- api3: MarkFailedAsync(string, string)
+  id: AceMq_Amqp_IOutboxStore_MarkFailedAsync_System_String_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L93
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore.MarkFailedAsync(System.String,System.String)
+    commentId: M:AceMq.Amqp.IOutboxStore.MarkFailedAsync(System.String,System.String)
+- code: Task MarkFailedAsync(string id, string reason)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+  - name: reason
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+- api3: MarkPublishedAsync(string)
+  id: AceMq_Amqp_IOutboxStore_MarkPublishedAsync_System_String_
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L91
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore.MarkPublishedAsync(System.String)
+    commentId: M:AceMq.Amqp.IOutboxStore.MarkPublishedAsync(System.String)
+- code: Task MarkPublishedAsync(string id)
+- h4: Parameters
+- parameters:
+  - name: id
+    type:
+    - text: string
+      url: https://learn.microsoft.com/dotnet/api/system.string
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task
+- api3: PendingCountAsync()
+  id: AceMq_Amqp_IOutboxStore_PendingCountAsync
+  src: https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/src/AceMq.Amqp/Outbox.cs#L95
+  metadata:
+    uid: AceMq.Amqp.IOutboxStore.PendingCountAsync
+    commentId: M:AceMq.Amqp.IOutboxStore.PendingCountAsync
+- code: Task<long> PendingCountAsync()
+- h4: Returns
+- parameters:
+  - type:
+    - text: Task
+      url: https://learn.microsoft.com/dotnet/api/system.threading.tasks.task-1
+    - <
+    - text: long
+      url: https://learn.microsoft.com/dotnet/api/system.int64
+    - '>'
+languageId: csharp
+metadata:
+  description: Where outbox records are kept between being written and being published.
