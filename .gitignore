@@ -6,3 +6,6 @@ obj/
 .DS_Store
 
 site/
+
+# DocFX metadata, regenerated from the XML documentation on every build.
+etc/apidocs/api/
