@@ -298,15 +298,20 @@ public sealed class ReliabilityTests : IDisposable
         await mq.DeclareQueueAsync(_q);
 
         var finished = 0;
+        // A local signal rather than the in-flight count: this test asserts on its
+        // own handler, and waiting on a counter would couple it to whatever else is
+        // running in the process.
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var consumer = await mq.ConsumeAsync<string>(_q, async _ =>
         {
+            started.TrySetResult(true);
             await Task.Delay(200);
             Interlocked.Increment(ref finished);
             return Ack.Accept();
         });
 
         await mq.Publisher<string>("", _q).SendAsync("slow");
-        await Eventually(() => mq.InFlight == 1, "the handler to start");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // Disposing here would abandon a handler mid-flight: its side effects have
         // happened, its message has not been acknowledged, and it comes back.
@@ -324,14 +329,16 @@ public sealed class ReliabilityTests : IDisposable
         using var mq = await AceMqConnection.ConnectAsync(_url);
         await mq.DeclareQueueAsync(_q);
 
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var consumer = await mq.ConsumeAsync<string>(_q, async _ =>
         {
+            started.TrySetResult(true);
             await Task.Delay(3000);
             return Ack.Accept();
         });
 
         await mq.Publisher<string>("", _q).SendAsync("very slow");
-        await Eventually(() => mq.InFlight == 1, "the handler to start");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // False rather than an exception: shutting down anyway is a legitimate
         // choice, and the caller needs to know which one it is making.

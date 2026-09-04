@@ -45,6 +45,11 @@ public sealed class AceMqConnection : IDisposable
     private readonly List<IHealthContributor> _health = new List<IHealthContributor>();
     private volatile TaskCompletionSource<bool>? _consumingPaused;
     private volatile bool _publishingPaused;
+
+    // This connection's own in-flight count, not the process-wide gauge. Two
+    // connections in one process must be drainable independently; waiting on the
+    // global number makes draining one block on the other's traffic.
+    private long _inFlightHandlers;
     private bool _disposed;
 
     private AceMqConnection(
@@ -255,6 +260,7 @@ public sealed class AceMqConnection : IDisposable
                 using var span = AceMqTelemetry.StartConsume(queue, delivery.Headers);
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 AceMqTelemetry.EnteredHandler();
+                Interlocked.Increment(ref _inFlightHandlers);
 
                 Ack ack;
                 try
@@ -274,6 +280,7 @@ public sealed class AceMqConnection : IDisposable
                 finally
                 {
                     AceMqTelemetry.LeftHandler();
+                    Interlocked.Decrement(ref _inFlightHandlers);
                 }
 
                 // A policy turns "retry after a fixed delay forever" into a bounded
@@ -347,8 +354,8 @@ public sealed class AceMqConnection : IDisposable
 
     public bool IsPublishingPaused => _publishingPaused;
 
-    /// <summary>Messages currently inside a handler.</summary>
-    public long InFlight => AceMqTelemetry.InFlight;
+    /// <summary>Messages currently inside a handler on this connection.</summary>
+    public long InFlight => Interlocked.Read(ref _inFlightHandlers);
 
     /// <summary>
     /// Pauses consuming and waits for handlers already running to finish.
