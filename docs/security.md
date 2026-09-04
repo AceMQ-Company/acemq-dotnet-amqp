@@ -92,9 +92,23 @@ acemq-certs --out certs --broker localhost --days 30
 work: it fails with an unhandled `NullReferenceException`. The feed is a static
 directory tree serving only the flat container, and the tool installer wants
 resources it does not have — the same limitation that makes `dotnet package search`
-fail, except it surfaces as a crash rather than a message. Downloading the package
-first and pointing `--add-source` at the folder works, which is what the release
-pipeline does to verify it.
+fail, except it surfaces as a crash rather than a message.
+
+Downloading the package first is the answer, with one catch: `--add-source` *adds
+to* the configured sources rather than replacing them, so if a `nuget.config`
+anywhere above names the feed, the installer still queries it and still crashes.
+Use `--configfile` with a config that names only the local folder:
+
+```bash
+curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.6/acemq.amqp.devcerts.0.1.6.nupkg
+cat > tool.config <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration><packageSources><clear />
+  <add key="local" value="." />
+</packageSources></configuration>
+XML
+dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.6 --configfile tool.config
+```
 
 Ordinary `PackageReference` restores are unaffected; this applies only to installing
 tools.

@@ -209,19 +209,28 @@ jobs:
             --package-directory "$RUNNER_TEMP/verify-packages"
           dotnet add package AceMq.Amqp.Diagnostics --version "$VERSION" \
             --package-directory "$RUNNER_TEMP/verify-packages"
-          # The tool is downloaded and then installed from a local folder, because
-          # `dotnet tool install --add-source` against this feed fails with an
-          # unhandled NullReferenceException. A static feed serves only the flat
-          # container, and the tool installer wants resources it does not have --
-          # the same limitation that makes `dotnet package search` fail, surfacing
-          # as a crash rather than a message. Downloading first is what a consumer
-          # has to do too, and it is documented as such.
+          # The tool is downloaded and installed from a local folder, with a config
+          # that names *only* that folder.
+          #
+          # `dotnet tool install` against this feed dies with an unhandled
+          # NullReferenceException: a static feed serves only the flat container and
+          # the tool installer wants resources it does not have -- the same
+          # limitation that makes `dotnet package search` fail, surfacing as a crash
+          # rather than a message. --add-source is not enough on its own, because it
+          # *adds to* the configured sources rather than replacing them, so the feed
+          # is still queried and still crashes. --configfile is what excludes it.
           mkdir -p "$RUNNER_TEMP/tool-source"
           curl -fsSL -o "$RUNNER_TEMP/tool-source/AceMq.Amqp.DevCerts.$VERSION.nupkg" \
             "https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/$VERSION/acemq.amqp.devcerts.$VERSION.nupkg"
+          cat > "$RUNNER_TEMP/tool-source/nuget.config" <<XML
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration><packageSources><clear />
+            <add key="local" value="$RUNNER_TEMP/tool-source" />
+          </packageSources></configuration>
+          XML
           dotnet tool install --tool-path "$RUNNER_TEMP/verify-tool" \
             AceMq.Amqp.DevCerts --version "$VERSION" \
-            --add-source "$RUNNER_TEMP/tool-source"
+            --configfile "$RUNNER_TEMP/tool-source/nuget.config"
           "$RUNNER_TEMP/verify-tool/acemq-certs" --out "$RUNNER_TEMP/verify-certs" --days 1
           test -f "$RUNNER_TEMP/verify-certs/ca.crt"
           echo "$VERSION restores from a clean cache."
