@@ -6,8 +6,6 @@
     <LangVersion>latest</LangVersion>
     <PackageId>AceMq.Amqp.RabbitMq</PackageId>
     <Description>RabbitMQ transport for AceMq.Amqp.</Description>
-    <Authors>AceMQ</Authors>
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>

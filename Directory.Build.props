@@ -1,0 +1,44 @@
+<Project>
+
+  <!--
+    Shared version and package metadata for every project in the repository.
+
+    The version lives here and nowhere else, so a release is a one-line change
+    rather than an edit per project that eventually drifts. The two packages are
+    versioned together on purpose: the transport is useless without the core, and
+    a consumer pairing 0.1.3 of one with 0.1.0 of the other is a support question
+    nobody needs.
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+
+    <Authors>AceMQ</Authors>
+    <Company>AceMQ</Company>
+    <Product>AceMQ for .NET</Product>
+    <Copyright>Copyright 2026 AceMQ</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://acemq.org/acemq-dotnet-amqp/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AceMQ-Company/acemq-dotnet-amqp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>amqp;rabbitmq;messaging;queue;vb.net</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!--
+      A package that cannot be stepped into is a package people guess about. The
+      SDK's built-in source link resolves the GitHub URLs; the symbols ride along
+      in a .snupkg beside the package.
+    -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <!-- The readme shown on the package page has to be inside the package. -->
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)LICENSE" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
+</Project>

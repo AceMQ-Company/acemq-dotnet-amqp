@@ -6,8 +6,6 @@
     <LangVersion>latest</LangVersion>
     <PackageId>AceMq.Amqp</PackageId>
     <Description>AMQP for C# and VB.NET: reliable publishing with confirms, consumers with explicit dispositions, and the AceMQ message envelope.</Description>
-    <Authors>AceMQ</Authors>
-    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Documented where it is not obvious, rather than on every member. -->
     <NoWarn>$(NoWarn);CS1591</NoWarn>

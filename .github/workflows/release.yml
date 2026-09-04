@@ -1,0 +1,288 @@
+# Publish a release into the Git-hosted NuGet feed at AceMQ-Company/nuget, served
+# over GitHub Pages at https://acemq.org/nuget/.
+#
+# Triggered by a tag:  git tag v0.1.0 && git push origin v0.1.0
+#
+# There is no push endpoint: the feed is a static directory tree, so publishing is
+# a commit to another repository. The built-in GITHUB_TOKEN is scoped to this
+# repository and cannot write there, so each target gets its own **deploy key**:
+#
+#   NUGET_REPO_DEPLOY_KEY    -> AceMQ-Company/nuget
+#   LANDING_PAGE_DEPLOY_KEY  -> AceMQ-Company/AceMQ-Company.github.io
+#
+# A deploy key can write to exactly one repository and nothing else, which a
+# personal access token cannot express. It belongs to the repository rather than to
+# a person, so it survives them leaving and cannot be used as them, and it does not
+# expire, so a release cannot fail at three in the morning because a token aged out.
+#
+# Rotating one: generate a key pair, replace the deploy key on the target
+# repository, then update the secret here. Both are listed under the target
+# repository's Settings -> Deploy keys.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, without the leading v (e.g. 0.1.0)'
+        required: true
+
+# Least privilege for every job that does not ask for more. A job needing more
+# declares it itself, so the privileges are reviewable in the file rather than
+# inherited from an organisation setting somebody can change later.
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      published: ${{ steps.push.outputs.published }}
+
+    # A release runs the integration suite. It is the one moment where waiting for
+    # the slow tests is obviously worth it: this is the artifact people depend on.
+    services:
+      rabbitmq:
+        image: rabbitmq:4-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Work out the version
+        id: version
+        env:
+          # Through the environment rather than interpolated into the script. A tag
+          # name and a dispatch input are both caller-controlled text, and inlining
+          # either one lets whoever writes it run shell here.
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            VERSION="$INPUT_VERSION"
+          else
+            VERSION="${TAG_NAME#v}"
+          fi
+          # An allow-list, not a deny-list. The version reaches a file path, a
+          # commit message and a package id, so anything that is not plainly a
+          # version number is refused rather than escaped.
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "::error::not a release version: '$VERSION'"
+            exit 1
+          fi
+          # The line stays on 0.1.x until that is deliberately changed. Without
+          # this, a mistyped tag ships a 0.2.0 or a 1.0.0 that cannot be recalled --
+          # a published version is permanent even on a feed we control, because
+          # somebody's lockfile already has it. Lift this when the line moves on.
+          case "$VERSION" in
+            0.1.*) ;;
+            *)
+              echo "::error::this library releases 0.1.x only; '$VERSION' needs the guard in release.yml lifted first"
+              exit 1
+              ;;
+          esac
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "publishing $VERSION"
+
+      - name: Build
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: dotnet build --configuration Release "-p:Version=$VERSION"
+
+      - name: Test
+        run: >
+          dotnet test tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj
+          --configuration Release --no-build --verbosity normal
+
+      - name: Test against RabbitMQ
+        env:
+          ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
+        run: >
+          dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
+          --configuration Release --verbosity normal
+
+      - name: Pack
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: >
+          dotnet pack --configuration Release --no-build
+          "-p:Version=$VERSION"
+          --output "$RUNNER_TEMP/packages"
+
+      - name: Check out the NuGet feed
+        uses: actions/checkout@v4
+        with:
+          repository: AceMQ-Company/nuget
+          # A deploy key rather than a token: write access to this repository
+          # alone, and to nothing else in the organisation.
+          ssh-key: ${{ secrets.NUGET_REPO_DEPLOY_KEY }}
+          path: nuget-feed
+
+      - name: Add the packages to it
+        # Cloned first, then added to, so the version indexes merge with what is
+        # already published. Generating them from only this release would leave
+        # earlier versions on disk but invisible to any client that reads them.
+        working-directory: nuget-feed
+        run: ./scripts/publish.sh "$RUNNER_TEMP"/packages/*.nupkg
+
+      # `published` is the line between "nothing happened" and "something is out
+      # there". Everything before this leaves the feed untouched; everything after
+      # is operating on a version consumers can already resolve.
+      - name: Commit and push
+        id: push
+        working-directory: nuget-feed
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          git config user.name "acemq-release"
+          git config user.email "noreply@acemq.org"
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "nothing to publish; $VERSION may already exist"
+            # Already in the feed, so from a consumer's point of view this version
+            # is published. Reporting otherwise would make a re-run of a good
+            # release look like a release that never happened.
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -A
+          git commit -m "Publish AceMq.Amqp $VERSION"
+          git push origin HEAD
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      # The only check that asks what a consumer will actually get. Restoring from
+      # an empty package cache, against the public feed, catches a release whose
+      # artifacts do not match what was pushed -- a failure that otherwise surfaces
+      # days later in somebody else's build.
+      - name: Verify the published version restores
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          FEED="https://acemq.org/nuget"
+          INDEX="$FEED/v3/flatcontainer/acemq.amqp/$VERSION/acemq.amqp.$VERSION.nupkg"
+          echo "Waiting for GitHub Pages to serve $VERSION"
+          for attempt in $(seq 1 20); do
+            # -L because the organisation has a custom domain and every github.io
+            # URL answers with a redirect. NuGet follows it; a bare curl does not.
+            code=$(curl -sL -o /dev/null -w '%{http_code}' "$INDEX")
+            [ "$code" = "200" ] && break
+            echo "  attempt $attempt: HTTP $code"
+            sleep 15
+          done
+          if [ "$code" != "200" ]; then
+            echo "::error::$VERSION was pushed but is not being served at $INDEX"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/verify" && cd "$RUNNER_TEMP/verify"
+          cat > nuget.config <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="acemq" value="https://acemq.org/nuget/index.json" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+          </configuration>
+          XML
+          dotnet new classlib -n Verify -o . --force
+          # An empty package cache, so nothing can resolve from what this build
+          # just produced. A release that only works on the machine that made it is
+          # the failure being guarded against.
+          dotnet add package AceMq.Amqp --version "$VERSION" \
+            --package-directory "$RUNNER_TEMP/verify-packages"
+          dotnet add package AceMq.Amqp.RabbitMq --version "$VERSION" \
+            --package-directory "$RUNNER_TEMP/verify-packages"
+          echo "$VERSION restores from a clean cache."
+
+      - name: Where it landed
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          echo "Published AceMq.Amqp and AceMq.Amqp.RabbitMq $VERSION"
+          echo "Feed: https://acemq.org/nuget/"
+
+  # The GitHub release is what people subscribe to. Created after the feed push, so
+  # it never advertises a version that failed to publish.
+  announce:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "AceMQ for .NET $VERSION.
+
+          \`\`\`bash
+          dotnet nuget add source https://acemq.org/nuget/index.json --name acemq
+          dotnet add package AceMq.Amqp --version $VERSION
+          dotnet add package AceMq.Amqp.RabbitMq --version $VERSION
+          \`\`\`
+
+          Documentation: https://acemq.org/acemq-dotnet-amqp/" \
+            || echo "release v$VERSION already exists"
+
+  # The organisation landing page shows the current release on its .NET card. Left
+  # to a manual step it drifts, which is worse than saying nothing: a reader copies
+  # a version that is no longer current.
+  landing-page:
+    needs: publish
+    if: needs.publish.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: AceMQ-Company/AceMQ-Company.github.io
+          ssh-key: ${{ secrets.LANDING_PAGE_DEPLOY_KEY }}
+      - name: Show this release on the landing page
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          python3 - "$VERSION" <<'PYTHON'
+          import pathlib, re, sys
+          version = sys.argv[1]
+          path = pathlib.Path("index.html")
+          text = path.read_text()
+          # The .NET card's badge, and nothing else on the page. Anchored on the
+          # repository link so a version elsewhere cannot be caught by accident.
+          pattern = re.compile(
+              r'(acemq-dotnet-amqp">AceMQ for \.NET</a>\s*\n\s*<span class="badge)'
+              r'[^>]*>[^<]*(</span>)')
+          updated, n = pattern.subn(
+              lambda m: f'{m.group(1) } live">{version}{m.group(2)}', text)
+          if n == 0:
+              print("::warning::the .NET card was not found; leaving the page alone")
+          elif updated != text:
+              path.write_text(updated)
+              print(f"the .NET card now shows {version}")
+          PYTHON
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "acemq-release"
+            git config user.email "noreply@acemq.org"
+            git commit -am "AceMQ for .NET $VERSION"
+            git push origin HEAD
+          else
+            echo "landing page already current"
+          fi
