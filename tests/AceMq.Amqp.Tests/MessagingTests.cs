@@ -35,9 +35,11 @@ public sealed class MessagingTests : IDisposable
 {
     private readonly string _url = "memory://" + Guid.NewGuid().ToString("N");
 
-    public MessagingTests() => InMemoryTransport.Reset();
-
-    public void Dispose() => InMemoryTransport.Reset();
+    // No InMemoryTransport.Reset() here. Every test names its own broker after a
+    // fresh guid, which already isolates it; Reset clears every broker in the
+    // process, and xUnit runs test classes in parallel, so calling it wipes another
+    // class's broker out from under a test that is still running.
+    public void Dispose() { }
 
     private static async Task<T> Eventually<T>(Func<T?> probe, string what) where T : class
     {

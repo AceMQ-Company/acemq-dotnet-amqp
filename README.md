@@ -17,6 +17,13 @@ native API rather than a transliterated Java one.
 | `IPublisher<T>` | Publishing with confirms, back pressure, unroutable messages reported |
 | `ConsumeAsync<T>` | Handlers returning a disposition: accept, retry, dead-letter, release |
 | `ICodec` | JSON by default, camelCase on the wire so C# and Java agree; raw bytes available |
+| `Topology` | exchanges, queues and dead-letter wiring declared as one unit |
+| `Requester` / `Responder` | request and reply, correlated on a shared reply queue |
+| `OrderedQueue<T>` | order per key across partitions; a partition halts rather than reorder |
+| `Pipeline<T>` | steps on their own queues, type-checked against each other |
+| `OutboxRelay` | publish what was written in the same transaction as your data |
+| `Replay` | put dead-lettered messages back |
+| `StreamReader<T>` | read a stream from an offset |
 | `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |
 | `InMemoryTransport` | An in-process broker for tests, routing the way RabbitMQ routes |
 | `AceHeaders`, `Envelope` | The header names and the envelope, pinned by conformance tests |

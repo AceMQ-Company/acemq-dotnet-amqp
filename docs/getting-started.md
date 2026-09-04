@@ -1,8 +1,7 @@
 # Getting started
 
-> **Pre-1.0, and not published yet.** The library publishes and consumes over a real
-> broker today, and the tests pass. What it does not have is a release: there is no
-> package on any feed yet.
+> **Pre-1.0.** The library works against a real broker and the tests pass. The API is
+> still free to change before 1.0.
 
 ## Install
 
@@ -81,7 +80,10 @@ missing reference the compiler tells you about.
 
 - [Publishing](publishing.md) — confirms, unroutable messages, options
 - [Consuming](consuming.md) — dispositions, retries, dead-lettering
-- [Exchanges, queues and bindings](topology.md) — routing and queue types
+- [Exchanges, queues and bindings](topology.md) — routing, queue types, dead-letter wiring
+- [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
+- [Request and reply](request-reply.md) — round trips over a one-way medium
+- [Streams](streams.md) — reading from an offset
 - [Testing](testing.md) — the in-memory broker, and its limits
 - [The envelope](envelope.md) — what travels with every message
 - [C#](csharp.md) and [VB.NET](vbnet.md) — the same library from either language

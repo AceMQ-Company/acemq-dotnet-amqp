@@ -255,7 +255,9 @@ public sealed class InMemoryTransport : ITransport
         }
 
         public Task<ISubscription> SubscribeAsync(
-            string queue, int prefetch, Func<InboundDelivery, Task<Ack>> handler,
+            string queue, int prefetch,
+            IReadOnlyDictionary<string, object>? arguments,
+            Func<InboundDelivery, Task<Ack>> handler,
             CancellationToken cancellationToken)
         {
             var q = _broker.Queues.GetOrAdd(queue, _ => new Queue());
@@ -263,6 +265,19 @@ public sealed class InMemoryTransport : ITransport
             lock (_subscriptions) _subscriptions.Add(subscription);
             subscription.Start();
             return Task.FromResult<ISubscription>(subscription);
+        }
+
+        public async Task<InboundDelivery?> ReceiveAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var q = _broker.Queues.GetOrAdd(queue, _ => new Queue());
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                if (q.TryDequeue(out var delivery)) return delivery;
+                if (DateTime.UtcNow >= deadline) return null;
+                await Task.Delay(5, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken) =>

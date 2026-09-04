@@ -46,6 +46,14 @@ jobs:
       - name: Compile and run the VB.NET example
         run: dotnet run --project examples/vb --configuration Release
 
+      - name: Audit the public API for VB
+        # VB is case-insensitive, has no ref struct or Span<T>, and resolves optional
+        # arguments differently. Each is a compile error for a VB consumer that C#
+        # never sees, so the surface is checked by reflection rather than by eye --
+        # and the audit self-checks against a deliberately bad type, because a rule
+        # that never fires is indistinguishable from one that is not running.
+        run: dotnet run --project tools/vb-audit --configuration Release
+
       - name: Verify both assemblies target netstandard2.0
         # The reach promise: .NET Framework 4.6.2+ as well as modern .NET. A
         # retarget would quietly drop the consumers this library exists to serve --

@@ -134,11 +134,23 @@ public sealed class AceMqConnection : IDisposable
     public IPublisher<T> Publisher<T>(string exchange, string routingKey) =>
         Publisher<T>(exchange, routingKey, PublishOptions.Defaults());
 
-    public IPublisher<T> Publisher<T>(string exchange, string routingKey, PublishOptions options)
+    public IPublisher<T> Publisher<T>(string exchange, string routingKey, PublishOptions options) =>
+        Publisher<T>(exchange, routingKey, options, null);
+
+    /// <summary>
+    /// A publisher whose messages name a queue to reply on.
+    /// </summary>
+    /// <remarks>
+    /// Used by <see cref="RequesterAsync"/>. A responder answers to whatever a
+    /// request names here, so a request published without one cannot be answered.
+    /// </remarks>
+    public IPublisher<T> Publisher<T>(
+        string exchange, string routingKey, PublishOptions options, string? replyTo)
     {
         EnsureOpen();
         var publisher = new Publisher<T>(
-            _connection, _codec, exchange, routingKey, options, _inFlight, _config.ConfirmTimeout);
+            _connection, _codec, exchange, routingKey, options, _inFlight,
+            _config.ConfirmTimeout, replyTo);
         lock (_owned) _owned.Add(publisher);
         return publisher;
     }
@@ -147,8 +159,26 @@ public sealed class AceMqConnection : IDisposable
     public Task<IMessageConsumer> ConsumeAsync<T>(string queue, Func<IMessage<T>, Task<Ack>> handler) =>
         ConsumeAsync(queue, ConsumerOptions.Defaults(), handler);
 
-    public async Task<IMessageConsumer> ConsumeAsync<T>(
-        string queue, ConsumerOptions options, Func<IMessage<T>, Task<Ack>> handler)
+    public Task<IMessageConsumer> ConsumeAsync<T>(
+        string queue, ConsumerOptions options, Func<IMessage<T>, Task<Ack>> handler) =>
+        ConsumeCoreAsync(queue, options, null, handler);
+
+    /// <summary>Consumes a stream queue from a chosen offset.</summary>
+    internal Task<IMessageConsumer> ConsumeStreamAsync<T>(
+        string queue, ConsumerOptions options, StreamOffset offset,
+        Func<IMessage<T>, Task<Ack>> handler) =>
+        // x-stream-offset is a consumer argument rather than a queue argument: two
+        // readers of the same stream sit at different offsets, so it cannot belong
+        // to the queue.
+        ConsumeCoreAsync(
+            queue, options,
+            new Dictionary<string, object> { ["x-stream-offset"] = offset.Value },
+            handler);
+
+    private async Task<IMessageConsumer> ConsumeCoreAsync<T>(
+        string queue, ConsumerOptions options,
+        IReadOnlyDictionary<string, object>? consumerArguments,
+        Func<IMessage<T>, Task<Ack>> handler)
     {
         EnsureOpen();
         if (handler == null) throw new ArgumentNullException(nameof(handler));
@@ -169,7 +199,7 @@ public sealed class AceMqConnection : IDisposable
         var attempts = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
 
         var subscription = await _connection.SubscribeAsync(
-            queue, options.PrefetchCount,
+            queue, options.PrefetchCount, consumerArguments,
             async delivery =>
             {
                 Envelope envelope;
@@ -219,6 +249,170 @@ public sealed class AceMqConnection : IDisposable
         lock (_owned) _owned.Add(consumer);
         return consumer;
     }
+
+    /// <summary>Applies a topology, declaring whatever is missing.</summary>
+    public async Task<TopologyPlan> ApplyAsync(Topology topology) =>
+        await ApplyAsync(topology, ApplyMode.Declare).ConfigureAwait(false);
+
+    /// <summary>
+    /// Applies a topology, or reports what applying it would do.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ApplyMode.DryRun"/> asks the broker what already exists and changes
+    /// nothing, which is what makes a topology reviewable before a deployment rather
+    /// than after it. Exchanges and bindings cannot be inspected over AMQP, so they
+    /// are reported as <see cref="TopologyActionKind.Unknown"/> rather than guessed
+    /// at — saying "would create" about something that already exists is the kind of
+    /// plausible-looking output that stops being read.
+    /// </remarks>
+    public async Task<TopologyPlan> ApplyAsync(Topology topology, ApplyMode mode)
+    {
+        EnsureOpen();
+        if (topology == null) throw new ArgumentNullException(nameof(topology));
+
+        var actions = new List<TopologyAction>();
+        var dryRun = mode == ApplyMode.DryRun;
+
+        foreach (var exchange in topology.Exchanges)
+        {
+            actions.Add(new TopologyAction(
+                dryRun ? TopologyActionKind.Unknown : TopologyActionKind.Create,
+                $"exchange {exchange.Name} ({exchange.Type})"));
+            if (!dryRun)
+            {
+                await _connection.DeclareExchangeAsync(
+                    exchange.Name, exchange.Type, exchange.Durable, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        foreach (var queue in topology.Queues)
+        {
+            var exists = await _connection.QueueExistsAsync(queue.Name, CancellationToken.None)
+                .ConfigureAwait(false);
+            actions.Add(new TopologyAction(
+                exists ? TopologyActionKind.Present : TopologyActionKind.Create,
+                $"queue {queue.Name} ({queue.Type.ToString().ToLowerInvariant()})"));
+            if (!dryRun)
+            {
+                await _connection.DeclareQueueAsync(
+                    queue.Name, queue.Type, queue.Durable,
+                    queue.Arguments.Count == 0 ? null : queue.Arguments, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        foreach (var binding in topology.Bindings)
+        {
+            actions.Add(new TopologyAction(
+                dryRun ? TopologyActionKind.Unknown : TopologyActionKind.Create,
+                $"bind {binding.Queue} to {binding.Exchange} on '{binding.RoutingKey}'"));
+            if (!dryRun)
+            {
+                await _connection.BindQueueAsync(
+                    binding.Queue, binding.Exchange, binding.RoutingKey, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        return TopologyPlan.Of(actions);
+    }
+
+    /// <summary>Starts a requester, with its own reply queue.</summary>
+    public async Task<Requester> RequesterAsync()
+    {
+        EnsureOpen();
+        var requester = await Requester.StartAsync(this, _codec).ConfigureAwait(false);
+        lock (_owned) _owned.Add(requester);
+        return requester;
+    }
+
+    /// <summary>Answers requests arriving on a queue.</summary>
+    public Task<Responder> RespondAsync<TRequest, TResponse>(
+        string queue, Func<TRequest, Task<TResponse>> handler) =>
+        RespondAsync(queue, ConsumerOptions.Defaults(), handler);
+
+    public async Task<Responder> RespondAsync<TRequest, TResponse>(
+        string queue, ConsumerOptions options, Func<TRequest, Task<TResponse>> handler)
+    {
+        EnsureOpen();
+        var responder = await Responder
+            .StartAsync(this, _codec, queue, options, handler).ConfigureAwait(false);
+        lock (_owned) _owned.Add(responder);
+        return responder;
+    }
+
+    /// <summary>A set of queues that keep order within a key.</summary>
+    public OrderedQueueBuilder<T> Ordered<T>(string name)
+    {
+        EnsureOpen();
+        return new OrderedQueueBuilder<T>(this, name);
+    }
+
+    /// <summary>A chain of steps, each on its own queue.</summary>
+    public PipelineBuilder<T, T> Pipeline<T>(string name)
+    {
+        EnsureOpen();
+        return new PipelineBuilder<T, T>(
+            this, name, new List<PipelineStep>(), _codec);
+    }
+
+    /// <summary>Publishes what an outbox store has been given.</summary>
+    public OutboxRelay Outbox(IOutboxStore store)
+    {
+        EnsureOpen();
+        var relay = new OutboxRelay(this, store);
+        lock (_owned) _owned.Add(relay);
+        return relay;
+    }
+
+    /// <summary>Reads a stream queue.</summary>
+    public StreamReader<T> Stream<T>(string queue)
+    {
+        EnsureOpen();
+        return new StreamReader<T>(this, queue);
+    }
+
+    /// <summary>
+    /// Declares a stream queue, optionally bounded by age or size.
+    /// </summary>
+    /// <remarks>
+    /// A stream keeps everything written to it until one of these limits removes it,
+    /// so declaring one without a limit is declaring a queue that grows until the
+    /// disk is full.
+    /// </remarks>
+    public Task<AceMqConnection> DeclareStreamAsync(
+        string name, TimeSpan? maxAge, long? maxLengthBytes)
+    {
+        var arguments = new Dictionary<string, object>();
+        if (maxAge.HasValue)
+        {
+            arguments["x-max-age"] =
+                ((long)maxAge.Value.TotalSeconds)
+                    .ToString(System.Globalization.CultureInfo.InvariantCulture) + "s";
+        }
+        if (maxLengthBytes.HasValue) arguments["x-max-length-bytes"] = maxLengthBytes.Value;
+        return DeclareQueueAsync(name, QueueType.Stream, arguments);
+    }
+
+    /// <summary>Moves messages off a queue and republishes them.</summary>
+    public Replay Replay(string queue)
+    {
+        EnsureOpen();
+        return new Replay(_connection, queue);
+    }
+
+    /// <summary>
+    /// The underlying transport connection, for anything this library does not expose.
+    /// </summary>
+    /// <remarks>
+    /// An escape hatch, and deliberately a typed one: cast it to the transport's own
+    /// connection type to reach the client underneath. A library without a way down
+    /// to the driver makes every gap in its own API a blocking one, and gaps are
+    /// certain in a pre-1.0 library. Using this ties your code to a particular
+    /// transport, which is the trade being offered rather than hidden.
+    /// </remarks>
+    public ITransportConnection Transport => _connection;
 
     private void EnsureOpen()
     {

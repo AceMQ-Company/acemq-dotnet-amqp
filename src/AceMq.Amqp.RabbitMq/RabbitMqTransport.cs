@@ -210,7 +210,9 @@ public sealed class RabbitMqTransport : ITransport
         }
 
         public async Task<ISubscription> SubscribeAsync(
-            string queue, int prefetch, Func<InboundDelivery, Task<Ack>> handler,
+            string queue, int prefetch,
+            IReadOnlyDictionary<string, object>? arguments,
+            Func<InboundDelivery, Task<Ack>> handler,
             CancellationToken cancellationToken)
         {
             var channel = await _connection.CreateChannelAsync(
@@ -284,12 +286,57 @@ public sealed class RabbitMqTransport : ITransport
                 }
             };
 
+            Dictionary<string, object?>? consumerArguments = null;
+            if (arguments != null && arguments.Count > 0)
+            {
+                consumerArguments = new Dictionary<string, object?>();
+                foreach (var pair in arguments) consumerArguments[pair.Key] = pair.Value;
+            }
+
             var tag = await channel.BasicConsumeAsync(
                 queue, autoAck: false, consumerTag: string.Empty, noLocal: false,
-                exclusive: false, arguments: null, consumer: consumer,
+                exclusive: false, arguments: consumerArguments, consumer: consumer,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             return new Subscription(queue, channel, tag);
+        }
+
+        /// <summary>Pulls one message with basic.get, acknowledging it.</summary>
+        /// <remarks>
+        /// basic.get rather than a subscription, because a replay has to take a fixed
+        /// number of messages and stop. A subscription would immediately be handed the
+        /// messages the replay had just republished.
+        /// </remarks>
+        public async Task<InboundDelivery?> ReceiveAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                var result = await _channel.BasicGetAsync(queue, autoAck: true, cancellationToken)
+                    .ConfigureAwait(false);
+                if (result != null)
+                {
+                    var headers = new Dictionary<string, object>();
+                    if (result.BasicProperties.Headers != null)
+                    {
+                        foreach (var pair in result.BasicProperties.Headers)
+                        {
+                            if (pair.Value == null) continue;
+                            headers[pair.Key] = pair.Value is byte[] bytes
+                                ? Encoding.UTF8.GetString(bytes)
+                                : pair.Value;
+                        }
+                    }
+                    return new InboundDelivery(
+                        queue, result.Exchange, result.RoutingKey, result.Body.ToArray(),
+                        headers, result.BasicProperties.MessageId,
+                        result.BasicProperties.ContentType, result.Redelivered,
+                        result.BasicProperties.ReplyTo);
+                }
+                if (DateTime.UtcNow >= deadline) return null;
+                await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public async Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken)

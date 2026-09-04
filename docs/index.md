@@ -4,9 +4,9 @@ AMQP for C# and VB.NET: the same message envelope, the same patterns and the sam
 metric names as the [JVM libraries](https://acemq.org/), with an API that reads like
 .NET rather than transliterated Java.
 
-> **Pre-1.0, and not published yet.** Publishing, consuming, topology, retries and
-> dead-lettering work against a real broker. There is no release on any package feed,
-> and the API is still free to change.
+> **Pre-1.0.** Publishing, consuming, topology, request/reply, ordering, pipelines,
+> the outbox, replay and streams all work against a real broker, with an integration
+> suite that runs against RabbitMQ in CI. The API is still free to change.
 
 ## What it looks like
 
@@ -47,8 +47,14 @@ otherwise have reached a release. See [VB.NET](vbnet.md).
 |---|---|
 | Publishing | confirms by default, back pressure, unroutable messages reported rather than dropped |
 | Consuming | explicit dispositions — accept, retry, dead-letter, release — and an attempt counter |
-| Topology | exchanges, queues, bindings; classic, quorum and stream queues |
+| Topology | exchanges, queues and bindings declared as one unit, dead-letter wiring included, with a dry run |
 | Codecs | JSON by default, camelCase on the wire so C# and Java agree; raw bytes available |
+| Request/reply | one reply queue per requester, replies matched by correlation |
+| Ordering | order per key across partitions, and a partition that halts rather than reorders |
+| Pipelines | steps on their own queues, type-checked against each other |
+| Outbox | write the message with your data, publish it after the commit |
+| Replay | put dead-lettered messages back, all of them or the ones that match |
+| Streams | read from an offset; consuming removes nothing |
 | Transports | RabbitMQ, and an in-process broker for tests |
 | The envelope | identity, correlation, causation, attempt, origin — pinned by conformance tests |
 

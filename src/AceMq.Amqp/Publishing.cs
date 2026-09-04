@@ -111,12 +111,15 @@ internal sealed class Publisher<T> : IPublisher<T>
     private readonly PublishOptions _options;
     private readonly SemaphoreSlim _inFlight;
     private readonly TimeSpan _confirmTimeout;
+    private readonly string? _replyTo;
     private bool _disposed;
 
     internal Publisher(
         ITransportConnection connection, ICodec codec, string exchange, string routingKey,
-        PublishOptions options, SemaphoreSlim inFlight, TimeSpan confirmTimeout)
+        PublishOptions options, SemaphoreSlim inFlight, TimeSpan confirmTimeout,
+        string? replyTo = null)
     {
+        _replyTo = replyTo;
         _connection = connection;
         _codec = codec;
         _exchange = exchange;
@@ -145,7 +148,7 @@ internal sealed class Publisher<T> : IPublisher<T>
             new Dictionary<string, object>(headers),
             envelope.Id, _codec.ContentType,
             _options.Persistent, _options.Mandatory,
-            _options.Expiration, _options.Priority, null);
+            _options.Expiration, _options.Priority, _replyTo);
 
         // The semaphore is the back pressure. Without it a caller in a loop can
         // queue more unconfirmed publishes than the broker will ever confirm, and

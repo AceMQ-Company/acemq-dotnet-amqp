@@ -159,10 +159,27 @@ public interface ITransportConnection : IDisposable
     /// Starts delivering to <paramref name="handler"/>, which returns the disposition
     /// for each message. The transport acknowledges according to that result.
     /// </summary>
+    /// <param name="arguments">
+    /// Consumer arguments, such as a stream's starting offset. Null for an ordinary
+    /// queue.
+    /// </param>
     Task<ISubscription> SubscribeAsync(
         string queue, int prefetch,
+        IReadOnlyDictionary<string, object>? arguments,
         Func<InboundDelivery, Task<Ack>> handler,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes one message off a queue, or returns null if none arrives within
+    /// <paramref name="timeout"/>.
+    /// </summary>
+    /// <remarks>
+    /// Pulling rather than subscribing is what lets a replay drain a fixed number of
+    /// messages and stop. A subscription would keep receiving the ones it just
+    /// republished.
+    /// </remarks>
+    Task<InboundDelivery?> ReceiveAsync(
+        string queue, TimeSpan timeout, CancellationToken cancellationToken);
 
     Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken);
 

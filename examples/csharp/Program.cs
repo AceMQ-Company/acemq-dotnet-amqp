@@ -56,4 +56,27 @@ catch (PublishFailedException)
     Console.WriteLine("unroutable   publish failed: no queue bound for that routing key");
 }
 
+// Topology as one unit: the queue, its dead-letter exchange and the queue bound to
+// it. Declared separately, forgetting one loses messages with nothing reporting it.
+var plan = await mq.ApplyAsync(
+    Topology.Define().QueueWithDeadLetter("payments").Build());
+Console.WriteLine($"topology     {plan.Actions.Count} action(s)");
+
+// Request and reply.
+await mq.DeclareQueueAsync("pricing");
+using var responder = await mq.RespondAsync<string, string>(
+    "pricing", request => Task.FromResult(request.ToUpperInvariant()));
+using var requester = await mq.RequesterAsync();
+Console.WriteLine($"replied      {await requester.RequestAsync<string, string>("", "pricing", "quote me")}");
+
+// Ordering by key, across partitions.
+var ledger = await mq.Ordered<string>("ledger")
+    .Partitions(4)
+    .KeyedBy(entry => entry.Split(':')[0])
+    .DeclareAsync();
+var first = await ledger.SendAsync("acct-7:deposit");
+var second = await ledger.SendAsync("acct-7:withdraw");
+Console.WriteLine($"ordering     same key, same partition: {first == second}");
+ledger.Dispose();
+
 public sealed record OrderPlaced(string OrderId, decimal Total);

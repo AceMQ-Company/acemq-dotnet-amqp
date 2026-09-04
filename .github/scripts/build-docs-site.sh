@@ -93,6 +93,9 @@ NAV='<nav class="top">
   <a href="publishing.html">Publishing</a>
   <a href="consuming.html">Consuming</a>
   <a href="topology.html">Topology</a>
+  <a href="patterns.html">Patterns</a>
+  <a href="request-reply.html">Request/reply</a>
+  <a href="streams.html">Streams</a>
   <a href="testing.html">Testing</a>
   <a href="csharp.html">C#</a>
   <a href="vbnet.html">VB.NET</a>

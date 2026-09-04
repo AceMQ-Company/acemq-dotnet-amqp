@@ -9,6 +9,62 @@ await mq.DeclareQueueAsync("orders.placed");
 await mq.BindAsync("orders.placed", "orders", "order.placed");
 ```
 
+## Declaring it as one thing
+
+Three calls are fine for one queue. For a service, describe the whole topology and
+apply it:
+
+```csharp
+var topology = Topology.Define()
+    .Exchange("orders", "topic")
+    .QueueWithDeadLetter("orders.placed")
+    .Bind("orders.placed", "orders", "order.placed")
+    .Build();
+
+await mq.ApplyAsync(topology);
+```
+
+`QueueWithDeadLetter` is the reason this exists. It declares four things that are
+only correct together — the queue, its dead-letter exchange, the queue bound to that
+exchange, and the `x-dead-letter-exchange` argument pointing at it:
+
+```
+orders.placed        with x-dead-letter-exchange = orders.placed.dlx
+orders.placed.dlx    fanout
+orders.placed.dead   bound to orders.placed.dlx
+```
+
+Wired by hand, forgetting any one of them means `Ack.DeadLetter` discards the
+message and nothing reports it — the queue nacks without requeueing, the broker finds
+no dead-letter exchange, and the message is gone. That is the failure this library
+exists to prevent, so the four declarations are one call.
+
+## Seeing what it would do
+
+```csharp
+var plan = await mq.ApplyAsync(topology, ApplyMode.DryRun);
+Console.WriteLine(plan.Render());
+```
+
+```
+? exchange orders (topic)
+  queue orders.placed (classic)
++ queue orders.placed.dead (classic)
+? bind orders.placed.dead to orders.placed.dlx on ''
+```
+
+`+` would be created, a blank is already there and matches, `?` cannot be determined.
+Exchanges and bindings are `?` because **AMQP cannot ask whether they exist** — only a
+declare can tell you, and a declare is the change. Reporting them as "would create"
+would be a guess, and plausible-looking output that is sometimes wrong stops being
+read.
+
+```csharp
+plan.HasChanges   // something would be created
+plan.Changes      // what
+plan.HasDrift     // something exists but differs
+```
+
 ## Exchange types
 
 | Type | Routes to |

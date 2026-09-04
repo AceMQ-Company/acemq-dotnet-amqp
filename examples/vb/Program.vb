@@ -67,6 +67,35 @@ Module Program
                 Catch ex As PublishFailedException
                     Console.WriteLine("unroutable   publish failed: no queue bound for that routing key")
                 End Try
+
+                ' Topology as one unit: the queue, its dead-letter exchange and the
+                ' queue bound to it. Declared separately, forgetting one loses
+                ' messages with nothing reporting it.
+                Dim plan = Await mq.ApplyAsync(
+                    Topology.Define().QueueWithDeadLetter("payments").Build())
+                Console.WriteLine($"topology     {plan.Actions.Count} action(s)")
+
+                ' Request and reply, from VB.
+                Await mq.DeclareQueueAsync("pricing")
+                Using responder = Await mq.RespondAsync(Of String, String)(
+                    "pricing", Function(request) Task.FromResult(request.ToUpperInvariant()))
+
+                    Using requester = Await mq.RequesterAsync()
+                        Dim answer = Await requester.RequestAsync(Of String, String)(
+                            "", "pricing", "quote me")
+                        Console.WriteLine($"replied      {answer}")
+                    End Using
+                End Using
+
+                ' Ordering by key, across partitions.
+                Dim ledger = Await mq.Ordered(Of String)("ledger") _
+                    .Partitions(4) _
+                    .KeyedBy(Function(entry) entry.Split(":"c)(0)) _
+                    .DeclareAsync()
+                Dim first = Await ledger.SendAsync("acct-7:deposit")
+                Dim second = Await ledger.SendAsync("acct-7:withdraw")
+                Console.WriteLine($"ordering     same key, same partition: {first = second}")
+                ledger.Dispose()
             End Using
         End Using
     End Function
