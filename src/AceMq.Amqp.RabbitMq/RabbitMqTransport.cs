@@ -476,6 +476,65 @@ public sealed class RabbitMqTransport : ITransport
             }
         }
 
+        /// <summary>
+        /// Asks the broker whether a queue matches what would be declared.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// AMQP has no way to read a queue's arguments back. The only thing that
+        /// answers the question is a declaration: the broker replies
+        /// PRECONDITION_FAILED when an existing queue was created with different
+        /// ones, which is the drift being looked for.
+        /// </para>
+        /// <para>
+        /// A failed declaration closes the channel, so this runs on a throwaway one.
+        /// Doing it on the working channel would take publishing down as a side
+        /// effect of asking a question.
+        /// </para>
+        /// </remarks>
+        public async Task<QueueCheck> CheckQueueAsync(
+            string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken)
+        {
+            if (!await QueueExistsAsync(name, cancellationToken).ConfigureAwait(false))
+            {
+                return QueueCheck.Absent();
+            }
+
+            try
+            {
+                using var probe = await _connection.CreateChannelAsync(
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                var args = new Dictionary<string, object?>();
+                if (arguments != null)
+                {
+                    foreach (var pair in arguments) args[pair.Key] = pair.Value;
+                }
+                switch (type)
+                {
+                    case QueueType.Quorum: args["x-queue-type"] = "quorum"; break;
+                    case QueueType.Stream: args["x-queue-type"] = "stream"; break;
+                }
+
+                await probe.QueueDeclareAsync(
+                    name, durable, exclusive: false, autoDelete: false,
+                    arguments: args.Count == 0 ? null : args,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                return QueueCheck.Matches();
+            }
+            catch (OperationInterruptedException e)
+            {
+                // 406 PRECONDITION_FAILED is the broker saying the queue exists with
+                // different settings. Anything else is a different problem and
+                // should not be reported as drift.
+                if (e.ShutdownReason?.ReplyCode == 406)
+                {
+                    return QueueCheck.Differs(e.ShutdownReason.ReplyText);
+                }
+                return QueueCheck.Unsupported();
+            }
+        }
+
         public void Dispose()
         {
             try { _channel.Dispose(); } catch { /* closing a closed channel is not news */ }

@@ -354,4 +354,77 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
 
         Assert.Equal(new[] { "acct:a", "acct:b", "acct:c" }, seen.ToArray());
     }
+
+    [Fact]
+    public async Task ReportsAQueueTheBrokerAlreadyHasWithDifferentArguments()
+    {
+        var queue = Name("drift");
+        await _mq.DeclareQueueAsync(queue, QueueType.Classic,
+            new Dictionary<string, object> { ["x-message-ttl"] = 60000 });
+        _declared.Add(queue);
+
+        // AMQP cannot read a queue's arguments back. The only thing that answers is
+        // a declaration, which the broker refuses with 406 PRECONDITION_FAILED when
+        // the settings differ -- on a throwaway channel, because a failed declare
+        // closes the one it ran on.
+        var plan = await _mq.ApplyAsync(
+            Topology.Define()
+                .Queue(queue, QueueType.Classic,
+                    new Dictionary<string, object> { ["x-message-ttl"] = 30000 })
+                .Build(),
+            ApplyMode.DryRun);
+
+        Assert.True(plan.HasDrift);
+        Assert.Contains("PRECONDITION_FAILED", plan.Render());
+
+        // The connection still works: asking the question must not break publishing.
+        Assert.True(_mq.IsOpen);
+        Assert.Equal(0, await _mq.MessageCountAsync(queue));
+    }
+
+    [Fact]
+    public async Task ReportsAMatchingQueueAsPresent()
+    {
+        var queue = Name("match");
+        var arguments = new Dictionary<string, object> { ["x-message-ttl"] = 60000 };
+        await _mq.DeclareQueueAsync(queue, QueueType.Classic, arguments);
+        _declared.Add(queue);
+
+        var plan = await _mq.ApplyAsync(
+            Topology.Define().Queue(queue, QueueType.Classic, arguments).Build(),
+            ApplyMode.DryRun);
+
+        Assert.False(plan.HasDrift);
+        Assert.Equal(TopologyActionKind.Present, plan.Actions.Single().Kind);
+    }
+
+    [Fact]
+    public async Task CarriesARoutingSlipThroughARealBroker()
+    {
+        var steps = new[] { Name("r1"), Name("r2") };
+        foreach (var step in steps) { await _mq.DeclareQueueAsync(step); _declared.Add(step); }
+
+        var visited = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var finished = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var consumers = new List<IMessageConsumer>();
+        foreach (var step in steps)
+        {
+            var here = step;
+            consumers.Add(await _mq.ConsumeAsync<string>(here, async message =>
+            {
+                visited.Enqueue(here);
+                var slip = RoutingSlip.Of(message)!.Advance();
+                if (slip.IsFinished) finished.TrySetResult(true);
+                else await _mq.ForwardAsync(slip, message.Payload, message.Envelope);
+                return Ack.Accept();
+            }));
+        }
+
+        await _mq.SendAlongAsync(RoutingSlip.StartOf(steps), "an order");
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Equal(steps, visited.ToArray());
+        foreach (var consumer in consumers) consumer.Dispose();
+    }
 }

@@ -93,6 +93,17 @@ public interface IMessage<out T>
     /// <summary>Application headers. Never contains anything in the reserved namespace.</summary>
     IReadOnlyDictionary<string, object> Headers { get; }
 
+    /// <summary>
+    /// Every header as it arrived, the reserved ones included.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Headers"/> is what an application wrote and is the one to read
+    /// normally. This is the escape hatch for the engine's own headers — a routing
+    /// slip lives in them, and so does anything a newer version of the library adds
+    /// that this one does not materialise onto the envelope.
+    /// </remarks>
+    IReadOnlyDictionary<string, object> WireHeaders { get; }
+
     string? RoutingKey { get; }
 
     string Queue { get; }
@@ -124,6 +135,7 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
         Envelope = envelope;
         Attempt = attempt;
         Headers = envelope.Headers;
+        WireHeaders = delivery.Headers;
         RoutingKey = delivery.RoutingKey;
         Queue = delivery.Queue;
         ContentType = delivery.ContentType;
@@ -134,6 +146,7 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
     public T Payload { get; }
     public Envelope Envelope { get; }
     public IReadOnlyDictionary<string, object> Headers { get; }
+    public IReadOnlyDictionary<string, object> WireHeaders { get; }
     public string? RoutingKey { get; }
     public string Queue { get; }
     public DateTimeOffset ReceivedAt { get; }

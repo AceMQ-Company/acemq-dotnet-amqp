@@ -187,6 +187,19 @@ public interface ITransportConnection : IDisposable
 
     Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Compares an existing queue against what would be declared.
+    /// </summary>
+    /// <remarks>
+    /// Separate from declaring it, so a topology can be reviewed before it is
+    /// applied. A transport that cannot tell returns
+    /// <see cref="QueueCheckResult.Unsupported"/> rather than guessing: a plan that
+    /// says "would create" about something already there stops being read.
+    /// </remarks>
+    Task<QueueCheck> CheckQueueAsync(
+        string name, QueueType type, bool durable,
+        IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken);
+
     bool IsOpen { get; }
 
     bool IsBlocked { get; }

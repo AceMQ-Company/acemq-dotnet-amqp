@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 using System.Threading;
@@ -150,6 +151,31 @@ public sealed class InMemoryTransport : ITransport
             new ConcurrentQueue<InboundDelivery>();
         private readonly List<InboundDelivery> _deadLettered = new List<InboundDelivery>();
 
+        internal QueueType DeclaredType { get; private set; } = QueueType.Classic;
+
+        internal IReadOnlyDictionary<string, object> Arguments { get; private set; } =
+            new Dictionary<string, object>();
+
+        /// <summary>
+        /// Records what the queue was declared with, so drift can be reported.
+        /// </summary>
+        /// <remarks>
+        /// The first declaration wins, as it does on a real broker: a queue's type
+        /// and arguments are fixed when it is created, and a later declaration with
+        /// different ones is a mismatch rather than a change.
+        /// </remarks>
+        internal void Declared(QueueType type, IReadOnlyDictionary<string, object>? arguments)
+        {
+            if (_declared) return;
+            _declared = true;
+            DeclaredType = type;
+            Arguments = arguments == null
+                ? new Dictionary<string, object>()
+                : new Dictionary<string, object>((IDictionary<string, object>)arguments);
+        }
+
+        private bool _declared;
+
         internal void Enqueue(InboundDelivery delivery) => _messages.Enqueue(delivery);
 
         internal bool TryDequeue(out InboundDelivery delivery) => _messages.TryDequeue(out delivery!);
@@ -197,7 +223,8 @@ public sealed class InMemoryTransport : ITransport
             string name, QueueType type, bool durable,
             IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken)
         {
-            _broker.Queues.GetOrAdd(name, _ => new Queue());
+            var queue = _broker.Queues.GetOrAdd(name, _ => new Queue());
+            queue.Declared(type, arguments);
             return Task.CompletedTask;
         }
 
@@ -291,6 +318,41 @@ public sealed class InMemoryTransport : ITransport
 
         public Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken) =>
             Task.FromResult(_broker.Queues.ContainsKey(name));
+
+        public Task<QueueCheck> CheckQueueAsync(
+            string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken)
+        {
+            if (!_broker.Queues.TryGetValue(name, out var queue))
+            {
+                return Task.FromResult(QueueCheck.Absent());
+            }
+
+            if (queue.DeclaredType != type)
+            {
+                return Task.FromResult(QueueCheck.Differs(
+                    $"declared as {queue.DeclaredType.ToString().ToLowerInvariant()}, " +
+                    $"asked for {type.ToString().ToLowerInvariant()}"));
+            }
+
+            var wanted = arguments ?? new Dictionary<string, object>();
+            foreach (var pair in wanted)
+            {
+                if (!queue.Arguments.TryGetValue(pair.Key, out var existing))
+                {
+                    return Task.FromResult(QueueCheck.Differs($"missing argument {pair.Key}"));
+                }
+                var a = Convert.ToString(existing, CultureInfo.InvariantCulture);
+                var b = Convert.ToString(pair.Value, CultureInfo.InvariantCulture);
+                if (a != b)
+                {
+                    return Task.FromResult(QueueCheck.Differs(
+                        $"{pair.Key} is '{a}', asked for '{b}'"));
+                }
+            }
+
+            return Task.FromResult(QueueCheck.Matches());
+        }
 
         public void Dispose()
         {

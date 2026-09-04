@@ -385,3 +385,123 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
 
     public override string ToString() => $"DbIdempotencyStore[{_table}]";
 }
+
+/// <summary>
+/// A schema registry kept in a database.
+/// </summary>
+/// <remarks>
+/// The one that makes schema ids mean anything across processes. An in-memory
+/// registry issues ids in registration order, so two services disagree about what an
+/// id refers to and a restart renumbers everything — which is fine for a test and
+/// wrong the moment a message outlives the process that wrote it.
+/// </remarks>
+public sealed class DbSchemaRegistry : ISchemaRegistry
+{
+    private readonly ConnectionSupplier _connections;
+    private readonly string _table;
+    private readonly string _prefix;
+
+    public DbSchemaRegistry(ConnectionSupplier connections)
+        : this(connections, "acemq_schema", "@") { }
+
+    public DbSchemaRegistry(ConnectionSupplier connections, string table, string parameterPrefix)
+    {
+        _connections = connections ?? throw new ArgumentNullException(nameof(connections));
+        _table = table ?? throw new ArgumentNullException(nameof(table));
+        _prefix = parameterPrefix ?? throw new ArgumentNullException(nameof(parameterPrefix));
+    }
+
+    /// <summary>The table this registry expects.</summary>
+    /// <remarks>
+    /// The fingerprint is unique, which is what makes registering the same schema
+    /// twice idempotent even when two processes do it at the same moment: the second
+    /// insert is refused and the row already there is read back.
+    /// </remarks>
+    public string CreateTableSql() =>
+        $@"CREATE TABLE {_table} (
+  id          INTEGER      NOT NULL PRIMARY KEY,
+  fingerprint VARCHAR(64)  NOT NULL UNIQUE,
+  format      VARCHAR(32)  NOT NULL,
+  subject     VARCHAR(255) NOT NULL,
+  definition  TEXT         NOT NULL
+);";
+
+    public int IdFor(SchemaDefinition schema)
+    {
+        if (schema == null) throw new ArgumentNullException(nameof(schema));
+        var fingerprint = schema.Fingerprint;
+
+        using var connection = Open();
+
+        var existing = Lookup(connection, fingerprint);
+        if (existing.HasValue) return existing.Value;
+
+        try
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                $@"INSERT INTO {_table} (id, fingerprint, format, subject, definition)
+SELECT COALESCE(MAX(id), 0) + 1, {_prefix}fingerprint, {_prefix}format,
+       {_prefix}subject, {_prefix}definition
+FROM {_table}";
+            Add(command, "fingerprint", fingerprint);
+            Add(command, "format", schema.Format);
+            Add(command, "subject", schema.Subject);
+            Add(command, "definition", schema.Definition);
+            command.ExecuteNonQuery();
+        }
+        catch (DbException)
+        {
+            // The unique fingerprint refused it, so another process registered the
+            // same schema between the lookup and the insert. Its id is the answer.
+        }
+
+        return Lookup(connection, fingerprint)
+               ?? throw new AceFatalException(
+                   $"could not register the schema for {schema.Subject}");
+    }
+
+    public SchemaDefinition SchemaFor(int id)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT format, subject, definition FROM {_table} WHERE id = {_prefix}id";
+        Add(command, "id", id);
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new AceFatalException($"no schema with id {id} in {_table}");
+        }
+        return new SchemaDefinition(reader.GetString(0), reader.GetString(1), reader.GetString(2));
+    }
+
+    private int? Lookup(DbConnection connection, string fingerprint)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT id FROM {_table} WHERE fingerprint = {_prefix}fingerprint";
+        Add(command, "fingerprint", fingerprint);
+        var value = command.ExecuteScalar();
+        return value == null || value == DBNull.Value
+            ? (int?)null
+            : Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private DbConnection Open()
+    {
+        var connection = _connections();
+        if (connection.State != ConnectionState.Open) connection.Open();
+        return connection;
+    }
+
+    private void Add(DbCommand command, string name, object? value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = _prefix + name;
+        parameter.Value = value ?? DBNull.Value;
+        command.Parameters.Add(parameter);
+    }
+
+    public override string ToString() => $"DbSchemaRegistry[{_table}]";
+}

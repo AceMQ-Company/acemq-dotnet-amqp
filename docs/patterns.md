@@ -183,6 +183,53 @@ stop the publish, which is what makes a policy check possible.
 
 `Order` decides the sequence, lowest first.
 
+## Routing slips
+
+A pipeline decides its route once and every message takes it. A routing slip is the
+other arrangement: **the route travels with the message**, so it can differ per
+message and be changed by whatever handled the last step.
+
+```csharp
+await mq.SendAlongAsync(RoutingSlip.StartOf("validate", "price", "ship"), order);
+```
+
+Each step forwards it:
+
+```csharp
+await mq.ConsumeAsync<Order>("validate", async message =>
+{
+    await _validator.CheckAsync(message.Payload);
+
+    var slip = RoutingSlip.Of(message)!.Advance();
+    if (!slip.IsFinished)
+    {
+        await mq.ForwardAsync(slip, message.Payload, message.Envelope);
+    }
+    return Ack.Accept();
+});
+```
+
+A step can change what happens next — skip ahead when a check is unnecessary, or go
+back to an earlier step:
+
+```csharp
+var slip = RoutingSlip.Of(message)!;
+var onward = order.Total < 100 ? slip.AdvanceTo(2) : slip.Advance();   // skip fraud
+```
+
+Going backwards repeats work, so the steps it revisits have to tolerate that.
+
+The slip rides in reserved headers, so it does **not** appear in `message.Headers` —
+a handler sees its own headers and asks for the slip explicitly with
+`RoutingSlip.Of(message)`.
+
+**A slip is not a transaction.** Each step commits as it finishes, so a failure at
+step four does not undo steps one to three. If that matters, the route needs
+compensating steps of its own.
+
+Use a pipeline where every message takes the same path: it says so more clearly and
+does not pay to carry the route around.
+
 ## Replay
 
 Dead-lettering keeps the messages. This puts them back once whatever broke is fixed:

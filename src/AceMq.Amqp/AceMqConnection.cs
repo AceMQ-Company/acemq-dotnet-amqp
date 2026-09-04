@@ -527,12 +527,34 @@ public sealed class AceMqConnection : IDisposable
 
         foreach (var queue in topology.Queues)
         {
-            var exists = await _connection.QueueExistsAsync(queue.Name, CancellationToken.None)
+            var check = await _connection.CheckQueueAsync(
+                queue.Name, queue.Type, queue.Durable,
+                queue.Arguments.Count == 0 ? null : queue.Arguments, CancellationToken.None)
                 .ConfigureAwait(false);
-            actions.Add(new TopologyAction(
-                exists ? TopologyActionKind.Present : TopologyActionKind.Create,
-                $"queue {queue.Name} ({queue.Type.ToString().ToLowerInvariant()})"));
-            if (!dryRun)
+
+            var kind = check.Result switch
+            {
+                QueueCheckResult.Absent => TopologyActionKind.Create,
+                QueueCheckResult.Matches => TopologyActionKind.Present,
+                QueueCheckResult.Differs => TopologyActionKind.Drift,
+                _ => TopologyActionKind.Unknown,
+            };
+            var description = $"queue {queue.Name} ({queue.Type.ToString().ToLowerInvariant()})";
+            if (check.Detail != null) description += $" -- {check.Detail}";
+            actions.Add(new TopologyAction(kind, description));
+
+            // Drift is reported, never corrected. A queue's type and arguments are
+            // fixed when it is created, so "fixing" it would mean deleting a queue
+            // that has messages in it -- which is not something a library should do
+            // because a declaration did not match.
+            if (!dryRun && check.Result == QueueCheckResult.Differs)
+            {
+                throw new AceFatalException(
+                    $"queue {queue.Name} already exists with different settings: {check.Detail}. " +
+                    "A queue's type and arguments are fixed at creation, so this needs the " +
+                    "queue drained and redeclared rather than changed in place.");
+            }
+            if (!dryRun && check.Result != QueueCheckResult.Matches)
             {
                 await _connection.DeclareQueueAsync(
                     queue.Name, queue.Type, queue.Durable,
@@ -632,6 +654,67 @@ public sealed class AceMqConnection : IDisposable
         }
         if (maxLengthBytes.HasValue) arguments["x-max-length-bytes"] = maxLengthBytes.Value;
         return DeclareQueueAsync(name, QueueType.Stream, arguments);
+    }
+
+    /// <summary>
+    /// Sends a message along a route it carries with it.
+    /// </summary>
+    /// <remarks>
+    /// The slip's current step names the queue. Each step's handler calls
+    /// <see cref="ForwardAsync{T}"/> to pass it on, so the route can be changed part
+    /// way through by whatever handled the last step.
+    /// </remarks>
+    public async Task<string> SendAlongAsync<T>(RoutingSlip slip, T payload)
+    {
+        EnsureOpen();
+        if (slip == null) throw new ArgumentNullException(nameof(slip));
+        if (slip.IsFinished)
+        {
+            throw new ArgumentException("this routing slip has no steps left", nameof(slip));
+        }
+        return await ForwardAsync(slip, payload, Envelope.Of(slip.Current!).Build())
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sends a message to the slip's current step, keeping its envelope.
+    /// </summary>
+    /// <remarks>
+    /// Call <see cref="RoutingSlip.Advance"/> before this to move it on. A handler
+    /// that forwards without advancing sends the message back to itself, which is a
+    /// loop rather than a route.
+    /// </remarks>
+    public async Task<string> ForwardAsync<T>(RoutingSlip slip, T payload, Envelope envelope)
+    {
+        EnsureOpen();
+        if (slip == null) throw new ArgumentNullException(nameof(slip));
+        if (envelope == null) throw new ArgumentNullException(nameof(envelope));
+        if (slip.IsFinished)
+        {
+            throw new ArgumentException("this routing slip has no steps left", nameof(slip));
+        }
+
+        // The slip rides in reserved headers, which the envelope strips from the
+        // application's view on the way back out -- so a handler sees its payload
+        // and asks for the slip explicitly rather than finding routing machinery
+        // mixed into its own headers.
+        var builder = Envelope.Of(envelope.Type)
+            .Id(envelope.Id)
+            .CorrelationId(envelope.CorrelationId)
+            .CausationId(envelope.CausationId)
+            .Attempt(envelope.Attempt)
+            .FirstSeen(envelope.FirstSeen);
+        foreach (var header in envelope.Headers)
+        {
+            if (!AceHeaders.IsAceHeader(header.Key)) builder.Header(header.Key, header.Value);
+        }
+
+        var carried = builder.Build();
+        var publisher = Publisher<T>(string.Empty, slip.Current!);
+        await ((Publisher<T>)publisher)
+            .SendWithHeadersAsync(payload, carried, slip.ToHeaders(), CancellationToken.None)
+            .ConfigureAwait(false);
+        return carried.Id;
     }
 
     /// <summary>Moves messages off a queue and republishes them.</summary>

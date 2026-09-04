@@ -141,8 +141,23 @@ internal sealed class Publisher<T> : IPublisher<T>
     public Task<PublishResult> SendAsync(T payload, Envelope envelope) =>
         SendAsync(payload, envelope, CancellationToken.None);
 
-    public async Task<PublishResult> SendAsync(
-        T payload, Envelope envelope, CancellationToken cancellationToken)
+    public Task<PublishResult> SendAsync(
+        T payload, Envelope envelope, CancellationToken cancellationToken) =>
+        SendWithHeadersAsync(payload, envelope, null, cancellationToken);
+
+    /// <summary>
+    /// Publishes with headers beyond the envelope's own.
+    /// </summary>
+    /// <remarks>
+    /// Internal, because the only thing that needs it is a routing slip, whose
+    /// headers are in the reserved namespace and therefore cannot go through
+    /// <see cref="Envelope.Builder.Header"/>. They are merged on top of the
+    /// envelope's rather than replacing them, so an interceptor that changed the
+    /// envelope still reaches the wire.
+    /// </remarks>
+    internal async Task<PublishResult> SendWithHeadersAsync(
+        T payload, Envelope envelope, IReadOnlyDictionary<string, object>? extraHeaders,
+        CancellationToken cancellationToken)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Publisher<T>));
         if (envelope == null) throw new ArgumentNullException(nameof(envelope));
@@ -164,6 +179,10 @@ internal sealed class Publisher<T> : IPublisher<T>
 
         var body = _codec.Encode(payload!);
         var headers = envelope.ToWire();
+        if (extraHeaders != null)
+        {
+            foreach (var header in extraHeaders) headers[header.Key] = header.Value;
+        }
 
         // Started before the message is built, so the trace context is written into
         // the headers the broker actually receives.

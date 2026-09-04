@@ -50,20 +50,43 @@ Console.WriteLine(plan.Render());
 ? exchange orders (topic)
   queue orders.placed (classic)
 + queue orders.placed.dead (classic)
+! queue orders.parked (classic) -- PRECONDITION_FAILED - inequivalent arg 'x-message-ttl'
 ? bind orders.placed.dead to orders.placed.dlx on ''
 ```
 
-`+` would be created, a blank is already there and matches, `?` cannot be determined.
-Exchanges and bindings are `?` because **AMQP cannot ask whether they exist** — only a
-declare can tell you, and a declare is the change. Reporting them as "would create"
-would be a guess, and plausible-looking output that is sometimes wrong stops being
-read.
+`+` would be created, a blank is already there and matches, `!` exists but differs,
+`?` cannot be determined.
 
 ```csharp
 plan.HasChanges   // something would be created
-plan.Changes      // what
 plan.HasDrift     // something exists but differs
+plan.Drift        // what
 ```
+
+### How drift is found
+
+AMQP has no way to read a queue's arguments back. The only thing that answers the
+question is a declaration: the broker replies `406 PRECONDITION_FAILED` when the
+queue exists with different settings. That is run on a **throwaway channel**, because
+a failed declaration closes the channel it ran on — asking the question must not take
+publishing down as a side effect.
+
+Exchanges and bindings stay `?`. Nothing can ask whether they exist, and reporting
+them as "would create" would be a guess. Plausible-looking output that is sometimes
+wrong stops being read.
+
+### Applying over drift is refused
+
+```
+AceFatalException: queue orders.parked already exists with different settings:
+PRECONDITION_FAILED - inequivalent arg 'x-message-ttl'. A queue's type and arguments
+are fixed at creation, so this needs the queue drained and redeclared rather than
+changed in place.
+```
+
+Drift is reported, never corrected. "Fixing" it would mean deleting a queue that has
+messages in it, which is not something a library should do because a declaration did
+not match.
 
 ## Exchange types
 

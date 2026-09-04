@@ -251,6 +251,45 @@ public sealed class TopologyAction
     public override string ToString() => $"{Kind}: {Description}";
 }
 
+/// <summary>What comparing a queue against a specification found.</summary>
+public enum QueueCheckResult
+{
+    /// <summary>It is there and matches.</summary>
+    Matches,
+
+    /// <summary>It is not there.</summary>
+    Absent,
+
+    /// <summary>It is there but differs from what was asked for.</summary>
+    Differs,
+
+    /// <summary>The transport cannot tell.</summary>
+    Unsupported,
+}
+
+/// <summary>The result of comparing a declared queue against a specification.</summary>
+public sealed class QueueCheck
+{
+    private QueueCheck(QueueCheckResult result, string? detail)
+    {
+        Result = result;
+        Detail = detail;
+    }
+
+    public static QueueCheck Matches() => new QueueCheck(QueueCheckResult.Matches, null);
+    public static QueueCheck Absent() => new QueueCheck(QueueCheckResult.Absent, null);
+    public static QueueCheck Differs(string detail) => new QueueCheck(QueueCheckResult.Differs, detail);
+    public static QueueCheck Unsupported() => new QueueCheck(QueueCheckResult.Unsupported, null);
+
+    public QueueCheckResult Result { get; }
+
+    /// <summary>What differs, when the broker said.</summary>
+    public string? Detail { get; }
+
+    public override string ToString() =>
+        Detail == null ? Result.ToString() : $"{Result}: {Detail}";
+}
+
 /// <summary>How much of a topology to apply.</summary>
 public enum ApplyMode
 {

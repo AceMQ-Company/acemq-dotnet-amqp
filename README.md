@@ -27,6 +27,8 @@ native API rather than a transliterated Java one.
 | Codecs | JSON, XML, text, bytes, composite, and `EncryptedCodec` for payload encryption |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
+| `RoutingSlip` | a route the message carries, changeable at each step |
+| `DbSchemaRegistry` | schema ids that mean the same thing in every process |
 | `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with jitter, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |

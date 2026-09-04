@@ -136,4 +136,14 @@ one gets a different id.
 `InMemorySchemaRegistry` is **per process**. Ids are issued in registration order, so
 two processes disagree about what an id means and a restart renumbers everything.
 That makes it right for tests and wrong wherever a message outlives the process that
-wrote it — implement `ISchemaRegistry` against a shared store for that.
+wrote it.
+
+`DbSchemaRegistry` is the one to use for that:
+
+```csharp
+var registry = new DbSchemaRegistry(() => new SqlConnection(connectionString));
+```
+
+The fingerprint column is unique, which makes registering the same schema twice
+idempotent even when two processes do it at the same instant: the second insert is
+refused and the row already there is read back.
