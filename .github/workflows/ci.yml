@@ -1,0 +1,52 @@
+# Build, test, and compile both example languages.
+#
+# The VB sample is built here deliberately. VB.NET is not a separate library -- it
+# references the same assembly -- but it can only keep doing that if the public API
+# stays callable from VB, and a rule nothing checks is a rule that has already been
+# broken. The first VB sample written for this repository failed to compile on a
+# case-insensitivity rule that C# does not have.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Test
+        # The conformance tests assert against headers generated from the Java
+        # library. A failure here means the two implementations have diverged.
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Compile and run the C# example
+        run: dotnet run --project examples/csharp --configuration Release
+
+      - name: Compile and run the VB.NET example
+        run: dotnet run --project examples/vb --configuration Release
+
+      - name: Verify the library targets netstandard2.0
+        # The reach promise: .NET Framework 4.6.2+ as well as modern .NET. A
+        # retarget would quietly drop the consumers this library exists to serve.
+        run: |
+          grep -q '<TargetFramework>netstandard2.0</TargetFramework>' src/AceMq.Amqp/AceMq.Amqp.csproj
+          echo "netstandard2.0 confirmed"
