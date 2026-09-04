@@ -209,13 +209,20 @@ jobs:
             --package-directory "$RUNNER_TEMP/verify-packages"
           dotnet add package AceMq.Amqp.Diagnostics --version "$VERSION" \
             --package-directory "$RUNNER_TEMP/verify-packages"
+          # A tool is installed, not referenced, so it is verified differently.
+          dotnet tool install --tool-path "$RUNNER_TEMP/verify-tool" \
+            AceMq.Amqp.DevCerts --version "$VERSION" \
+            --add-source https://acemq.org/nuget/index.json
+          "$RUNNER_TEMP/verify-tool/acemq-certs" --out "$RUNNER_TEMP/verify-certs" --days 1
+          test -f "$RUNNER_TEMP/verify-certs/ca.crt"
           echo "$VERSION restores from a clean cache."
 
       - name: Where it landed
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          echo "Published AceMq.Amqp, AceMq.Amqp.RabbitMq and AceMq.Amqp.Diagnostics $VERSION"
+          echo "Published AceMq.Amqp, AceMq.Amqp.RabbitMq, AceMq.Amqp.Diagnostics"
+          echo "and the AceMq.Amqp.DevCerts tool, $VERSION"
           echo "Feed: https://acemq.org/nuget/"
 
   # The GitHub release is what people subscribe to. Created after the feed push, so
@@ -308,7 +315,7 @@ jobs:
             || format('AceMQ for .NET {0} is published but the release did not finish', github.ref_name) }}
       message: >-
         ${{ (needs.announce.result == 'success' && needs.landing-page.result == 'success')
-            && 'AceMq.Amqp, AceMq.Amqp.RabbitMq and AceMq.Amqp.Diagnostics are on the NuGet feed. Consumers need no credentials.'
+            && 'The packages and the acemq-certs tool are on the NuGet feed. Consumers need no credentials.'
             || 'The packages are on the feed and consumers can resolve them, but a later step failed, so the release notes or the landing page may still name the previous version. Check the run.' }}
       # Roadworks rather than a red dot for the half-finished case: the release is
       # usable and unfinished, which is a different thing from broken and reads

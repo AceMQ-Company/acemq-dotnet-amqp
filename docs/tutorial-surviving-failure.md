@@ -8,6 +8,9 @@ Everything so far assumed the handler works. This is about when it does not.
 docker run -d --name rabbit -p 5672:5672 -p 15672:15672 rabbitmq:4-management
 ```
 
+(For TLS instead of plaintext, `acemq-certs` generates everything a broker needs —
+see [security](security.md#certificates-for-development).)
+
 ## Declare somewhere for failures to go
 
 ```csharp

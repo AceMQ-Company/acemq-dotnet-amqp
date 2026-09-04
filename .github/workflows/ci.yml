@@ -111,32 +111,23 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Make a certificate authority and a server certificate
+      - name: Make the certificates
+        # The library's own generator rather than openssl. It uses the framework's
+        # certificate API, so this step behaves the same on any runner and the job
+        # stops depending on a tool that happens to be installed -- and it exercises
+        # the generator on every run rather than only when somebody remembers to.
         run: |
-          mkdir -p certs
-          cd certs
-          openssl req -x509 -newkey rsa:2048 -days 2 -nodes \
-            -keyout ca.key -out ca.crt -subj "/CN=AceMQ Test CA"
-          openssl req -newkey rsa:2048 -nodes \
-            -keyout server.key -out server.csr -subj "/CN=localhost"
-          printf "subjectAltName=DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth\n" > ext.cnf
-          openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-            -out server.crt -days 2 -extfile ext.cnf
-          chmod 644 *.key *.crt
+          dotnet run --project src/AceMq.Amqp.DevCerts --configuration Release -- \
+            --out certs --broker localhost --days 2 --broker-certs /certs
+          chmod 644 certs/server.key   # the broker container runs as its own user
 
       - name: Start a broker that speaks TLS
+        # rabbitmq.conf comes from the generator too, so the broker configuration
+        # and the certificates cannot describe different paths.
         run: |
-          cat > rabbitmq.conf <<'CONF'
-          listeners.ssl.default = 5671
-          ssl_options.cacertfile = /certs/ca.crt
-          ssl_options.certfile   = /certs/server.crt
-          ssl_options.keyfile    = /certs/server.key
-          ssl_options.verify     = verify_none
-          ssl_options.fail_if_no_peer_cert = false
-          CONF
           docker run -d --name acemq-tls -p 5671:5671 \
             -v "$PWD/certs":/certs:ro \
-            -v "$PWD/rabbitmq.conf":/etc/rabbitmq/rabbitmq.conf:ro \
+            -v "$PWD/certs/rabbitmq.conf":/etc/rabbitmq/rabbitmq.conf:ro \
             rabbitmq:4-management
           for i in $(seq 1 60); do
             if docker logs acemq-tls 2>&1 | grep -q "started TLS (SSL) listener"; then

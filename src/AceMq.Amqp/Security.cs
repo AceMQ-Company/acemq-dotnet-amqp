@@ -179,6 +179,16 @@ public static class CredentialsProviders
 /// </remarks>
 public sealed class TlsOptions
 {
+    /// <summary>
+    /// Stamped into the subject of every certificate the development generator
+    /// makes, so this library can refuse it.
+    /// </summary>
+    /// <remarks>
+    /// Identical to the Java library's, because the same generated certificates
+    /// are used from both.
+    /// </remarks>
+    public const string DevelopmentMarker = "ACEMQ DEVELOPMENT ONLY - DO NOT TRUST";
+
     private TlsOptions(TlsMode mode)
     {
         Mode = mode;
@@ -218,6 +228,9 @@ public sealed class TlsOptions
 
     /// <summary>Whether the certificate is checked against revocation lists.</summary>
     public bool CheckRevocation { get; private set; }
+
+    /// <summary>Whether certificates the development generator made are permitted.</summary>
+    public bool DevelopmentCertificatesAllowed { get; private set; }
 
     /// <summary>
     /// Trusts a private certificate authority, keeping verification on.
@@ -302,6 +315,29 @@ public sealed class TlsOptions
     }
 
     /// <summary>
+    /// Permits certificates the development generator produced.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Needed on a developer's machine and nowhere else. Without it, a certificate
+    /// carrying <see cref="DevelopmentMarker"/> is refused however the trust is
+    /// configured — including when a private authority is trusted, and including
+    /// <see cref="TlsMode.Insecure"/>.
+    /// </para>
+    /// <para>
+    /// The reason for refusing by default is that a throwaway certificate authority
+    /// which drifts into production is worse than no encryption: everything looks
+    /// protected and nothing is. Making it explicit means the one line that permits
+    /// it is visible in a diff, in a review, and in a search across a codebase.
+    /// </para>
+    /// </remarks>
+    public TlsOptions AllowDevelopmentCertificates()
+    {
+        DevelopmentCertificatesAllowed = true;
+        return this;
+    }
+
+    /// <summary>
     /// Turns revocation checking off.
     /// </summary>
     /// <remarks>
@@ -318,5 +354,6 @@ public sealed class TlsOptions
 
     public override string ToString() =>
         $"TlsOptions[{Mode}, ca={(CertificateAuthority != null ? "custom" : "system")}, " +
-        $"clientCerts={ClientCertificates.Count}, revocation={CheckRevocation}]";
+        $"clientCerts={ClientCertificates.Count}, revocation={CheckRevocation}" +
+        (DevelopmentCertificatesAllowed ? ", development certificates allowed" : "") + "]";
 }

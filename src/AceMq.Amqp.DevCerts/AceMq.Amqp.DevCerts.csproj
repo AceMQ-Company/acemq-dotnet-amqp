@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net8.0, not netstandard2.0: CertificateRequest does not exist there. That
+         is no loss, because certificates are generated on a developer's machine or
+         in CI, never inside the .NET Framework service the library targets. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- A tool has to run on whatever runtime the machine has. Targeting net8.0
+         without this means it refuses to start on a box that only has .NET 10,
+         which is most boxes before long. -->
+    <RollForward>LatestMajor</RollForward>
+
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>acemq-certs</ToolCommandName>
+    <PackageId>AceMq.Amqp.DevCerts</PackageId>
+    <Description>Development certificates for AceMQ: a certificate authority, a server certificate and a client certificate, all stamped so the library refuses them unless development certificates are explicitly allowed.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+  </ItemGroup>
+
+</Project>

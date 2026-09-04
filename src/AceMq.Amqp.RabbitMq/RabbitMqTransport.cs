@@ -123,21 +123,75 @@ public sealed class RabbitMqTransport : ITransport
             Certs = tls.ClientCertificates,
         };
 
-        if (tls.Mode == TlsMode.Insecure)
-        {
-            // Everything is accepted. Documented at the call site as development only.
-            ssl.AcceptablePolicyErrors =
-                System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch
-                | System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
-                | System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable;
-        }
-        else if (tls.CertificateAuthority != null)
-        {
-            ssl.CertificateValidationCallback = TrustOnly(tls.CertificateAuthority, tls.CheckRevocation);
-        }
+        // A validation callback is installed on every path, not only when a private
+        // authority is trusted. It is what refuses a development certificate, and
+        // that refusal has to hold however the trust was configured -- system store,
+        // private authority, or Insecure. Leaving the default validation in place
+        // for the ordinary case would leave the one case this exists to catch
+        // uncaught.
+        var accepted = tls.Mode == TlsMode.Insecure
+            ? System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch
+              | System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
+              | System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable
+            : System.Net.Security.SslPolicyErrors.None;
+
+        ssl.CertificateValidationCallback = Validating(tls, accepted);
 
         factory.Ssl = ssl;
     }
+
+    /// <summary>
+    /// The validation this connection uses, whatever its trust configuration.
+    /// </summary>
+    /// <remarks>
+    /// Development certificates are refused first, before anything else is
+    /// considered, because the point is that they cannot be reached by any route
+    /// short of asking for them.
+    /// </remarks>
+    private static System.Net.Security.RemoteCertificateValidationCallback Validating(
+        TlsOptions tls, System.Net.Security.SslPolicyErrors accepted)
+    {
+        var trustOnly = tls.CertificateAuthority != null
+            ? TrustOnly(tls.CertificateAuthority, tls.CheckRevocation)
+            : null;
+
+        return (sender, certificate, chain, errors) =>
+        {
+            if (!tls.DevelopmentCertificatesAllowed && IsDevelopment(certificate, chain))
+            {
+                return false;
+            }
+
+            if ((errors & ~accepted) == System.Net.Security.SslPolicyErrors.None) return true;
+            return trustOnly != null && trustOnly(sender, certificate, chain, errors);
+        };
+    }
+
+    /// <summary>Whether anything in the chain carries the development marker.</summary>
+    /// <remarks>
+    /// The leaf and every issuer are checked, on both subject and issuer names. A
+    /// server certificate signed by a development authority does not carry the
+    /// marker itself, and is exactly the case worth catching.
+    /// </remarks>
+    private static bool IsDevelopment(
+        System.Security.Cryptography.X509Certificates.X509Certificate? certificate,
+        System.Security.Cryptography.X509Certificates.X509Chain? chain)
+    {
+        if (Marked(certificate?.Subject) || Marked(certificate?.Issuer)) return true;
+        if (chain == null) return false;
+        foreach (var element in chain.ChainElements)
+        {
+            if (Marked(element.Certificate.Subject) || Marked(element.Certificate.Issuer))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool Marked(string? name) =>
+        name != null && name.IndexOf(
+            TlsOptions.DevelopmentMarker, StringComparison.OrdinalIgnoreCase) >= 0;
 
     /// <summary>
     /// Accepts a certificate chain that terminates at one specific authority.

@@ -58,6 +58,16 @@ public sealed class TlsTests
         return X509CertificateLoader.LoadCertificateFromFile(_caPath);
     }
 
+    /// <summary>
+    /// The ordinary configuration for these tests: the generated authority trusted,
+    /// and development certificates permitted because that is what they are.
+    /// </summary>
+    private TlsOptions Trusted() =>
+        TlsOptions.Required()
+            .TrustCertificateAuthority(Ca())
+            .WithoutRevocationChecking()
+            .AllowDevelopmentCertificates();
+
     private async Task<AceMqConnection> ConnectAsync(TlsOptions tls)
     {
         Transports.Register(new RabbitMqTransport());
@@ -69,7 +79,7 @@ public sealed class TlsTests
     public async Task PublishesOverTlsWhenTheAuthorityIsTrusted()
     {
         using var mq = await ConnectAsync(
-            TlsOptions.Required().TrustCertificateAuthority(Ca()).WithoutRevocationChecking());
+            Trusted());
 
         var queue = "tls." + Guid.NewGuid().ToString("N").Substring(0, 8);
         await mq.DeclareQueueAsync(queue);
@@ -85,7 +95,65 @@ public sealed class TlsTests
         // The system trust store has never heard of this broker's authority, and
         // that has to be a refusal rather than a warning.
         await Assert.ThrowsAsync<TransportException>(
-            () => ConnectAsync(TlsOptions.Required()));
+            () => ConnectAsync(TlsOptions.Required().AllowDevelopmentCertificates()));
+    }
+
+    [Fact]
+    public async Task RefusesADevelopmentCertificateEvenWhenItsAuthorityIsTrusted()
+    {
+        // Trusting the authority is not enough, and neither is anything else. A
+        // throwaway authority that drifts into production is worse than no
+        // encryption: everything looks protected and nothing is.
+        await Assert.ThrowsAsync<TransportException>(
+            () => ConnectAsync(TlsOptions.Required()
+                .TrustCertificateAuthority(Ca())
+                .WithoutRevocationChecking()));
+    }
+
+    [Fact]
+    public async Task RefusesADevelopmentCertificateEvenInInsecureMode()
+    {
+        // Insecure accepts any certificate -- except one that says it must not be
+        // trusted. The two are separate decisions and both have to be made.
+        await Assert.ThrowsAsync<TransportException>(
+            () => ConnectAsync(TlsOptions.Insecure()));
+    }
+
+    [Fact]
+    public async Task ConnectsOnceDevelopmentCertificatesAreAllowed()
+    {
+        using var mq = await ConnectAsync(TlsOptions.Insecure().AllowDevelopmentCertificates());
+        Assert.True(mq.IsOpen);
+    }
+
+    [Fact]
+    public void StampsEveryGeneratedCertificateWithTheMarker()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "acemq-certs-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var made = AceMq.Amqp.DevCerts.DevelopmentCertificates.Create(directory, days: 1);
+
+            foreach (var path in new[] { made.CaCertificate, made.ServerCertificate })
+            {
+                var certificate = X509CertificateLoader.LoadCertificateFromFile(path);
+                Assert.Contains(TlsOptions.DevelopmentMarker, certificate.Subject);
+            }
+
+            // The server certificate has to name the host, or it fails hostname
+            // verification everywhere and is only usable with verification off --
+            // the opposite of the point.
+            var server = X509CertificateLoader.LoadCertificateFromFile(made.ServerCertificate);
+            var sans = server.Extensions
+                .OfType<X509SubjectAlternativeNameExtension>()
+                .SelectMany(e => e.EnumerateDnsNames())
+                .ToArray();
+            Assert.Contains("localhost", sans);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
     }
 
     [Fact]
@@ -111,8 +179,12 @@ public sealed class TlsTests
     {
         // Proving the escape hatch works is also proving how much it gives away:
         // the same broker the trusted-authority test had to be told about is
-        // accepted here with no configuration at all.
-        using var mq = await ConnectAsync(TlsOptions.Insecure());
+        // accepted here with no certificate authority configured at all.
+        //
+        // The development opt-in is still needed, which is the point of having the
+        // two be separate decisions: "accept any certificate" does not imply
+        // "accept one stamped do not trust".
+        using var mq = await ConnectAsync(TlsOptions.Insecure().AllowDevelopmentCertificates());
         Assert.True(mq.IsOpen);
     }
 
@@ -125,7 +197,7 @@ public sealed class TlsTests
 
         Transports.Register(new RabbitMqTransport());
         var config = ConnectionConfig.ForUrl(withoutCredentials)
-            .Tls(TlsOptions.Required().TrustCertificateAuthority(Ca()).WithoutRevocationChecking())
+            .Tls(Trusted())
             .Credentials(CredentialsProviders.Of("guest", "guest"))
             .Build();
 

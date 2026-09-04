@@ -30,6 +30,7 @@ native API rather than a transliterated Java one.
 | `RoutingSlip` | a route the message carries, changeable at each step |
 | `DbSchemaRegistry` | schema ids that mean the same thing in every process |
 | `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
+| `AceMq.Amqp.DevCerts` | a tool that generates development certificates the library then refuses by default |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with jitter, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
 | `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |
