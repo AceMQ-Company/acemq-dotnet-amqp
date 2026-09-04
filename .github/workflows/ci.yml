@@ -152,7 +152,9 @@ jobs:
       - name: Test over TLS
         env:
           ACEMQ_TEST_AMQPS_URL: amqps://guest:guest@localhost:5671
-          ACEMQ_TEST_CA: certs/ca.crt
+          # Absolute: the test runs from its own output directory, not the
+          # workspace root, and a relative path silently resolves to nothing there.
+          ACEMQ_TEST_CA: ${{ github.workspace }}/certs/ca.crt
         run: >
           dotnet test tests/AceMq.Amqp.Tls.Tests/AceMq.Amqp.Tls.Tests.csproj
           --configuration Release --verbosity normal

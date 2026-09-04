@@ -43,7 +43,20 @@ public sealed class TlsTests
     private readonly string _caPath =
         Environment.GetEnvironmentVariable("ACEMQ_TEST_CA") ?? "certs/ca.crt";
 
-    private X509Certificate2 Ca() => X509CertificateLoader.LoadCertificateFromFile(_caPath);
+    private X509Certificate2 Ca()
+    {
+        // Named explicitly, because the failure otherwise arrives from deep inside
+        // OpenSSL as "error:80000002" and says nothing about a missing file. The
+        // path is relative to the test's output directory unless it is absolute.
+        if (!File.Exists(_caPath))
+        {
+            throw new FileNotFoundException(
+                $"no certificate authority at '{_caPath}' (resolved from " +
+                $"'{Path.GetFullPath(_caPath)}'). Set ACEMQ_TEST_CA to an absolute path, " +
+                "or run scripts/dotnet/tls-broker/start-broker.sh first.", _caPath);
+        }
+        return X509CertificateLoader.LoadCertificateFromFile(_caPath);
+    }
 
     private async Task<AceMqConnection> ConnectAsync(TlsOptions tls)
     {
