@@ -1,14 +1,46 @@
-# TLS and credentials
+# Security
 
-An `amqps://` URL turns TLS on with the certificate and hostname both verified. An
-`amqp://` URL does not use TLS at all.
+The defaults are strict, and every way round them is named rather than implied.
+
+## The rule
+
+**The URL decides whether the connection is encrypted. The options decide how
+strictly the certificate is checked.** They are separate on purpose: an `amqp://`
+URL that quietly upgraded itself to TLS would be a connection nobody could reason
+about, and options that silently downgraded `amqps://` would be worse.
+
+```csharp
+await AceMqConnection.ConnectAsync("amqp://localhost");         // plaintext, and says so
+await AceMqConnection.ConnectAsync("amqps://broker:5671");      // TLS, verified, hostname checked
+```
+
+Asking for TLS on an `amqp://` URL is **refused**, not honoured. If you asked for
+TLS and then pointed at the plaintext port, one of the two was a mistake and the
+library will not guess which.
+
+## What this protects, and what it does not
+
+| | |
+|---|---|
+| In transit, service to broker | **TLS** — on with `amqps://`, verified by default |
+| The message body at rest in the broker | **`EncryptedCodec`** — not on by default |
+| Headers, routing keys, queue names | **Nothing.** The broker routes on them and the library reads them |
+| Who may publish or consume what | **The broker's** users and permissions, not this library |
+| The metrics and health endpoints | **Nothing.** They are unauthenticated — bind them to loopback |
+
+The third row is the one people are surprised by. Anything secret belongs in the
+payload, never in a header or a routing key.
+
+## Getting started
+
+Nothing is needed when the broker's certificate comes from an authority the machine
+already trusts:
 
 ```csharp
 using var mq = await AceMqConnection.ConnectAsync("amqps://broker.example.com");
 ```
 
-Nothing else is needed when the broker's certificate comes from an authority the
-machine already trusts. Everything below is for the cases where it does not.
+Everything below is for the cases where it does not.
 
 ## A privately issued certificate
 
@@ -49,9 +81,23 @@ a server certificate. There is a tool for that, so nobody has to remember an
 `openssl` incantation:
 
 ```bash
-dotnet tool install -g AceMq.Amqp.DevCerts
+# The feed is a static one, so the tool is downloaded first -- see below.
+curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.6/acemq.amqp.devcerts.0.1.6.nupkg
+dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.6 --add-source .
+
 acemq-certs --out certs --broker localhost --days 30
 ```
+
+`dotnet tool install --add-source https://acemq.org/nuget/index.json` does **not**
+work: it fails with an unhandled `NullReferenceException`. The feed is a static
+directory tree serving only the flat container, and the tool installer wants
+resources it does not have — the same limitation that makes `dotnet package search`
+fail, except it surfaces as a crash rather than a message. Downloading the package
+first and pointing `--add-source` at the folder works, which is what the release
+pipeline does to verify it.
+
+Ordinary `PackageReference` restores are unaffected; this applies only to installing
+tools.
 
 ```
 certs/ca.crt         trust this
@@ -205,3 +251,51 @@ TLS protects messages in transit only. Anything with access to the broker's stor
 — or a backup of it — reads the bodies. `EncryptedCodec` encrypts the body itself, so
 what the broker holds is unreadable without a key the broker does not have. See
 [serialization](serialization.md#encrypting-the-payload).
+
+### Decide the operations story first
+
+The encryption is the easy part. What needs deciding before you turn it on:
+
+- **Where the key lives**, and how it reaches the process. A key in configuration
+  alongside the connection string protects against a stolen broker backup and
+  nothing else.
+- **How it rotates**, and who keeps the old one until the queues holding its
+  messages are drained. Removing a key too early makes those messages unreadable —
+  permanently.
+- **How a failed message gets triaged.** A dead-lettered encrypted message cannot be
+  read in the broker's management UI. Somebody will need to look at one at three in
+  the morning, and "we cannot" is a bad answer to discover then.
+
+## The endpoints are not authenticated
+
+`AceMq.Amqp.Diagnostics` serves metrics, health and version over plain HTTP with no
+authentication. They report queue names, broker state and traffic rates.
+
+It binds to **loopback** by default for that reason. Setting `Host` to `+` or
+`0.0.0.0` publishes all of it to anything that can reach the port — let the scraper
+come over loopback, through a sidecar, or behind a network policy instead.
+
+## Production checklist
+
+- `amqps://`, and `TlsOptions.Required()` — the default, so this is really a check
+  that nothing downgraded it.
+- Credentials from a secret store through an `ICredentialsProvider`, not from a URL
+  or a settings file. A password in a URL ends up in logs, in `ps` output, and in
+  exception messages.
+- A broker user per service, with permissions limited to the exchanges and queues
+  that service uses. RabbitMQ's `guest` cannot connect remotely by default; do not
+  "fix" that.
+- `AllowDevelopmentCertificates()` appears **nowhere** in the deployment. Grep for
+  it — that is what it is named for.
+- `TlsOptions.Insecure()` likewise.
+- The actuator bound to loopback, or behind something that authenticates.
+- `EncryptedCodec` where the broker's operators should not be able to read the
+  messages — with the key rotation and triage decisions written down.
+
+---
+
+**Found a vulnerability?** See [SECURITY.md](https://github.com/AceMQ-Company/acemq-dotnet-amqp/blob/main/SECURITY.md).
+
+**Need this reviewed?** [AceMQ Enterprise support](https://acemq.com) covers TLS
+configuration, certificate rotation, per-service permission design, and the
+RabbitMQ-side hardening this page cannot do for you.

@@ -63,8 +63,36 @@ nav.top a:hover { opacity:1; color:var(--accent); }
 /* The right-hand group: the three destinations somebody arrives looking for,
    rather than the page-by-page guide. Tutorials carries the auto margin, so the
    group stays together however many guide pages are added to its left. */
-nav.top a.tutorials { margin-left:auto; color:var(--accent); opacity:1; font-weight:600; }
+nav.top a.tutorials { color:var(--accent); opacity:1; font-weight:600; }
 nav.top a.api { color:var(--accent); opacity:1; font-weight:600; }
+
+/* Grouped navigation. No JavaScript: the menu opens on hover and on focus-within,
+   so a keyboard reaches it and a blocked script cannot break it. */
+nav.top .group { position:relative; display:inline-block; }
+nav.top .group > button { font:inherit; font-size:.9rem; color:var(--fg); opacity:.78;
+  background:none; border:0; padding:0; cursor:pointer; }
+nav.top .group > button::after { content:" \25be"; font-size:.8em; opacity:.7; }
+nav.top .group:hover > button, nav.top .group:focus-within > button {
+  opacity:1; color:var(--accent); }
+nav.top .group .menu { display:none; position:absolute; left:0; top:100%; z-index:20;
+  background:var(--nav-bg); border:1px solid var(--line); border-radius:8px;
+  padding:.4rem 0; min-width:15rem; box-shadow:0 6px 24px rgba(0,0,0,.12); }
+nav.top .group:hover .menu, nav.top .group:focus-within .menu { display:block; }
+nav.top .group .menu a { display:block; padding:.35rem 1rem; opacity:.85; white-space:nowrap; }
+nav.top .group .menu a:hover { background:var(--code-bg); opacity:1; }
+nav.top a.enterprise:first-of-type { margin-left:auto; }
+
+/* On a narrow screen the menus would hang off the edge, so everything unfolds
+   into a list instead of pretending to be a menu bar. */
+@media (max-width: 900px) {
+  nav.top { flex-wrap:wrap; }
+  nav.top .group { position:static; }
+  nav.top .group .menu { position:static; display:block; border:0; box-shadow:none;
+    padding:0; background:none; min-width:0; }
+  nav.top .group > button { display:none; }
+  nav.top .group .menu a { display:inline-block; padding:0; }
+  nav.top a.enterprise:first-of-type { margin-left:0; }
+}
 main { max-width:47rem; margin:0 auto; padding:2.5rem 1.25rem 5rem; }
 h1 { font-size:2rem; letter-spacing:-.025em; margin:0 0 1.5rem; }
 h2 { font-size:1.3rem; letter-spacing:-.015em; margin:2.75rem 0 .85rem;
@@ -86,26 +114,59 @@ footer { max-width:47rem; margin:0 auto; padding:1.5rem 1.25rem 4rem;
          border-top:1px solid var(--line); color:var(--muted); font-size:.85rem; }
 CSS
 
+# Six top-level entries with the rest grouped underneath, rather than twenty in a
+# row. Twenty was legible at 1600px and wrapped into three lines on a laptop, and a
+# navigation nobody can scan is one nobody uses.
+#
+# The groups open on hover and on focus, so the keyboard reaches them too, and
+# every link is a plain anchor -- the menu needs no JavaScript and still works when
+# it is blocked or fails to load.
 NAV='<nav class="top">
   <span class="brand"><img src="assets/acemq.png" alt="AceMQ"> for .NET</span>
   <a href="index.html">Overview</a>
-  <a href="getting-started.html">Getting started</a>
   <a class="tutorials" href="tutorials.html">Tutorials</a>
-  <a href="publishing.html">Publishing</a>
-  <a href="consuming.html">Consuming</a>
-  <a href="topology.html">Topology</a>
-  <a href="patterns.html">Patterns</a>
-  <a href="reliability.html">Reliability</a>
-  <a href="security.html">Security</a>
-  <a href="serialization.html">Serialization</a>
-  <a href="request-reply.html">Request/reply</a>
-  <a href="streams.html">Streams</a>
-  <a href="observability.html">Metrics</a>
-  <a href="testing.html">Testing</a>
-  <a href="csharp.html">C#</a>
-  <a href="vbnet.html">VB.NET</a>
-  <a href="envelope.html">The envelope</a>
-  <a class="api" href="https://acemq.org/">JVM libraries</a>
+
+  <div class="group">
+    <button type="button" aria-haspopup="true">Guide</button>
+    <div class="menu">
+      <a href="getting-started.html">Getting started</a>
+      <a href="publishing.html">Publishing</a>
+      <a href="consuming.html">Consuming</a>
+      <a href="topology.html">Exchanges, queues and bindings</a>
+      <a href="envelope.html">The envelope</a>
+      <a href="testing.html">Testing</a>
+    </div>
+  </div>
+
+  <div class="group">
+    <button type="button" aria-haspopup="true">Patterns</button>
+    <div class="menu">
+      <a href="patterns.html">Ordering, pipelines, outbox, replay</a>
+      <a href="request-reply.html">Request and reply</a>
+      <a href="streams.html">Streams</a>
+      <a href="reliability.html">Retries, duplicates, shutdown</a>
+    </div>
+  </div>
+
+  <div class="group">
+    <button type="button" aria-haspopup="true">Operations</button>
+    <div class="menu">
+      <a href="security.html">Security</a>
+      <a href="serialization.html">Serialization and encryption</a>
+      <a href="observability.html">Metrics and tracing</a>
+    </div>
+  </div>
+
+  <div class="group">
+    <button type="button" aria-haspopup="true">Languages</button>
+    <div class="menu">
+      <a href="csharp.html">C#</a>
+      <a href="vbnet.html">VB.NET</a>
+      <a href="licence.html">Licence</a>
+    </div>
+  </div>
+
+  <a class="enterprise" href="https://acemq.org/">JVM libraries</a>
   <a class="enterprise" href="https://acemq.com">Enterprise support</a>
 </nav>
 <main>'
@@ -161,7 +222,7 @@ elif command -v docfx >/dev/null 2>&1; then
   docfx etc/apidocs/docfx.json --logLevel warning
   # Added here rather than in NAV so the link can only exist alongside the pages.
   for f in "$OUT"/*.html; do
-    perl -pi -e 's{(<a class="api" href="https://acemq\.org/">)}{<a class="api" href="apidocs/">API reference</a>\n  $1}' "$f"
+    perl -pi -e 's{(<a class="enterprise" href="https://acemq\.org/">)}{<a class="api" href="apidocs/">API reference</a>\n  $1}' "$f"
   done
   echo "  rendered apidocs/"
 else
