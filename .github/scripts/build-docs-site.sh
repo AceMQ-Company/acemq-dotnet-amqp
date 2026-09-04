@@ -101,7 +101,6 @@ NAV='<nav class="top">
   <a href="request-reply.html">Request/reply</a>
   <a href="streams.html">Streams</a>
   <a href="observability.html">Metrics</a>
-  <a class="api" href="apidocs/">API reference</a>
   <a href="testing.html">Testing</a>
   <a href="csharp.html">C#</a>
   <a href="vbnet.html">VB.NET</a>
@@ -149,14 +148,27 @@ done
 
 rm -f "$OUT/.nav.html" "$OUT/.foot.html"
 
-# The API reference, generated from the XML documentation by DocFX. Skipped when
-# DocFX is absent so a local docs build still works without installing it; CI
-# installs it, so the published site always has one.
-if command -v docfx >/dev/null 2>&1; then
+# The API reference, generated from the XML documentation by DocFX.
+#
+# Required unless skipping is asked for explicitly. It used to skip whenever docfx
+# was absent, which is how a published site ended up with a navigation entry
+# pointing at a 404: CI installed the tool but its directory was not on PATH, the
+# script quietly moved on, and nothing failed. A missing tool is now a failed
+# build, and a deliberate skip removes the navigation entry with it.
+if [ "${ACEMQ_DOCS_SKIP_API:-0}" = "1" ]; then
+  echo "  ACEMQ_DOCS_SKIP_API=1; the API reference and its nav entry are omitted"
+elif command -v docfx >/dev/null 2>&1; then
   docfx etc/apidocs/docfx.json --logLevel warning
+  # Added here rather than in NAV so the link can only exist alongside the pages.
+  for f in "$OUT"/*.html; do
+    perl -pi -e 's{(<a class="api" href="https://acemq\.org/">)}{<a class="api" href="apidocs/">API reference</a>\n  $1}' "$f"
+  done
   echo "  rendered apidocs/"
 else
-  echo "  docfx not installed; skipping the API reference"
+  echo "docfx is not installed. Install it with:" >&2
+  echo "  dotnet tool install -g docfx --version 2.78.5" >&2
+  echo "or set ACEMQ_DOCS_SKIP_API=1 to build the site without the API reference." >&2
+  exit 1
 fi
 
 # Jekyll would otherwise skip javadoc's underscore-prefixed resources.
