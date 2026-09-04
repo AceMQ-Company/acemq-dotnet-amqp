@@ -10,7 +10,7 @@
     nobody needs.
   -->
   <PropertyGroup>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
 
     <Authors>AceMQ</Authors>
     <Company>AceMQ</Company>

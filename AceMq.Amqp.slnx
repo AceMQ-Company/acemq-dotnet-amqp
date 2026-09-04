@@ -7,6 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj" />
+    <Project Path="tests/AceMq.Amqp.Tls.Tests/AceMq.Amqp.Tls.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/vb-audit/vb-audit.csproj" />

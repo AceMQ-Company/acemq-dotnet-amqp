@@ -24,6 +24,7 @@ native API rather than a transliterated Java one.
 | `OutboxRelay` | publish what was written in the same transaction as your data |
 | `Replay` | put dead-lettered messages back |
 | `StreamReader<T>` | read a stream from an offset |
+| `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with jitter, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
 | `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |

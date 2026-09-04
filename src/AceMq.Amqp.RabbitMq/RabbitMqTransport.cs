@@ -64,6 +64,17 @@ public sealed class RabbitMqTransport : ITransport
         if (config.Password != null) factory.Password = config.Password;
         if (config.VirtualHost != null) factory.VirtualHost = config.VirtualHost;
 
+        // Asked at connect time rather than held, so a rotated secret is picked up
+        // by the next reconnection instead of the next restart.
+        if (config.CredentialsProvider != null)
+        {
+            var credentials = config.CredentialsProvider.Get();
+            if (credentials.Username.Length > 0) factory.UserName = credentials.Username;
+            factory.Password = credentials.Secret;
+        }
+
+        ApplyTls(factory, config);
+
         try
         {
             var connection = await factory.CreateConnectionAsync(cancellationToken)
@@ -84,6 +95,104 @@ public sealed class RabbitMqTransport : ITransport
             throw new TransportException($"could not reach the broker at {config.Url}", e);
         }
     }
+
+    /// <summary>Turns <see cref="TlsOptions"/> into the client's TLS settings.</summary>
+    private static void ApplyTls(ConnectionFactory factory, ConnectionConfig config)
+    {
+        var tls = config.Tls;
+        if (tls.Mode == TlsMode.Disabled)
+        {
+            factory.Ssl = new SslOption { Enabled = false };
+            return;
+        }
+
+        // The name the certificate is checked against. Without it the handshake has
+        // no target host and hostname verification cannot happen at all, so this is
+        // set even in Insecure mode.
+        var serverName = tls.ServerName ?? new Uri(config.Url).Host;
+
+        var ssl = new SslOption
+        {
+            Enabled = true,
+            ServerName = serverName,
+            // None lets the OS negotiate the best available version. Pinning a
+            // version here would freeze the connection at whatever was current when
+            // this was written, and stop it benefiting from later ones.
+            Version = System.Security.Authentication.SslProtocols.None,
+            CheckCertificateRevocation = tls.CheckRevocation,
+            Certs = tls.ClientCertificates,
+        };
+
+        if (tls.Mode == TlsMode.Insecure)
+        {
+            // Everything is accepted. Documented at the call site as development only.
+            ssl.AcceptablePolicyErrors =
+                System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch
+                | System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors
+                | System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable;
+        }
+        else if (tls.CertificateAuthority != null)
+        {
+            ssl.CertificateValidationCallback = TrustOnly(tls.CertificateAuthority, tls.CheckRevocation);
+        }
+
+        factory.Ssl = ssl;
+    }
+
+    /// <summary>
+    /// Accepts a certificate chain that terminates at one specific authority.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The usual mistake is to set <c>AllowUnknownCertificateAuthority</c> and stop
+    /// there. That accepts <em>any</em> chain the presenter builds, including a
+    /// self-signed one it made a moment ago, which is not far off accepting anything.
+    /// The root actually reached has to be compared against the authority being
+    /// trusted, which is what the final check does.
+    /// </para>
+    /// <para>
+    /// A hostname mismatch is still rejected. Only the chain's trust anchor is being
+    /// overridden, not whether the certificate belongs to the host being talked to.
+    /// </para>
+    /// </remarks>
+    private static System.Net.Security.RemoteCertificateValidationCallback TrustOnly(
+        System.Security.Cryptography.X509Certificates.X509Certificate2 authority,
+        bool checkRevocation) =>
+        (sender, certificate, chain, errors) =>
+        {
+            if (errors == System.Net.Security.SslPolicyErrors.None) return true;
+
+            // Neither of these is about which authority signed the certificate.
+            if ((errors & System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch) != 0)
+            {
+                return false;
+            }
+            if ((errors & System.Net.Security.SslPolicyErrors.RemoteCertificateNotAvailable) != 0)
+            {
+                return false;
+            }
+            if (certificate == null) return false;
+
+            using var rebuilt = new System.Security.Cryptography.X509Certificates.X509Chain();
+            rebuilt.ChainPolicy.ExtraStore.Add(authority);
+            rebuilt.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates
+                .X509VerificationFlags.AllowUnknownCertificateAuthority;
+            rebuilt.ChainPolicy.RevocationMode = checkRevocation
+                ? System.Security.Cryptography.X509Certificates.X509RevocationMode.Online
+                : System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+
+            var leaf = new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                certificate.Export(
+                    System.Security.Cryptography.X509Certificates.X509ContentType.Cert));
+            if (!rebuilt.Build(leaf)) return false;
+
+            // The chain built, but AllowUnknownCertificateAuthority means it would
+            // have built against anything. This is the check that makes it mean
+            // something: the anchor has to be the authority we were given.
+            var anchor = rebuilt.ChainElements[rebuilt.ChainElements.Count - 1].Certificate;
+            return anchor.RawData.Length == authority.RawData.Length
+                   && System.Linq.Enumerable.SequenceEqual(anchor.RawData, authority.RawData);
+        };
 
     private sealed class Connection : ITransportConnection
     {

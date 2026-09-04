@@ -178,7 +178,7 @@ public sealed class RequestTimedOutException : AceMqException
 /// </remarks>
 public sealed class Responder : IDisposable
 {
-    private IMessageConsumer? _consumer;
+    private readonly IMessageConsumer _consumer;
     private long _answered;
     private long _unanswerable;
     private bool _disposed;

@@ -159,10 +159,10 @@ public interface ITransportConnection : IDisposable
     /// Starts delivering to <paramref name="handler"/>, which returns the disposition
     /// for each message. The transport acknowledges according to that result.
     /// </summary>
-    /// <param name="arguments">
-    /// Consumer arguments, such as a stream's starting offset. Null for an ordinary
-    /// queue.
-    /// </param>
+    /// <remarks>
+    /// <paramref name="arguments"/> carries consumer arguments such as a stream's
+    /// starting offset, and is null for an ordinary queue.
+    /// </remarks>
     Task<ISubscription> SubscribeAsync(
         string queue, int prefetch,
         IReadOnlyDictionary<string, object>? arguments,

@@ -83,6 +83,7 @@ missing reference the compiler tells you about.
 - [Exchanges, queues and bindings](topology.md) — routing, queue types, dead-letter wiring
 - [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
 - [Reliability](reliability.md) — retries, duplicates, draining before shutdown
+- [Security](security.md) — TLS, private certificate authorities, credentials
 - [Request and reply](request-reply.md) — round trips over a one-way medium
 - [Streams](streams.md) — reading from an offset
 - [Metrics and tracing](observability.md) — Prometheus, OpenTelemetry, and the actuator

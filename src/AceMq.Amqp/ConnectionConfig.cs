@@ -35,6 +35,23 @@ public sealed class ConnectionConfig
         ConfirmTimeout = b.ConfirmTimeoutValue;
         MaxOutstandingPublishes = b.MaxOutstandingPublishesValue;
         PublisherConfirms = b.PublisherConfirmsValue;
+        CredentialsProvider = b.CredentialsProviderValue;
+
+        // An amqps:// URL means TLS with verification unless something says otherwise.
+        // Defaulting the other way would let a typo in a scheme quietly downgrade a
+        // production connection to clear text.
+        Tls = b.TlsValue
+              ?? (Scheme == "amqps" ? TlsOptions.Required() : TlsOptions.Disabled());
+
+        if (Tls.Mode != TlsMode.Disabled && Scheme == "amqp")
+        {
+            // amqp:// is the plaintext port. Asking for TLS on it reaches a broker
+            // that is not expecting a handshake, and the failure looks like a network
+            // fault rather than a configuration mistake.
+            throw new SecurityConfigurationException(
+                $"TLS was configured but the URL scheme is 'amqp'. Use amqps:// — "
+                + "the two schemes are different ports and the broker will not upgrade one.");
+        }
     }
 
     /// <summary>Broker URL. Its scheme selects the transport.</summary>
@@ -57,6 +74,12 @@ public sealed class ConnectionConfig
 
     /// <summary>Whether the broker is asked to confirm publishes. On by default.</summary>
     public bool PublisherConfirms { get; }
+
+    /// <summary>How the connection is secured.</summary>
+    public TlsOptions Tls { get; }
+
+    /// <summary>Where credentials come from, if not from the URL.</summary>
+    public ICredentialsProvider? CredentialsProvider { get; }
 
     /// <summary>The URL's scheme, which is how a transport is chosen.</summary>
     public string Scheme
@@ -95,6 +118,8 @@ public sealed class ConnectionConfig
         internal TimeSpan ConfirmTimeoutValue = TimeSpan.FromSeconds(30);
         internal int MaxOutstandingPublishesValue = 1000;
         internal bool PublisherConfirmsValue = true;
+        internal TlsOptions? TlsValue;
+        internal ICredentialsProvider? CredentialsProviderValue;
 
         internal Builder(string url) =>
             UrlValue = url ?? throw new ArgumentNullException(nameof(url));
@@ -109,6 +134,27 @@ public sealed class ConnectionConfig
         }
 
         public Builder VirtualHost(string? virtualHost) { VirtualHostValue = virtualHost; return this; }
+
+        /// <summary>How the connection is secured. Requires an amqps:// URL.</summary>
+        public Builder Tls(TlsOptions tls)
+        {
+            TlsValue = tls ?? throw new ArgumentNullException(nameof(tls));
+            return this;
+        }
+
+        /// <summary>
+        /// Takes credentials from a provider rather than from the URL.
+        /// </summary>
+        /// <remarks>
+        /// Asked on every connection, so a rotated secret is picked up by the next
+        /// reconnection rather than at the next restart. It also keeps the password
+        /// out of the URL, which tends to end up in logs and configuration files.
+        /// </remarks>
+        public Builder Credentials(ICredentialsProvider provider)
+        {
+            CredentialsProviderValue = provider ?? throw new ArgumentNullException(nameof(provider));
+            return this;
+        }
         public Builder ClientName(string clientName) { ClientNameValue = clientName; return this; }
         public Builder ConnectionTimeout(TimeSpan timeout) { ConnectionTimeoutValue = timeout; return this; }
         public Builder ConfirmTimeout(TimeSpan timeout) { ConfirmTimeoutValue = timeout; return this; }

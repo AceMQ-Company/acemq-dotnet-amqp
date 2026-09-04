@@ -95,6 +95,7 @@ NAV='<nav class="top">
   <a href="topology.html">Topology</a>
   <a href="patterns.html">Patterns</a>
   <a href="reliability.html">Reliability</a>
+  <a href="security.html">Security</a>
   <a href="request-reply.html">Request/reply</a>
   <a href="streams.html">Streams</a>
   <a href="observability.html">Metrics</a>
