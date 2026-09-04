@@ -1,6 +1,6 @@
 # Patterns
 
-Four things most services building on a broker end up writing themselves.
+Five things most services building on a broker end up writing themselves.
 
 ## Ordering by key
 
@@ -119,14 +119,69 @@ relay.Start();
 
 Either both the row and the record exist, or neither does.
 
-`IOutboxStore` is the interface to implement against your database. `InMemoryOutboxStore`
-ships for tests and to show the shape — it is **not an outbox**, because it cannot be
-written in the same transaction as anything durable and loses everything on a
-restart, which is the exact failure the pattern prevents.
+`DbOutboxStore` is the one that makes this work, because the record has to be in the
+same database as the business change:
+
+```csharp
+var store = new DbOutboxStore(() => new SqlConnection(connectionString));
+
+using var transaction = connection.BeginTransaction();
+await orders.SaveAsync(order, transaction);
+await store.AddAsync(record, transaction);   // the same transaction
+transaction.Commit();
+```
+
+**Pass the transaction.** The overload without one opens its own connection and is
+therefore not in yours, which quietly gives up the entire guarantee.
+`store.CreateTableSql()` gives you the schema for a migration.
+
+`InMemoryOutboxStore` ships for tests and to show the shape — it is **not an outbox**,
+because it cannot be written in the same transaction as anything durable and loses
+everything on a restart, which is the exact failure the pattern prevents.
 
 Delivery is **at least once**. A relay that publishes and then dies before marking
 the record will publish again, so consumers must tolerate duplicates — the envelope's
 id is the idempotency key.
+
+## Interceptors
+
+For the concerns that belong to every message rather than to one call site: a tenant
+header, an audit trail, a policy check on what goes out.
+
+```csharp
+mq.Intercept(new TenantStamp(tenant));      // publishes
+mq.Intercept(new AuditTrail(audit));        // handled messages
+```
+
+Inherit `PublishInterceptor` or `ConsumeInterceptor` and override what you care
+about — C# interfaces cannot carry default implementations on `netstandard2.0`, and
+VB cannot use them at all, so the base classes are what save you writing two empty
+methods.
+
+```csharp
+sealed class TenantStamp : PublishInterceptor
+{
+    public override PublishContext BeforePublish(PublishContext context) =>
+        context.WithEnvelope(/* the envelope with a header added */);
+}
+```
+
+**Only the envelope can be changed.** Not the payload, not the destination. An
+interceptor that could rewrite either would be able to send a message somewhere the
+caller never asked for — a surprising amount of power for something usually added to
+attach a header.
+
+Interceptors are taken when a publisher is created, so register them at start-up.
+One added later does not apply to publishers that already exist, which is deliberate:
+otherwise two identical publishers would behave differently for reasons nothing in
+the code shows.
+
+**An interceptor that throws after a confirm does not fail the publish.** The broker
+already has the message; reporting a failure would have the caller send it twice.
+`BeforePublish` is different — it runs before anything is sent, so a throw there does
+stop the publish, which is what makes a policy check possible.
+
+`Order` decides the sequence, lowest first.
 
 ## Replay
 

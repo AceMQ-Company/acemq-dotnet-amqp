@@ -43,6 +43,8 @@ public sealed class AceMqConnection : IDisposable
     private readonly SemaphoreSlim _inFlight;
     private readonly List<IDisposable> _owned = new List<IDisposable>();
     private readonly List<IHealthContributor> _health = new List<IHealthContributor>();
+    private readonly List<IPublishInterceptor> _publishInterceptors = new List<IPublishInterceptor>();
+    private readonly List<IConsumeInterceptor> _consumeInterceptors = new List<IConsumeInterceptor>();
     private volatile TaskCompletionSource<bool>? _consumingPaused;
     private volatile bool _publishingPaused;
 
@@ -156,9 +158,12 @@ public sealed class AceMqConnection : IDisposable
         string exchange, string routingKey, PublishOptions options, string? replyTo)
     {
         EnsureOpen();
+        IPublishInterceptor[] interceptors;
+        lock (_publishInterceptors) interceptors = _publishInterceptors.ToArray();
+
         var publisher = new Publisher<T>(
             _connection, _codec, exchange, routingKey, options, _inFlight,
-            _config.ConfirmTimeout, replyTo, () => _publishingPaused);
+            _config.ConfirmTimeout, replyTo, () => _publishingPaused, interceptors);
         lock (_owned) _owned.Add(publisher);
         return publisher;
     }
@@ -257,6 +262,14 @@ public sealed class AceMqConnection : IDisposable
                 // Continues the publisher's trace, which reaches here through the
                 // traceparent header the envelope already reserves -- including from
                 // a Java publisher, which writes the same header.
+                IConsumeInterceptor[] interceptors;
+                lock (_consumeInterceptors) interceptors = _consumeInterceptors.ToArray();
+                var interceptorContext = new ConsumeContext(queue, envelope, payload);
+                foreach (var interceptor in interceptors)
+                {
+                    interceptor.BeforeHandle(interceptorContext);
+                }
+
                 using var span = AceMqTelemetry.StartConsume(queue, delivery.Headers);
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 AceMqTelemetry.EnteredHandler();
@@ -273,6 +286,10 @@ public sealed class AceMqConnection : IDisposable
                 }
                 catch (Exception e)
                 {
+                    foreach (var interceptor in interceptors)
+                    {
+                        interceptor.OnError(interceptorContext, e);
+                    }
                     ack = options.RequeueOnFailure
                         ? Ack.Release()
                         : Ack.Retry(options.RetryDelay, e.Message);
@@ -281,6 +298,11 @@ public sealed class AceMqConnection : IDisposable
                 {
                     AceMqTelemetry.LeftHandler();
                     Interlocked.Decrement(ref _inFlightHandlers);
+                }
+
+                foreach (var interceptor in interceptors)
+                {
+                    interceptor.AfterHandle(interceptorContext, ack);
                 }
 
                 // A policy turns "retry after a fixed delay forever" into a bounded
@@ -377,6 +399,39 @@ public sealed class AceMqConnection : IDisposable
             await Task.Delay(25).ConfigureAwait(false);
         }
         return InFlight == 0;
+    }
+
+    /// <summary>
+    /// Adds an interceptor that runs around every publish.
+    /// </summary>
+    /// <remarks>
+    /// Registered before the publishers that use it. A publisher takes the
+    /// interceptors present when it is created, so one added afterwards does not
+    /// apply to it — which is deliberate: an interceptor appearing part way through a
+    /// process's life would make two otherwise identical publishers behave
+    /// differently, for reasons nothing in the code shows.
+    /// </remarks>
+    public AceMqConnection Intercept(IPublishInterceptor interceptor)
+    {
+        if (interceptor == null) throw new ArgumentNullException(nameof(interceptor));
+        lock (_publishInterceptors)
+        {
+            _publishInterceptors.Add(interceptor);
+            _publishInterceptors.Sort((a, b) => a.Order.CompareTo(b.Order));
+        }
+        return this;
+    }
+
+    /// <summary>Adds an interceptor that runs around every handled message.</summary>
+    public AceMqConnection Intercept(IConsumeInterceptor interceptor)
+    {
+        if (interceptor == null) throw new ArgumentNullException(nameof(interceptor));
+        lock (_consumeInterceptors)
+        {
+            _consumeInterceptors.Add(interceptor);
+            _consumeInterceptors.Sort((a, b) => a.Order.CompareTo(b.Order));
+        }
+        return this;
     }
 
     /// <summary>Adds something to the health report.</summary>

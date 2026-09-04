@@ -48,7 +48,7 @@ otherwise have reached a release. See [VB.NET](vbnet.md).
 | Publishing | confirms by default, back pressure, unroutable messages reported rather than dropped |
 | Consuming | explicit dispositions — accept, retry, dead-letter, release — and an attempt counter |
 | Topology | exchanges, queues and bindings declared as one unit, dead-letter wiring included, with a dry run |
-| Codecs | JSON by default, camelCase on the wire so C# and Java agree; raw bytes available |
+| Codecs | JSON, XML, text and bytes; composite for a format migration; payload encryption |
 | Request/reply | one reply queue per requester, replies matched by correlation |
 | Ordering | order per key across partitions, and a partition that halts rather than reorders |
 | Pipelines | steps on their own queues, type-checked against each other |

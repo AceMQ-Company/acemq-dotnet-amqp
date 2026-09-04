@@ -135,9 +135,9 @@ built.
 The reverse is guarded too: an `amqps://` URL defaults to TLS **required**, so a
 scheme cannot quietly leave a production connection in clear text.
 
-## What is not here yet
+## Encrypting the payload
 
-Payload encryption. The Java library has an `EncryptedCodec` and a keyring for
-encrypting message bodies at rest in the broker; there is no .NET equivalent yet.
-TLS protects messages in transit only — anything with access to the broker's storage
-sees the bodies.
+TLS protects messages in transit only. Anything with access to the broker's storage
+— or a backup of it — reads the bodies. `EncryptedCodec` encrypts the body itself, so
+what the broker holds is unreadable without a key the broker does not have. See
+[serialization](serialization.md#encrypting-the-payload).

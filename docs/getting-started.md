@@ -84,6 +84,7 @@ missing reference the compiler tells you about.
 - [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
 - [Reliability](reliability.md) — retries, duplicates, draining before shutdown
 - [Security](security.md) — TLS, private certificate authorities, credentials
+- [Serialization](serialization.md) — codecs, payload encryption, schemas
 - [Request and reply](request-reply.md) — round trips over a one-way medium
 - [Streams](streams.md) — reading from an offset
 - [Metrics and tracing](observability.md) — Prometheus, OpenTelemetry, and the actuator

@@ -24,6 +24,9 @@ native API rather than a transliterated Java one.
 | `OutboxRelay` | publish what was written in the same transaction as your data |
 | `Replay` | put dead-lettered messages back |
 | `StreamReader<T>` | read a stream from an offset |
+| Codecs | JSON, XML, text, bytes, composite, and `EncryptedCodec` for payload encryption |
+| `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
+| Interceptors | run around every publish and every handled message |
 | `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with jitter, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |

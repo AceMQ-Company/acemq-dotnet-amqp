@@ -114,15 +114,18 @@ internal sealed class Publisher<T> : IPublisher<T>
     private readonly TimeSpan _confirmTimeout;
     private readonly string? _replyTo;
     private readonly Func<bool>? _paused;
+    private readonly IPublishInterceptor[] _interceptors;
     private bool _disposed;
 
     internal Publisher(
         ITransportConnection connection, ICodec codec, string exchange, string routingKey,
         PublishOptions options, SemaphoreSlim inFlight, TimeSpan confirmTimeout,
-        string? replyTo = null, Func<bool>? paused = null)
+        string? replyTo = null, Func<bool>? paused = null,
+        IPublishInterceptor[]? interceptors = null)
     {
         _replyTo = replyTo;
         _paused = paused;
+        _interceptors = interceptors ?? Array.Empty<IPublishInterceptor>();
         _connection = connection;
         _codec = codec;
         _exchange = exchange;
@@ -144,6 +147,20 @@ internal sealed class Publisher<T> : IPublisher<T>
         if (_disposed) throw new ObjectDisposedException(nameof(Publisher<T>));
         if (envelope == null) throw new ArgumentNullException(nameof(envelope));
         if (_paused != null && _paused()) throw new PublishingPausedException();
+
+        // Before encoding, so an interceptor's envelope change reaches the wire.
+        if (_interceptors.Length > 0)
+        {
+            var context = new PublishContext(_exchange, _routingKey, envelope, payload);
+            foreach (var interceptor in _interceptors)
+            {
+                context = interceptor.BeforePublish(context)
+                          ?? throw new AceFatalException(
+                              $"{interceptor.GetType().Name}.BeforePublish returned null; " +
+                              "return the context it was given to leave the publish unchanged");
+            }
+            envelope = context.Envelope;
+        }
 
         var body = _codec.Encode(payload!);
         var headers = envelope.ToWire();
@@ -203,21 +220,46 @@ internal sealed class Publisher<T> : IPublisher<T>
                 envelope,
                 confirm.Routed ? MetricNames.OutcomeConfirmed : MetricNames.OutcomeUnroutable,
                 clock.Elapsed, span);
-            return new PublishResult(envelope.Id, confirm.Routed, clock.Elapsed);
+            var result = new PublishResult(envelope.Id, confirm.Routed, clock.Elapsed);
+            Notify(envelope, payload, result, null);
+            return result;
         }
-        catch (PublishFailedException)
+        catch (PublishFailedException e)
         {
+            Notify(envelope, payload, null, e);
             throw;
         }
         catch (Exception e)
         {
             Record(envelope, MetricNames.OutcomeFailed, clock.Elapsed, span);
             span?.SetStatus(ActivityStatusCode.Error, e.Message);
+            Notify(envelope, payload, null, e);
             throw;
         }
         finally
         {
             _inFlight.Release();
+        }
+    }
+
+    private void Notify(Envelope envelope, T payload, PublishResult? result, Exception? failure)
+    {
+        if (_interceptors.Length == 0) return;
+        var context = new PublishContext(_exchange, _routingKey, envelope, payload);
+        foreach (var interceptor in _interceptors)
+        {
+            // An interceptor that throws here must not turn a published message into
+            // a failed one: the broker already has it, and reporting otherwise would
+            // have the caller publish it a second time.
+            try
+            {
+                if (failure != null) interceptor.OnError(context, failure);
+                else if (result != null) interceptor.AfterConfirm(context, result);
+            }
+            catch
+            {
+                // Deliberately swallowed. See above.
+            }
         }
     }
 

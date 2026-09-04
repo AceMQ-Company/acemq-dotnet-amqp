@@ -77,10 +77,19 @@ It deduplicates what one running consumer sees, which is most redeliveries. It i
 **per process and lost on restart**, so it cannot deduplicate across instances or
 across a deploy.
 
-For that, the store has to be the database the handler already writes to — ideally
-claimed in the same transaction as the work, which is the only arrangement where
-"handled" and "recorded as handled" cannot disagree. Implement `IIdempotencyStore`
-against it.
+For that, use the database-backed store:
+
+```csharp
+var store = new DbIdempotencyStore(() => new SqlConnection(connectionString),
+                                   TimeSpan.FromDays(1));
+```
+
+`store.CreateTableSql()` gives you the table to put in a migration — the library
+hands you the statement rather than running DDL against your database uninvited.
+
+The claim is an **insert**, so the primary key does the mutual exclusion: two
+consumers racing for the same message, one insert succeeds and the other is refused
+by the database. A select-then-insert would have a window between the two.
 
 Retention is the window duplicates are caught in. Too short and a redelivery after a
 long outage is handled twice; too long and the store grows. A day covers what a
