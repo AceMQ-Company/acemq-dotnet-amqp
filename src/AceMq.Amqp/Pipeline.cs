@@ -47,11 +47,18 @@ public sealed class Pipeline<T> : IDisposable
     private long _endedEarly;
     private bool _disposed;
 
-    internal Pipeline(AceMqConnection mq, string name, IReadOnlyList<PipelineStep> steps)
+    private readonly RetryPolicy? _retryPolicy;
+    private readonly IIdempotencyStore? _idempotency;
+
+    internal Pipeline(
+        AceMqConnection mq, string name, IReadOnlyList<PipelineStep> steps,
+        RetryPolicy? retryPolicy, IIdempotencyStore? idempotency)
     {
         _mq = mq;
         Name = name;
         _steps = steps;
+        _retryPolicy = retryPolicy;
+        _idempotency = idempotency;
     }
 
     public string Name { get; }
@@ -85,11 +92,23 @@ public sealed class Pipeline<T> : IDisposable
             var step = _steps[i];
             var next = i + 1 < _steps.Count ? _steps[i + 1] : null;
 
+            var options = ConsumerOptions.Prefetch(step.Prefetch).As(new BytesCodec());
+            if (_retryPolicy != null) options = options.WithRetry(_retryPolicy);
+
             var consumer = await _mq.ConsumeAsync<byte[]>(
-                QueueFor(step.Name),
-                ConsumerOptions.Prefetch(step.Prefetch).As(new BytesCodec()),
+                QueueFor(step.Name), options,
                 async message =>
                 {
+                    // Keyed by step as well as by message, so a message re-entering
+                    // step three is not mistaken for one that already cleared step
+                    // one -- they share an envelope id all the way down the chain.
+                    var key = step.Name + ":" + message.Envelope.Id;
+                    if (_idempotency != null
+                        && !await _idempotency.ClaimAsync(key).ConfigureAwait(false))
+                    {
+                        return Ack.Accept();
+                    }
+
                     object? output;
                     try
                     {
@@ -98,12 +117,22 @@ public sealed class Pipeline<T> : IDisposable
                     }
                     catch (AceFatalException e)
                     {
+                        if (_idempotency != null)
+                        {
+                            await _idempotency.ReleaseAsync(key).ConfigureAwait(false);
+                        }
                         return Ack.DeadLetter(e.Message);
                     }
                     catch (Exception e)
                     {
+                        if (_idempotency != null)
+                        {
+                            await _idempotency.ReleaseAsync(key).ConfigureAwait(false);
+                        }
                         return Ack.Retry(step.RetryDelay, e.Message);
                     }
+
+                    if (_idempotency != null) await _idempotency.ConfirmAsync(key).ConfigureAwait(false);
 
                     if (output == null)
                     {
@@ -207,6 +236,8 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
     private readonly ICodec _codec;
     private int _prefetch = 20;
     private TimeSpan _retryDelay = TimeSpan.FromSeconds(5);
+    private RetryPolicy? _retryPolicy;
+    private IIdempotencyStore? _idempotency;
 
     internal PipelineBuilder(
         AceMqConnection mq, string name, List<PipelineStep> steps, ICodec codec)
@@ -215,6 +246,27 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
         _name = name;
         _steps = steps;
         _codec = codec;
+    }
+
+    /// <summary>
+    /// Carries the builder's settings into the one returned by <see cref="Step{TOut}"/>.
+    /// </summary>
+    /// <remarks>
+    /// Adding a step changes the second type parameter, so it has to return a new
+    /// builder. Everything configured so far has to come with it: without this,
+    /// <c>.Idempotent(store).Step(...)</c> silently drops the store, and the pipeline
+    /// runs without the guarantee the caller asked for and was told it had.
+    /// </remarks>
+    private PipelineBuilder<TEntry, TOut> Continuing<TOut>()
+    {
+        var next = new PipelineBuilder<TEntry, TOut>(_mq, _name, _steps, _codec)
+        {
+            _prefetch = _prefetch,
+            _retryDelay = _retryDelay,
+            _retryPolicy = _retryPolicy,
+            _idempotency = _idempotency,
+        };
+        return next;
     }
 
     /// <summary>
@@ -236,7 +288,7 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
             value => codec.Encode(value),
             _prefetch, _retryDelay));
 
-        return new PipelineBuilder<TEntry, TOut>(_mq, _name, _steps, _codec);
+        return Continuing<TOut>();
     }
 
     public PipelineBuilder<TEntry, TCurrent> Prefetch(int prefetch)
@@ -251,6 +303,28 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
         return this;
     }
 
+    /// <summary>Backs off between attempts and gives up according to a policy.</summary>
+    public PipelineBuilder<TEntry, TCurrent> WithRetry(RetryPolicy policy)
+    {
+        _retryPolicy = policy ?? throw new ArgumentNullException(nameof(policy));
+        return this;
+    }
+
+    /// <summary>
+    /// Skips a message a step has already handled.
+    /// </summary>
+    /// <remarks>
+    /// Applies to every step, and each step claims under its own key, so a message
+    /// re-entering step three is not mistaken for one that already cleared step one.
+    /// Without that, a retry anywhere in the chain would be treated as a duplicate
+    /// everywhere in it.
+    /// </remarks>
+    public PipelineBuilder<TEntry, TCurrent> Idempotent(IIdempotencyStore store)
+    {
+        _idempotency = store ?? throw new ArgumentNullException(nameof(store));
+        return this;
+    }
+
     /// <summary>Declares the step queues and starts consuming them.</summary>
     public async Task<Pipeline<TEntry>> BuildAsync()
     {
@@ -258,7 +332,8 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
         {
             throw new InvalidOperationException("a pipeline needs at least one step");
         }
-        var pipeline = new Pipeline<TEntry>(_mq, _name, _steps.ToArray());
+        var pipeline = new Pipeline<TEntry>(
+            _mq, _name, _steps.ToArray(), _retryPolicy, _idempotency);
         await pipeline.StartAsync().ConfigureAwait(false);
         return pipeline;
     }

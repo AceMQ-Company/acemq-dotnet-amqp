@@ -62,7 +62,7 @@ public enum PartitionFailure
 /// carrying on and being subtly wrong.
 /// </para>
 /// </remarks>
-public sealed class OrderedQueue<T> : IDisposable
+public sealed class OrderedQueue<T> : IDisposable, IHealthContributor
 {
     private readonly AceMqConnection _mq;
     private readonly Func<T, string> _key;
@@ -218,6 +218,36 @@ public sealed class OrderedQueue<T> : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Reports halted partitions, so a stopped consumer is visible to a health check.
+    /// </summary>
+    /// <remarks>
+    /// Degraded rather than down: the other partitions are still working, and a
+    /// process that reports itself down gets restarted, which loses the held message
+    /// and fixes nothing.
+    /// </remarks>
+    public HealthReport Report()
+    {
+        var halted = HaltedPartitions;
+        var details = new Dictionary<string, string>
+        {
+            ["partitions"] = Partitions.ToString(CultureInfo.InvariantCulture),
+            ["handled"] = Handled.ToString(CultureInfo.InvariantCulture),
+            ["failed"] = Failed.ToString(CultureInfo.InvariantCulture),
+            ["skipped"] = Skipped.ToString(CultureInfo.InvariantCulture),
+        };
+        if (halted.Count > 0)
+        {
+            details["halted"] = string.Join(",", halted.OrderBy(p => p));
+        }
+        return new HealthReport(
+            "ordered:" + Name,
+            halted.Count > 0 ? HealthStatus.Degraded : HealthStatus.Up,
+            details);
+    }
+
+    string IHealthContributor.Name => "ordered:" + Name;
+
     /// <summary>Restarts a partition that halted, once the cause has been dealt with.</summary>
     /// <remarks>
     /// The held message is tried again from the first attempt. It is still the
@@ -323,6 +353,9 @@ public sealed class OrderedQueueBuilder<T>
         var queue = new OrderedQueue<T>(
             _mq, _name, _partitions, _key, _onFailure, _attempts, _delay, _prefetch);
         await queue.DeclareAsync().ConfigureAwait(false);
+        // Registered so a halted partition reaches the health endpoint without the
+        // application having to remember to wire it up.
+        _mq.RegisterHealth(queue);
         return queue;
     }
 }

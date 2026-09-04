@@ -146,16 +146,20 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
 /// <summary>How a consumer should behave.</summary>
 public sealed class ConsumerOptions
 {
-    private ConsumerOptions(int prefetch, ICodec? codec, bool requeueOnFailure, TimeSpan retryDelay)
+    private ConsumerOptions(
+        int prefetch, ICodec? codec, bool requeueOnFailure, TimeSpan retryDelay,
+        RetryPolicy? retryPolicy, IIdempotencyStore? idempotency)
     {
         PrefetchCount = prefetch;
         Codec = codec;
         RequeueOnFailure = requeueOnFailure;
         RetryDelay = retryDelay;
+        RetryPolicy = retryPolicy;
+        Idempotency = idempotency;
     }
 
     public static ConsumerOptions Defaults() =>
-        new ConsumerOptions(20, null, false, TimeSpan.FromSeconds(5));
+        new ConsumerOptions(20, null, false, TimeSpan.FromSeconds(5), null, null);
 
     /// <summary>
     /// How many unacknowledged messages the broker may have outstanding with this
@@ -169,15 +173,36 @@ public sealed class ConsumerOptions
     public static ConsumerOptions Prefetch(int prefetch)
     {
         if (prefetch < 1) throw new ArgumentException("must be at least 1", nameof(prefetch));
-        return new ConsumerOptions(prefetch, null, false, TimeSpan.FromSeconds(5));
+        return new ConsumerOptions(prefetch, null, false, TimeSpan.FromSeconds(5), null, null);
     }
 
     public ConsumerOptions WithPrefetch(int prefetch) =>
-        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, RetryDelay);
+        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency);
 
     /// <summary>Decodes with this codec rather than the connection's.</summary>
     public ConsumerOptions As(ICodec codec) =>
-        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, RetryDelay);
+        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency);
+
+    /// <summary>
+    /// Backs off between attempts and gives up according to a policy.
+    /// </summary>
+    /// <remarks>
+    /// Without one, a handler that throws is retried after a fixed delay forever. A
+    /// policy is what turns that into a bounded number of attempts with growing gaps,
+    /// after which the message is dead-lettered rather than retried into eternity.
+    /// </remarks>
+    public ConsumerOptions WithRetry(RetryPolicy policy) =>
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, policy, Idempotency);
+
+    /// <summary>
+    /// Skips a message this store says has already been handled.
+    /// </summary>
+    /// <remarks>
+    /// Every broker delivers at least once, so a consumer will see the same message
+    /// twice eventually. This is what makes that safe when handling it twice is not.
+    /// </remarks>
+    public ConsumerOptions Idempotent(IIdempotencyStore store) =>
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, store);
 
     /// <summary>
     /// Returns a failed message to the queue rather than dead-lettering it.
@@ -187,14 +212,20 @@ public sealed class ConsumerOptions
     /// produces a hot loop that looks like throughput.
     /// </remarks>
     public ConsumerOptions RequeueingOnFailure() =>
-        new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay);
+        new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay, RetryPolicy, Idempotency);
 
     public ConsumerOptions WithRetryDelay(TimeSpan delay) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, delay);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, delay, RetryPolicy, Idempotency);
 
     public int PrefetchCount { get; }
     public ICodec? Codec { get; }
     public bool RequeueOnFailure { get; }
+
+    /// <summary>How to back off and when to give up, or null for a fixed delay forever.</summary>
+    public RetryPolicy? RetryPolicy { get; }
+
+    /// <summary>Where already-handled message ids are remembered, or null for none.</summary>
+    public IIdempotencyStore? Idempotency { get; }
 
     /// <summary>Delay applied when a handler throws rather than returning a disposition.</summary>
     public TimeSpan RetryDelay { get; }

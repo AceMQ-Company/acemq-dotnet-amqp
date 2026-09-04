@@ -113,14 +113,16 @@ internal sealed class Publisher<T> : IPublisher<T>
     private readonly SemaphoreSlim _inFlight;
     private readonly TimeSpan _confirmTimeout;
     private readonly string? _replyTo;
+    private readonly Func<bool>? _paused;
     private bool _disposed;
 
     internal Publisher(
         ITransportConnection connection, ICodec codec, string exchange, string routingKey,
         PublishOptions options, SemaphoreSlim inFlight, TimeSpan confirmTimeout,
-        string? replyTo = null)
+        string? replyTo = null, Func<bool>? paused = null)
     {
         _replyTo = replyTo;
+        _paused = paused;
         _connection = connection;
         _codec = codec;
         _exchange = exchange;
@@ -141,6 +143,7 @@ internal sealed class Publisher<T> : IPublisher<T>
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Publisher<T>));
         if (envelope == null) throw new ArgumentNullException(nameof(envelope));
+        if (_paused != null && _paused()) throw new PublishingPausedException();
 
         var body = _codec.Encode(payload!);
         var headers = envelope.ToWire();

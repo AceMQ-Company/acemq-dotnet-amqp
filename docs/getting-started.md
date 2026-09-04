@@ -82,6 +82,7 @@ missing reference the compiler tells you about.
 - [Consuming](consuming.md) — dispositions, retries, dead-lettering
 - [Exchanges, queues and bindings](topology.md) — routing, queue types, dead-letter wiring
 - [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
+- [Reliability](reliability.md) — retries, duplicates, draining before shutdown
 - [Request and reply](request-reply.md) — round trips over a one-way medium
 - [Streams](streams.md) — reading from an offset
 - [Metrics and tracing](observability.md) — Prometheus, OpenTelemetry, and the actuator

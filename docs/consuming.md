@@ -110,6 +110,20 @@ await mq.DeclareQueueAsync("orders.placed", QueueType.Classic,
     new Dictionary<string, object> { ["x-dead-letter-exchange"] = "orders.dlx" });
 ```
 
+## Retries, duplicates and shutdown
+
+`ConsumerOptions` also takes a retry policy and an idempotency store:
+
+```csharp
+ConsumerOptions.Defaults()
+    .WithRetry(RetryPolicy.Exponential(5, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(1)))
+    .Idempotent(InMemoryIdempotencyStore.ForOneDay())
+```
+
+Without a policy a failing handler is retried forever; without a store a redelivery
+is handled twice. [Reliability](reliability.md) covers both, and how to drain
+consumers before shutting down.
+
 ## Concurrency
 
 The handler may be invoked concurrently up to the prefetch, so it must be safe to

@@ -66,6 +66,13 @@ public sealed class ConnectionBlockedException : TransportException
     public string Reason { get; }
 }
 
+/// <summary>Publishing is paused, normally because the process is shutting down.</summary>
+public sealed class PublishingPausedException : AceMqException
+{
+    public PublishingPausedException()
+        : base("publishing is paused. Call ResumePublishing() to allow it again.") { }
+}
+
 /// <summary>
 /// A publish that was not confirmed by the broker, or that the broker could not
 /// route.

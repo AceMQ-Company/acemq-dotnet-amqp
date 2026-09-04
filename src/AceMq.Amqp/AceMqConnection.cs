@@ -42,6 +42,9 @@ public sealed class AceMqConnection : IDisposable
     private readonly ICodec _codec;
     private readonly SemaphoreSlim _inFlight;
     private readonly List<IDisposable> _owned = new List<IDisposable>();
+    private readonly List<IHealthContributor> _health = new List<IHealthContributor>();
+    private volatile TaskCompletionSource<bool>? _consumingPaused;
+    private volatile bool _publishingPaused;
     private bool _disposed;
 
     private AceMqConnection(
@@ -150,7 +153,7 @@ public sealed class AceMqConnection : IDisposable
         EnsureOpen();
         var publisher = new Publisher<T>(
             _connection, _codec, exchange, routingKey, options, _inFlight,
-            _config.ConfirmTimeout, replyTo);
+            _config.ConfirmTimeout, replyTo, () => _publishingPaused);
         lock (_owned) _owned.Add(publisher);
         return publisher;
     }
@@ -219,7 +222,31 @@ public sealed class AceMqConnection : IDisposable
                     return Ack.DeadLetter($"could not decode as {typeof(T).Name}: {e.Message}");
                 }
 
+                // Held here rather than rejected, so a paused consumer keeps its
+                // place in the queue and resumes with the same message instead of
+                // cycling it to the back.
+                var paused = _consumingPaused;
+                if (paused != null)
+                {
+                    var resumed = await Task.WhenAny(paused.Task, Task.Delay(TimeSpan.FromSeconds(30)))
+                        .ConfigureAwait(false);
+                    if (resumed != paused.Task) return Ack.Release();
+                }
+
                 var attempt = attempts.AddOrUpdate(envelope.Id, envelope.Attempt, (_, n) => n + 1);
+
+                // Claimed before the handler runs, so a redelivery that arrives while
+                // the first attempt is still in flight is not handled twice in
+                // parallel. Released on failure, or the retry would look like a
+                // duplicate and be dropped.
+                if (options.Idempotency != null)
+                {
+                    if (!await options.Idempotency.ClaimAsync(envelope.Id).ConfigureAwait(false))
+                    {
+                        return Ack.Accept();
+                    }
+                }
+
                 var message = new ReceivedMessage<T>(payload, envelope, delivery, attempt);
 
                 // Continues the publisher's trace, which reaches here through the
@@ -249,6 +276,32 @@ public sealed class AceMqConnection : IDisposable
                     AceMqTelemetry.LeftHandler();
                 }
 
+                // A policy turns "retry after a fixed delay forever" into a bounded
+                // number of attempts that then dead-letters, which is the difference
+                // between a transient failure recovering and a poison message
+                // occupying a consumer indefinitely.
+                if (ack.IsRetry && options.RetryPolicy != null)
+                {
+                    var age = DateTimeOffset.UtcNow - envelope.FirstSeen;
+                    var next = options.RetryPolicy.NextDelay(attempt, age);
+                    ack = next.HasValue
+                        ? Ack.Retry(next.Value, ack.Reason ?? "retrying")
+                        : Ack.DeadLetter(
+                            $"gave up after {attempt} attempt(s): {ack.Reason ?? "no reason given"}");
+                }
+
+                if (options.Idempotency != null)
+                {
+                    if (ack.IsAccept)
+                    {
+                        await options.Idempotency.ConfirmAsync(envelope.Id).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await options.Idempotency.ReleaseAsync(envelope.Id).ConfigureAwait(false);
+                    }
+                }
+
                 RecordConsume(queue, envelope, attempt, ack, clock.Elapsed, span);
 
                 // The message is finished with, either way. Keeping its counter would
@@ -261,6 +314,117 @@ public sealed class AceMqConnection : IDisposable
         var consumer = new MessageConsumer(subscription);
         lock (_owned) _owned.Add(consumer);
         return consumer;
+    }
+
+    /// <summary>
+    /// Stops handing messages to handlers, without closing anything.
+    /// </summary>
+    /// <remarks>
+    /// Messages already in a handler run to completion. Anything the broker has
+    /// delivered but not yet handed over stays unacknowledged, so it is redelivered
+    /// to this consumer or another one — nothing is lost by pausing.
+    /// </remarks>
+    public void PauseConsuming()
+    {
+        if (_consumingPaused != null) return;
+        _consumingPaused =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    public void ResumeConsuming()
+    {
+        var gate = _consumingPaused;
+        _consumingPaused = null;
+        gate?.TrySetResult(true);
+    }
+
+    public bool IsConsumingPaused => _consumingPaused != null;
+
+    /// <summary>Refuses further publishes with <see cref="PublishingPausedException"/>.</summary>
+    public void PausePublishing() => _publishingPaused = true;
+
+    public void ResumePublishing() => _publishingPaused = false;
+
+    public bool IsPublishingPaused => _publishingPaused;
+
+    /// <summary>Messages currently inside a handler.</summary>
+    public long InFlight => AceMqTelemetry.InFlight;
+
+    /// <summary>
+    /// Pauses consuming and waits for handlers already running to finish.
+    /// </summary>
+    /// <returns>True if everything finished within the timeout.</returns>
+    /// <remarks>
+    /// What to call before shutting down. Disposing the connection while handlers are
+    /// mid-flight abandons their work: the messages were never acknowledged so they
+    /// come back, but any side effect already applied has happened twice by the time
+    /// they do. Draining first turns a rolling deploy into an orderly handover.
+    /// </remarks>
+    public async Task<bool> DrainConsumersAsync(TimeSpan timeout)
+    {
+        PauseConsuming();
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (InFlight == 0) return true;
+            await Task.Delay(25).ConfigureAwait(false);
+        }
+        return InFlight == 0;
+    }
+
+    /// <summary>Adds something to the health report.</summary>
+    public void RegisterHealth(IHealthContributor contributor)
+    {
+        if (contributor == null) throw new ArgumentNullException(nameof(contributor));
+        lock (_health) _health.Add(contributor);
+    }
+
+    /// <summary>
+    /// The health of the connection and everything registered with it.
+    /// </summary>
+    /// <remarks>
+    /// The worst report wins. Ordered queues register themselves, so a halted
+    /// partition shows up here — which matters, because a halted partition is a
+    /// consumer that has stopped without the connection or the process noticing.
+    /// </remarks>
+    public AggregateHealth Health()
+    {
+        var reports = new List<HealthReport>();
+
+        var connection = new Dictionary<string, string>
+        {
+            ["open"] = IsOpen ? "true" : "false",
+            ["blocked"] = IsBlocked ? "true" : "false",
+            ["transport"] = TransportName,
+            ["inFlight"] = InFlight.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
+        if (IsConsumingPaused) connection["consuming"] = "paused";
+        if (IsPublishingPaused) connection["publishing"] = "paused";
+        if (BlockedReason != null) connection["blockedReason"] = BlockedReason;
+        reports.Add(new HealthReport(
+            "connection",
+            !IsOpen ? HealthStatus.Down : IsBlocked ? HealthStatus.Degraded : HealthStatus.Up,
+            connection));
+
+        List<IHealthContributor> contributors;
+        lock (_health) contributors = new List<IHealthContributor>(_health);
+        foreach (var contributor in contributors)
+        {
+            try
+            {
+                reports.Add(contributor.Report());
+            }
+            catch (Exception e)
+            {
+                // A contributor that throws is itself a health problem, and must not
+                // take the whole report down with it.
+                reports.Add(new HealthReport(
+                    contributor.Name, HealthStatus.Down,
+                    new Dictionary<string, string> { ["error"] = e.Message }));
+            }
+        }
+
+        return new AggregateHealth(reports);
     }
 
     /// <summary>Applies a topology, declaring whatever is missing.</summary>

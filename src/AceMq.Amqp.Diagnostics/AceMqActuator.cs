@@ -167,10 +167,12 @@ public sealed class AceMqActuator : IDisposable
         }
         else if (path == _options.HealthPath)
         {
-            var healthy = _mq == null || (_mq.IsOpen && !_mq.IsBlocked);
-            // 503 when unhealthy, so a load balancer or Kubernetes probe reads it
-            // without parsing the body.
-            Write(context, healthy ? 200 : 503, "application/json; charset=utf-8", Health());
+            var health = _mq?.Health();
+            // 503 only when something is actually down. Degraded stays 200: a halted
+            // partition needs attention, but reporting the process unhealthy gets it
+            // restarted, which loses the held message and fixes nothing.
+            var status = health == null || health.Status != HealthStatus.Down ? 200 : 503;
+            Write(context, status, "application/json; charset=utf-8", Health(health));
         }
         else if (path == _options.InfoPath)
         {
@@ -184,27 +186,35 @@ public sealed class AceMqActuator : IDisposable
         }
     }
 
-    private string Health()
+    private string Health(AggregateHealth? health)
     {
-        var parts = new List<string>();
-        if (_mq == null)
+        var parts = new List<string>
         {
-            parts.Add("\"status\":\"UP\"");
-            parts.Add("\"connection\":\"not reported\"");
-        }
-        else
+            $"\"status\":\"{(health == null ? "UP" : health.Status.ToString().ToUpperInvariant())}\"",
+            $"\"inFlight\":{AceMqTelemetry.InFlight.ToString(CultureInfo.InvariantCulture)}",
+        };
+
+        if (health != null)
         {
-            var healthy = _mq.IsOpen && !_mq.IsBlocked;
-            parts.Add($"\"status\":\"{(healthy ? "UP" : "DOWN")}\"");
-            parts.Add($"\"open\":{(_mq.IsOpen ? "true" : "false")}");
-            parts.Add($"\"blocked\":{(_mq.IsBlocked ? "true" : "false")}");
-            if (_mq.BlockedReason != null)
+            // Every contributor by name, so a halted ordered-queue partition is
+            // visible here rather than only in the metrics -- a halted partition is
+            // a consumer that has stopped without the connection noticing.
+            var components = new List<string>();
+            foreach (var report in health.Reports)
             {
-                parts.Add($"\"blockedReason\":\"{Json(_mq.BlockedReason)}\"");
+                var details = new List<string>
+                {
+                    $"\"status\":\"{report.Status.ToString().ToUpperInvariant()}\"",
+                };
+                foreach (var detail in report.Details)
+                {
+                    details.Add($"\"{Json(detail.Key)}\":\"{Json(detail.Value)}\"");
+                }
+                components.Add($"\"{Json(report.Name)}\":{{{string.Join(",", details)}}}");
             }
-            parts.Add($"\"transport\":\"{Json(_mq.TransportName)}\"");
+            parts.Add($"\"components\":{{{string.Join(",", components)}}}");
         }
-        parts.Add($"\"inFlight\":{AceMqTelemetry.InFlight.ToString(CultureInfo.InvariantCulture)}");
+
         return "{" + string.Join(",", parts) + "}\n";
     }
 
