@@ -90,6 +90,10 @@ NAV='<nav class="top">
   <span class="brand"><img src="assets/acemq.png" alt="AceMQ"> for .NET</span>
   <a href="index.html">Overview</a>
   <a href="getting-started.html">Getting started</a>
+  <a href="publishing.html">Publishing</a>
+  <a href="consuming.html">Consuming</a>
+  <a href="topology.html">Topology</a>
+  <a href="testing.html">Testing</a>
   <a href="csharp.html">C#</a>
   <a href="vbnet.html">VB.NET</a>
   <a href="envelope.html">The envelope</a>
@@ -105,7 +109,7 @@ FOOT='</main>
   <a href="https://acemq.org/acemq-java-amqp/licence.html">licence</a>.
   <a href="https://acemq.com">Enterprise support</a>.
   The JVM libraries are at <a href="https://acemq.org/">acemq.org</a>.
-  Pre-1.0, and in development: this library is not usable yet.
+  Pre-1.0 and in development: not published to a package feed yet.
   RabbitMQ and .NET are trademarks of their respective owners. This project is not
   affiliated with either.
 </footer>'

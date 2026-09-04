@@ -3,6 +3,40 @@
 The primary language for this library. Everything on this page compiles against
 `AceMq.Amqp` today.
 
+## Connecting
+
+```csharp
+using AceMq.Amqp;
+using AceMq.Amqp.RabbitMq;
+
+Transports.Register(new RabbitMqTransport());
+using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
+```
+
+The type is `AceMqConnection`, where the Java library calls it `AceMq`. It cannot be
+called that here: the namespace is `AceMq.Amqp`, and a type named `AceMq` inside it
+makes every reference to the namespace ambiguous. The name differs because the CLR
+requires it to, not because the concept did.
+
+One instance per application. It owns the connection, so creating one per message
+turns a cheap publish into a TCP handshake.
+
+## Publishing and consuming
+
+```csharp
+using var consumer = await mq.ConsumeAsync<OrderPlaced>("orders.placed", async message =>
+{
+    await _orders.RecordAsync(message.Payload);
+    return Ack.Accept();
+});
+
+var publisher = mq.Publisher<OrderPlaced>("orders", "order.placed");
+PublishResult result = await publisher.SendAsync(new OrderPlaced("A-1", 42.50m));
+```
+
+[Publishing](publishing.md) and [consuming](consuming.md) go into what the results
+and the dispositions mean.
+
 ## Building an envelope
 
 ```csharp
@@ -63,3 +97,7 @@ Envelope.Of("t").Header("x-acemq-id", "mine");
 cd examples/csharp
 dotnet run
 ```
+
+It publishes and consumes a message over the in-memory broker, so it runs with
+nothing installed. [The VB example](vbnet.md) is the same program and prints the
+same output.

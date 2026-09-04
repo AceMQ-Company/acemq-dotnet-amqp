@@ -1,0 +1,180 @@
+// Copyright 2026 AceMQ.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+using System.Linq;
+using AceMq.Amqp;
+using AceMq.Amqp.RabbitMq;
+
+namespace AceMq.Amqp.RabbitMq.Tests;
+
+public sealed class OrderPlaced
+{
+    public string OrderId { get; set; } = "";
+    public decimal Total { get; set; }
+}
+
+/// <summary>
+/// The RabbitMQ transport, against a real broker.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This project exists separately from the unit tests because it cannot run without
+/// a broker. Making it skip itself when one is absent would turn "nobody ran this"
+/// into a green tick, which is the failure mode worth avoiding: an integration suite
+/// that silently does nothing is worse than one that is obviously not running.
+/// </para>
+/// <para>
+/// Point it at a broker with <c>ACEMQ_TEST_AMQP_URL</c>. CI supplies one as a
+/// service container.
+/// </para>
+/// </remarks>
+public sealed class RabbitMqTransportTests : IAsyncLifetime
+{
+    private readonly string _url =
+        Environment.GetEnvironmentVariable("ACEMQ_TEST_AMQP_URL")
+        ?? "amqp://guest:guest@localhost:5672";
+
+    private readonly string _suffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+    private AceMqConnection _mq = null!;
+
+    private string Exchange => $"acemq.test.{_suffix}";
+    private string Queue => $"acemq.test.{_suffix}.q";
+
+    public async Task InitializeAsync()
+    {
+        Transports.Register(new RabbitMqTransport());
+        _mq = await AceMqConnection.ConnectAsync(_url);
+        await _mq.DeclareExchangeAsync(Exchange, "topic");
+        await _mq.DeclareQueueAsync(Queue);
+        await _mq.BindAsync(Queue, Exchange, "order.placed");
+    }
+
+    public async Task DisposeAsync()
+    {
+        try { await _mq.DeleteQueueAsync(Queue); } catch { /* the test may have failed before declaring */ }
+        _mq.Dispose();
+    }
+
+    [Fact]
+    public async Task PublishesAndConsumesOverARealBroker()
+    {
+        // RunContinuationsAsynchronously matters here: without it the awaiting test
+        // resumes on the client's consumer dispatch thread, and anything it then does
+        // that the dispatch thread must service blocks that thread against itself.
+        var arrived = new TaskCompletionSource<IMessage<OrderPlaced>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await _mq.ConsumeAsync<OrderPlaced>(Queue, message =>
+        {
+            arrived.TrySetResult(message);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var envelope = Envelope.Of("order.placed")
+            .CorrelationId("corr-1")
+            .Header("x-tenant", "acme")
+            .Build();
+
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        var result = await publisher.SendAsync(
+            new OrderPlaced { OrderId = "A-1", Total = 42.5m }, envelope);
+
+        Assert.True(result.Routed);
+
+        var received = await arrived.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+        Assert.Equal("A-1", received.Payload.OrderId);
+        Assert.Equal(42.5m, received.Payload.Total);
+
+        // The envelope survived a real AMQP round trip, where string headers travel
+        // as byte arrays and come back needing to be decoded again.
+        Assert.Equal(envelope.Id, received.Envelope.Id);
+        Assert.Equal("corr-1", received.Envelope.CorrelationId);
+        Assert.Equal("acme", received.Headers["x-tenant"]);
+        Assert.Equal(1, received.Attempt);
+    }
+
+    [Fact]
+    public async Task ReportsAPublishThatMatchesNoQueue()
+    {
+        // Mandatory publishing means the broker returns the message rather than
+        // dropping it, and the library turns that return into a failed publish.
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.cancelled");
+
+        var error = await Assert.ThrowsAsync<PublishFailedException>(
+            () => publisher.SendAsync(new OrderPlaced { OrderId = "A-2" }));
+        Assert.Contains("matched no queue", error.Message);
+    }
+
+    [Fact]
+    public async Task CountsWhatIsWaitingOnAQueue()
+    {
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        await publisher.SendAsync(new OrderPlaced { OrderId = "A-3" });
+        await publisher.SendAsync(new OrderPlaced { OrderId = "A-4" });
+
+        // The broker's count is eventually consistent with the publish confirms.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        long count = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            count = await _mq.MessageCountAsync(Queue);
+            if (count >= 2) break;
+            await Task.Delay(100);
+        }
+
+        Assert.Equal(2, count);
+    }
+
+    [Fact]
+    public async Task RedeliversARetriedMessageWithTheAttemptAdvanced()
+    {
+        var attempts = new List<int>();
+        var thirdAttempt = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var consumer = await _mq.ConsumeAsync<OrderPlaced>(Queue, message =>
+        {
+            lock (attempts) attempts.Add(message.Attempt);
+            if (message.Attempt >= 3)
+            {
+                thirdAttempt.TrySetResult(true);
+                return Task.FromResult(Ack.Accept());
+            }
+            return Task.FromResult(Ack.Retry(TimeSpan.FromMilliseconds(50), "not yet"));
+        });
+
+        var envelope = Envelope.Of("order.placed").Build();
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        await publisher.SendAsync(new OrderPlaced { OrderId = "A-5" }, envelope);
+
+        await thirdAttempt.Task.WaitAsync(TimeSpan.FromSeconds(20));
+
+        // RabbitMQ requeues the original bytes, so the envelope's attempt header is
+        // unchanged on every redelivery. The counter the handler sees is the
+        // consumer's own, which is the whole reason it is kept there: read off the
+        // wire it would be 1 forever and this loop would never end.
+        lock (attempts) Assert.Equal(new[] { 1, 2, 3 }, attempts.Take(3).ToArray());
+    }
+
+    [Fact]
+    public async Task ReportsTheBrokerItIsTalkingTo()
+    {
+        Assert.Equal("rabbitmq", _mq.TransportName);
+        Assert.True(_mq.Supports(Capability.PublisherConfirms));
+        Assert.True(_mq.IsOpen);
+        Assert.False(_mq.IsBlocked);
+        Assert.True(await _mq.QueueExistsAsync(Queue));
+        Assert.False(await _mq.QueueExistsAsync("acemq.test.definitely-not-declared"));
+    }
+}

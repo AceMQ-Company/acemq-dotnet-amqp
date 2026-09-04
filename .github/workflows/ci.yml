@@ -36,7 +36,9 @@ jobs:
       - name: Test
         # The conformance tests assert against headers generated from the Java
         # library. A failure here means the two implementations have diverged.
-        run: dotnet test --configuration Release --no-build --verbosity normal
+        run: >
+          dotnet test tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj
+          --configuration Release --no-build --verbosity normal
 
       - name: Compile and run the C# example
         run: dotnet run --project examples/csharp --configuration Release
@@ -44,9 +46,43 @@ jobs:
       - name: Compile and run the VB.NET example
         run: dotnet run --project examples/vb --configuration Release
 
-      - name: Verify the library targets netstandard2.0
+      - name: Verify both assemblies target netstandard2.0
         # The reach promise: .NET Framework 4.6.2+ as well as modern .NET. A
-        # retarget would quietly drop the consumers this library exists to serve.
+        # retarget would quietly drop the consumers this library exists to serve --
+        # and it has to hold for the transport too, or the promise only covers code
+        # that never talks to a broker.
         run: |
-          grep -q '<TargetFramework>netstandard2.0</TargetFramework>' src/AceMq.Amqp/AceMq.Amqp.csproj
-          echo "netstandard2.0 confirmed"
+          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj; do
+            grep -q '<TargetFramework>netstandard2.0</TargetFramework>' "$p" \
+              || { echo "$p no longer targets netstandard2.0"; exit 1; }
+            echo "netstandard2.0 confirmed: $p"
+          done
+
+  integration:
+    # The RabbitMQ transport, against a real broker. This job has no skip path: an
+    # integration suite that quietly does nothing when the broker is missing reports
+    # a green tick for work nobody did.
+    runs-on: ubuntu-latest
+    services:
+      rabbitmq:
+        image: rabbitmq:4-management
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test against RabbitMQ
+        env:
+          ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
+        run: >
+          dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
+          --configuration Release --verbosity normal

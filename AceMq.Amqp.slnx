@@ -1,8 +1,13 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/AceMq.Amqp/AceMq.Amqp.csproj" />
+    <Project Path="src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/csharp/csharp.csproj" />
+    <Project Path="examples/vb/vb.vbproj" />
   </Folder>
 </Solution>

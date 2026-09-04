@@ -4,17 +4,37 @@ AceMQ for .NET. The same message envelope, the same patterns and the same metric
 names as [acemq-java-amqp](https://github.com/AceMQ-Company/acemq-java-amqp) — with a
 native API rather than a transliterated Java one.
 
-> **Status: P0, local only.** The envelope contract and its conformance tests exist
-> and pass. Nothing else does yet: no transport, no publisher, no consumer. This is
-> not usable and is not published anywhere.
+> **Status: pre-1.0, not published.** Publishing, consuming, topology, retries and
+> dead-lettering work against a real broker, and the integration suite runs against
+> RabbitMQ in CI. There is no package on any feed yet and the API is still free to
+> change.
 
 ## What is here
 
 | | |
 |---|---|
-| `AceHeaders` | The header names AceMQ puts on the wire |
-| `Envelope` | Identity, causation, attempt counters — and the defaults, which are contract |
-| Conformance tests | 7, asserting against headers **Java actually produced** |
+| `AceMqConnection` | Connect, declare topology, create publishers and consumers |
+| `IPublisher<T>` | Publishing with confirms, back pressure, unroutable messages reported |
+| `ConsumeAsync<T>` | Handlers returning a disposition: accept, retry, dead-letter, release |
+| `ICodec` | JSON by default, camelCase on the wire so C# and Java agree; raw bytes available |
+| `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |
+| `InMemoryTransport` | An in-process broker for tests, routing the way RabbitMQ routes |
+| `AceHeaders`, `Envelope` | The header names and the envelope, pinned by conformance tests |
+
+```csharp
+using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
+
+using var consumer = await mq.ConsumeAsync<OrderPlaced>("orders.placed", async message =>
+{
+    await orders.RecordAsync(message.Payload);
+    return Ack.Accept();
+});
+
+var publisher = mq.Publisher<OrderPlaced>("orders", "order.placed");
+await publisher.SendAsync(new OrderPlaced("A-1", 42.50m));
+```
+
+Documentation: **<https://acemq.org/acemq-dotnet-amqp/>**
 
 ## Why the fixtures matter more than the code
 
@@ -51,24 +71,39 @@ pack.
 ## VB.NET
 
 Not a separate library — VB and C# compile to the same IL, so a VB application
-references this assembly directly. What it needs is an audit of the public API
-against the things VB cannot call: members differing only by case, `ref struct` and
-`Span<T>` on the surface, overloads separable only by optional arguments. **That
-audit has to happen before the API freezes**; afterwards it is a breaking change.
+references this assembly directly. What it costs is an API that stays callable from
+VB: no members differing only by case, no `ref struct` or `Span<T>` on the surface,
+no overloads separable only by optional arguments. **That audit has to happen before
+the API freezes**; afterwards it is a breaking change.
+
+CI compiles *and runs* both examples, which has already caught two differences:
+`Dim envelope = Envelope.Of(...)` fails with BC30980 because VB is
+case-insensitive, and VB has no async `Main`. Both compile fine in C#.
 
 ## Building
 
 ```bash
 dotnet build
-dotnet test
+dotnet test tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj
+```
+
+The integration suite needs a broker, and has no skip path — a suite that quietly
+does nothing when the broker is missing reports a green tick for work nobody did:
+
+```bash
+ACEMQ_TEST_AMQP_URL=amqp://guest:guest@localhost:5672 \
+  dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
 ```
 
 ## Next
 
-P1, the vertical slice: `ConnectionConfig`, connect, `Publisher<T>` with confirms,
-consume, the JSON codec, an in-memory transport, and `RabbitMQ.Client` v7. The
-milestone that matters is a demo rather than a release — a C# service consuming a
-message a Java service published, envelope intact.
+A C# service consuming a message a **Java** service published, envelope intact.
+The conformance fixtures already pin the two implementations to the same bytes;
+what has not been demonstrated is the two libraries talking to one broker at the
+same time.
+
+After that: outbox and idempotency, request/reply, streams, and OpenTelemetry —
+the parts of the Java library this does not have yet.
 
 ## Licence
 

@@ -1,42 +1,59 @@
-// Builds an envelope, renders it to the wire, and reads it back.
-// The same program exists in VB in ../vb, against the same assembly.
+// Publishes a message and consumes it back, over the in-memory broker so the
+// example runs with nothing installed. The same program exists in VB in ../vb,
+// against the same assembly.
+//
+// Point it at a real broker by referencing AceMq.Amqp.RabbitMq, registering the
+// transport, and changing the URL to amqp://localhost:
+//
+//     Transports.Register(new RabbitMqTransport());
+//     await AceMqConnection.ConnectAsync("amqp://localhost");
 
 using AceMq.Amqp;
 
+using var mq = await AceMqConnection.ConnectAsync("memory://example");
+
+await mq.DeclareExchangeAsync("orders", "topic");
+await mq.DeclareQueueAsync("orders.placed");
+await mq.BindAsync("orders.placed", "orders", "order.placed");
+
+var arrived = new TaskCompletionSource<IMessage<OrderPlaced>>();
+
+using var consumer = await mq.ConsumeAsync<OrderPlaced>("orders.placed", message =>
+{
+    arrived.TrySetResult(message);
+    // The handler returns what should happen to the message. Accept means the
+    // broker may forget it; Retry and DeadLetter say why it should not.
+    return Task.FromResult(Ack.Accept());
+});
+
+var publisher = mq.Publisher<OrderPlaced>("orders", "order.placed");
+
 var envelope = Envelope.Of("order.placed")
-    .Version(3)
     .CorrelationId("corr-1")
-    .CausationId("cause-1")
-    .Origin("orders@host-7")
     .Header("x-tenant", "acme")
     .Build();
 
-Console.WriteLine($"type         {envelope.Type}");
-Console.WriteLine($"correlation  {envelope.CorrelationId}");
-Console.WriteLine($"causation    {envelope.CausationId}");
-Console.WriteLine($"attempt      {envelope.Attempt}");
+var result = await publisher.SendAsync(new OrderPlaced("A-1", 42.50m), envelope);
 
-Console.WriteLine("\non the wire:");
-var wire = envelope.ToWire();
-foreach (var pair in wire.OrderBy(p => p.Key))
-{
-    Console.WriteLine($"  {pair.Key,-24} {pair.Value}");
-}
+Console.WriteLine($"published    {result.MessageId}");
+Console.WriteLine($"routed       {result.Routed}");
 
-// Read it back: the reserved namespace is stripped, the application's header stays.
-var readBack = Envelope.FromWire(
-    wire.ToDictionary(p => p.Key, p => p.Value), routingKey: "orders.new");
+var received = await arrived.Task;
 
-Console.WriteLine($"\nround trip preserved the id:   {readBack.Id == envelope.Id}");
-Console.WriteLine($"application headers survived:  {readBack.Headers["x-tenant"]}");
-Console.WriteLine($"engine headers were stripped:  {!readBack.Headers.Keys.Any(AceHeaders.IsAceHeader)}");
+Console.WriteLine($"consumed     {received.Payload.OrderId} for {received.Payload.Total:0.00}");
+Console.WriteLine($"correlation  {received.Envelope.CorrelationId}");
+Console.WriteLine($"attempt      {received.Attempt}");
+Console.WriteLine($"tenant       {received.Headers["x-tenant"]}");
 
-// Writing into the reserved namespace fails here rather than vanishing in transit.
+// Publishing where nothing is bound fails at the call rather than disappearing.
+var orphan = mq.Publisher<OrderPlaced>("orders", "order.cancelled");
 try
 {
-    Envelope.Of("t").Header(AceHeaders.Id, "mine");
+    await orphan.SendAsync(new OrderPlaced("A-2", 1m));
 }
-catch (ArgumentException e)
+catch (PublishFailedException)
 {
-    Console.WriteLine($"\nreserved namespace refused: {e.Message.Split('.')[0]}.");
+    Console.WriteLine("unroutable   publish failed: no queue bound for that routing key");
 }
+
+public sealed record OrderPlaced(string OrderId, decimal Total);
