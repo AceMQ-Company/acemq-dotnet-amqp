@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Diagnostics</PackageId>
+    <Description>A small actuator for AceMq.Amqp: Prometheus metrics, health and version over HTTP, with no ASP.NET Core or OpenTelemetry dependency.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+  </ItemGroup>
+
+</Project>

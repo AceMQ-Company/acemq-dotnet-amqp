@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AceMq.Amqp/AceMq.Amqp.csproj" />
     <Project Path="src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj" />
+    <Project Path="src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj" />

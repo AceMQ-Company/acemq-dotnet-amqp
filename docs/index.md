@@ -55,6 +55,7 @@ otherwise have reached a release. See [VB.NET](vbnet.md).
 | Outbox | write the message with your data, publish it after the commit |
 | Replay | put dead-lettered messages back, all of them or the ones that match |
 | Streams | read from an offset; consuming removes nothing |
+| Metrics and tracing | the same metric names as Java; a trace crosses the broker and the language |
 | Transports | RabbitMQ, and an in-process broker for tests |
 | The envelope | identity, correlation, causation, attempt, origin — pinned by conformance tests |
 

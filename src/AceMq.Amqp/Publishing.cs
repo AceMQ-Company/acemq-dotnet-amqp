@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -143,6 +144,10 @@ internal sealed class Publisher<T> : IPublisher<T>
 
         var body = _codec.Encode(payload!);
         var headers = envelope.ToWire();
+
+        // Started before the message is built, so the trace context is written into
+        // the headers the broker actually receives.
+        using var span = AceMqTelemetry.StartPublish(_exchange, _routingKey, headers);
         var message = new OutboundMessage(
             _exchange, _routingKey, body,
             new Dictionary<string, object>(headers),
@@ -177,23 +182,57 @@ internal sealed class Publisher<T> : IPublisher<T>
 
             if (!confirm.Confirmed)
             {
+                Record(envelope, MetricNames.OutcomeRejected, clock.Elapsed, span);
                 throw new PublishFailedException(
                     $"the broker rejected {envelope.Id}: {confirm.Reason ?? "no reason given"}");
             }
 
             if (!confirm.Routed && _options.Mandatory)
             {
+                Record(envelope, MetricNames.OutcomeUnroutable, clock.Elapsed, span);
                 throw new PublishFailedException(
                     $"{envelope.Id} reached the broker but matched no queue bound to " +
                     $"'{_exchange}' for '{_routingKey}'. This is usually a topology mistake; " +
                     "if the discard is intended, publish with PublishOptions.AllowUnroutable().");
             }
 
+            Record(
+                envelope,
+                confirm.Routed ? MetricNames.OutcomeConfirmed : MetricNames.OutcomeUnroutable,
+                clock.Elapsed, span);
             return new PublishResult(envelope.Id, confirm.Routed, clock.Elapsed);
+        }
+        catch (PublishFailedException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            Record(envelope, MetricNames.OutcomeFailed, clock.Elapsed, span);
+            span?.SetStatus(ActivityStatusCode.Error, e.Message);
+            throw;
         }
         finally
         {
             _inFlight.Release();
+        }
+    }
+
+    private void Record(Envelope envelope, string outcome, TimeSpan elapsed, Activity? span)
+    {
+        var tags = new TagList
+        {
+            { MetricNames.TagExchange, _exchange },
+            { MetricNames.TagRoutingKey, _routingKey },
+            { MetricNames.TagMessageType, envelope.Type },
+            { MetricNames.TagOutcome, outcome },
+        };
+        AceMqTelemetry.PublishDuration.Record(elapsed.TotalSeconds, tags);
+        AceMqTelemetry.PublishTotal.Add(1, tags);
+        span?.SetTag(MetricNames.TagOutcome, outcome);
+        if (outcome != MetricNames.OutcomeConfirmed)
+        {
+            span?.SetStatus(ActivityStatusCode.Error, outcome);
         }
     }
 

@@ -84,6 +84,7 @@ missing reference the compiler tells you about.
 - [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
 - [Request and reply](request-reply.md) — round trips over a one-way medium
 - [Streams](streams.md) — reading from an offset
+- [Metrics and tracing](observability.md) — Prometheus, OpenTelemetry, and the actuator
 - [Testing](testing.md) — the in-memory broker, and its limits
 - [The envelope](envelope.md) — what travels with every message
 - [C#](csharp.md) and [VB.NET](vbnet.md) — the same library from either language

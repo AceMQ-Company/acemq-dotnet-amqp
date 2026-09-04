@@ -207,13 +207,15 @@ jobs:
             --package-directory "$RUNNER_TEMP/verify-packages"
           dotnet add package AceMq.Amqp.RabbitMq --version "$VERSION" \
             --package-directory "$RUNNER_TEMP/verify-packages"
+          dotnet add package AceMq.Amqp.Diagnostics --version "$VERSION" \
+            --package-directory "$RUNNER_TEMP/verify-packages"
           echo "$VERSION restores from a clean cache."
 
       - name: Where it landed
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          echo "Published AceMq.Amqp and AceMq.Amqp.RabbitMq $VERSION"
+          echo "Published AceMq.Amqp, AceMq.Amqp.RabbitMq and AceMq.Amqp.Diagnostics $VERSION"
           echo "Feed: https://acemq.org/nuget/"
 
   # The GitHub release is what people subscribe to. Created after the feed push, so

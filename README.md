@@ -24,6 +24,8 @@ native API rather than a transliterated Java one.
 | `OutboxRelay` | publish what was written in the same transaction as your data |
 | `Replay` | put dead-lettered messages back |
 | `StreamReader<T>` | read a stream from an offset |
+| `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
+| `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |
 | `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |
 | `InMemoryTransport` | An in-process broker for tests, routing the way RabbitMQ routes |
 | `AceHeaders`, `Envelope` | The header names and the envelope, pinned by conformance tests |

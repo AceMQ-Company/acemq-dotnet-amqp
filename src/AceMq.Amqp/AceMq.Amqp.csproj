@@ -13,6 +13,10 @@
 
   <ItemGroup>
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- Meter and ActivitySource. Part of the runtime on modern .NET; this package
+         is what carries them back to netstandard2.0 and .NET Framework, so the
+         instrumentation reaches the same consumers the library does. -->
+    <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
   </ItemGroup>
 
   <ItemGroup>

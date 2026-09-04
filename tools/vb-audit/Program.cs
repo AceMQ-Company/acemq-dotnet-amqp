@@ -10,6 +10,7 @@ var assemblies = new[]
 {
     typeof(AceMq.Amqp.AceMqConnection).Assembly,
     typeof(AceMq.Amqp.RabbitMq.RabbitMqTransport).Assembly,
+    typeof(AceMq.Amqp.Diagnostics.AceMqActuator).Assembly,
 };
 
 foreach (var assembly in assemblies)

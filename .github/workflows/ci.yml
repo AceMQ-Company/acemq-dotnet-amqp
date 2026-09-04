@@ -54,13 +54,13 @@ jobs:
         # that never fires is indistinguishable from one that is not running.
         run: dotnet run --project tools/vb-audit --configuration Release
 
-      - name: Verify both assemblies target netstandard2.0
+      - name: Verify every assembly targets netstandard2.0
         # The reach promise: .NET Framework 4.6.2+ as well as modern .NET. A
         # retarget would quietly drop the consumers this library exists to serve --
         # and it has to hold for the transport too, or the promise only covers code
         # that never talks to a broker.
         run: |
-          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj; do
+          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj; do
             grep -q '<TargetFramework>netstandard2.0</TargetFramework>' "$p" \
               || { echo "$p no longer targets netstandard2.0"; exit 1; }
             echo "netstandard2.0 confirmed: $p"

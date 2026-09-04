@@ -222,6 +222,13 @@ public sealed class AceMqConnection : IDisposable
                 var attempt = attempts.AddOrUpdate(envelope.Id, envelope.Attempt, (_, n) => n + 1);
                 var message = new ReceivedMessage<T>(payload, envelope, delivery, attempt);
 
+                // Continues the publisher's trace, which reaches here through the
+                // traceparent header the envelope already reserves -- including from
+                // a Java publisher, which writes the same header.
+                using var span = AceMqTelemetry.StartConsume(queue, delivery.Headers);
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                AceMqTelemetry.EnteredHandler();
+
                 Ack ack;
                 try
                 {
@@ -237,6 +244,12 @@ public sealed class AceMqConnection : IDisposable
                         ? Ack.Release()
                         : Ack.Retry(options.RetryDelay, e.Message);
                 }
+                finally
+                {
+                    AceMqTelemetry.LeftHandler();
+                }
+
+                RecordConsume(queue, envelope, attempt, ack, clock.Elapsed, span);
 
                 // The message is finished with, either way. Keeping its counter would
                 // leak an entry per message handled.
@@ -413,6 +426,41 @@ public sealed class AceMqConnection : IDisposable
     /// transport, which is the trade being offered rather than hidden.
     /// </remarks>
     public ITransportConnection Transport => _connection;
+
+    private static void RecordConsume(
+        string queue, Envelope envelope, int attempt, Ack ack, TimeSpan elapsed,
+        System.Diagnostics.Activity? span)
+    {
+        var outcome = ack.Kind switch
+        {
+            AckKind.Accept => MetricNames.OutcomeAcked,
+            AckKind.Retry => MetricNames.OutcomeRetried,
+            AckKind.DeadLetter => MetricNames.OutcomeDeadLettered,
+            _ => MetricNames.OutcomeRejected,
+        };
+
+        var tags = new System.Diagnostics.TagList
+        {
+            { MetricNames.TagQueue, queue },
+            { MetricNames.TagMessageType, envelope.Type },
+            { MetricNames.TagOutcome, outcome },
+        };
+
+        AceMqTelemetry.ConsumeDuration.Record(elapsed.TotalSeconds, tags);
+        AceMqTelemetry.ConsumeTotal.Add(1, tags);
+        AceMqTelemetry.ConsumeAttempts.Record(attempt, tags);
+
+        if (ack.IsRetry) AceMqTelemetry.RetriedTotal.Add(1, tags);
+        if (ack.IsDeadLetter) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
+
+        span?.SetTag(MetricNames.TagOutcome, outcome);
+        span?.SetTag("acemq.attempt", attempt);
+        if (!ack.IsAccept)
+        {
+            span?.SetStatus(
+                System.Diagnostics.ActivityStatusCode.Error, ack.Reason ?? outcome);
+        }
+    }
 
     private void EnsureOpen()
     {
