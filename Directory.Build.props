@@ -4,13 +4,16 @@
     Shared version and package metadata for every project in the repository.
 
     The version lives here and nowhere else, so a release is a one-line change
-    rather than an edit per project that eventually drifts. The two packages are
-    versioned together on purpose: the transport is useless without the core, and
-    a consumer pairing 0.1.3 of one with 0.1.0 of the other is a support question
-    nobody needs.
+    rather than an edit per project that eventually drifts. Every package is
+    versioned together on purpose: each one depends on the core, and a consumer
+    pairing 0.1.3 of one with 0.1.0 of another is a support question nobody
+    needs.
+
+    A release overrides this from the tag, so the tag is what actually ships.
+    Keeping this in step matters for anyone building locally.
   -->
   <PropertyGroup>
-    <Version>0.1.6</Version>
+    <Version>0.1.7</Version>
 
     <Authors>AceMQ</Authors>
     <Company>AceMQ</Company>

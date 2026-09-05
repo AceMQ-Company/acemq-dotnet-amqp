@@ -82,8 +82,8 @@ a server certificate. There is a tool for that, so nobody has to remember an
 
 ```bash
 # The feed is a static one, so the tool is downloaded first -- see below.
-curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.6/acemq.amqp.devcerts.0.1.6.nupkg
-dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.6 --add-source .
+curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.7/acemq.amqp.devcerts.0.1.7.nupkg
+dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.7 --add-source .
 
 acemq-certs --out certs --broker localhost --days 30
 ```
@@ -100,14 +100,14 @@ anywhere above names the feed, the installer still queries it and still crashes.
 Use `--configfile` with a config that names only the local folder:
 
 ```bash
-curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.6/acemq.amqp.devcerts.0.1.6.nupkg
+curl -fsSLO https://acemq.org/nuget/v3/flatcontainer/acemq.amqp.devcerts/0.1.7/acemq.amqp.devcerts.0.1.7.nupkg
 cat > tool.config <<'XML'
 <?xml version="1.0" encoding="utf-8"?>
 <configuration><packageSources><clear />
   <add key="local" value="." />
 </packageSources></configuration>
 XML
-dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.6 --configfile tool.config
+dotnet tool install -g AceMq.Amqp.DevCerts --version 0.1.7 --configfile tool.config
 ```
 
 Ordinary `PackageReference` restores are unaffected; this applies only to installing

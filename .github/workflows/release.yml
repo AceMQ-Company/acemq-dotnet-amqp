@@ -109,6 +109,15 @@ jobs:
           dotnet test tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj
           --configuration Release --no-build --verbosity normal
 
+      - name: Test the codecs
+        # Each of these ships as its own package, so a release that has not run
+        # their tests is publishing something nothing checked.
+        run: |
+          for t in Protobuf Avro Yaml Toml; do
+            dotnet test "tests/AceMq.Amqp.$t.Tests/AceMq.Amqp.$t.Tests.csproj" \
+              --configuration Release --no-build --verbosity normal
+          done
+
       - name: Test against RabbitMQ
         env:
           ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
