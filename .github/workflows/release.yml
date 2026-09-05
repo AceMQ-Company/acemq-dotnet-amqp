@@ -209,6 +209,8 @@ jobs:
             --package-directory "$RUNNER_TEMP/verify-packages"
           dotnet add package AceMq.Amqp.Diagnostics --version "$VERSION" \
             --package-directory "$RUNNER_TEMP/verify-packages"
+          dotnet add package AceMq.Amqp.Protobuf --version "$VERSION" \
+            --package-directory "$RUNNER_TEMP/verify-packages"
           # The tool is downloaded and installed from a local folder, with a config
           # that names *only* that folder.
           #

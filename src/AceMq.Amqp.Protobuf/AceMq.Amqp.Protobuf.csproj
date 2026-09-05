@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Protobuf</PackageId>
+    <Description>Protocol Buffers codec for AceMq.Amqp. A separate package so the core keeps no serialization dependency.</Description>
+    <PackageTags>$(PackageTags);protobuf</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.1" />
+  </ItemGroup>
+
+</Project>

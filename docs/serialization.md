@@ -26,10 +26,60 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 | `CompositeCodec` | first codec's | reads several, writes one |
 | `EncryptedCodec` | `application/vnd.acemq.encrypted` | wraps any of the above |
 
-Avro, Protobuf and YAML are not here. Each needs a dependency, and a messaging
-library that drags a serialization stack into every application that installs it is
-a library people work around. They belong in their own packages, and are not written
-yet.
+Those six need nothing but the framework — the core's whole dependency list is two
+Microsoft packages.
+
+Formats that need an outside library get their own package, so an application that
+wants one does not acquire the rest:
+
+| Package | Codec | Depends on |
+|---|---|---|
+| `AceMq.Amqp.Protobuf` | `ProtobufCodec` | `Google.Protobuf` |
+
+Avro, YAML and TOML are not written yet. Java has all four.
+
+## Protocol Buffers
+
+```bash
+dotnet add package AceMq.Amqp.Protobuf
+```
+
+```csharp
+using var mq = await AceMqConnection.ConnectAsync(url, new ProtobufCodec());
+```
+
+Or on one queue, while the rest of the service stays on JSON:
+
+```csharp
+await mq.ConsumeAsync<OrderPlaced>(
+    "orders", ConsumerOptions.Defaults().As(new ProtobufCodec()), Handle);
+```
+
+The content type is `application/x-protobuf`, the same as Java's, and
+`application/protobuf` and anything ending `+protobuf` are read as well — the last
+because a schema registry usually names its own wrapping that way.
+
+**It works with generated types, not with your own classes.** Protobuf encoding is
+defined by a `.proto` and the code generated from it; there is no reflection-based
+fallback, because bytes produced that way would not be readable by anything else
+that speaks protobuf. A plain class is refused at the call rather than encoded into
+something only this library could read:
+
+```
+AceFatalException: <anonymous type> is not a generated protobuf message. This codec
+encodes types generated from a .proto schema; there is no reflection-based fallback...
+```
+
+Generate the types with `Grpc.Tools`, which runs `protoc` at build time and
+contributes nothing at runtime:
+
+```xml
+<PackageReference Include="Grpc.Tools" Version="2.68.1" PrivateAssets="all" />
+<Protobuf Include="order.proto" GrpcServices="None" />
+```
+
+A malformed body is **fatal, not retryable**. The same bytes fail the same way on
+every attempt, so the message is dead-lettered rather than retried forever.
 
 ### XML reads are restricted
 

@@ -11,6 +11,7 @@ var assemblies = new[]
     typeof(AceMq.Amqp.AceMqConnection).Assembly,
     typeof(AceMq.Amqp.RabbitMq.RabbitMqTransport).Assembly,
     typeof(AceMq.Amqp.Diagnostics.AceMqActuator).Assembly,
+    typeof(AceMq.Amqp.Protobuf.ProtobufCodec).Assembly,
 };
 
 foreach (var assembly in assemblies)

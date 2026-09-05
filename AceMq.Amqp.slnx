@@ -4,11 +4,13 @@
     <Project Path="src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj" />
     <Project Path="src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj" />
     <Project Path="src/AceMq.Amqp.DevCerts/AceMq.Amqp.DevCerts.csproj" />
+    <Project Path="src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.Tls.Tests/AceMq.Amqp.Tls.Tests.csproj" />
+    <Project Path="tests/AceMq.Amqp.Protobuf.Tests/AceMq.Amqp.Protobuf.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/vb-audit/vb-audit.csproj" />

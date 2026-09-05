@@ -12,6 +12,7 @@
     <ProjectReference Include="../../src/AceMq.Amqp/AceMq.Amqp.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj" />
+    <ProjectReference Include="../../src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj" />
   </ItemGroup>
 
 </Project>

@@ -25,6 +25,7 @@ native API rather than a transliterated Java one.
 | `Replay` | put dead-lettered messages back |
 | `StreamReader<T>` | read a stream from an offset |
 | Codecs | JSON, XML, text, bytes, composite, and `EncryptedCodec` for payload encryption |
+| `AceMq.Amqp.Protobuf` | Protocol Buffers, in its own package so the core keeps no serialization dependency |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
 | `RoutingSlip` | a route the message carries, changeable at each step |

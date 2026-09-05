@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- Build-time only: it runs protoc and contributes nothing at runtime, which
+         is why PrivateAssets excludes it from anything depending on this. -->
+    <PackageReference Include="Grpc.Tools" Version="2.68.1" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="order.proto" GrpcServices="None" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AceMq.Amqp\AceMq.Amqp.csproj" />
+    <ProjectReference Include="..\..\src\AceMq.Amqp.Protobuf\AceMq.Amqp.Protobuf.csproj" />
+  </ItemGroup>
+
+</Project>
