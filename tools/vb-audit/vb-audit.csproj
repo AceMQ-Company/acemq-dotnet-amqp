@@ -15,6 +15,7 @@
     <ProjectReference Include="../../src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.DevCerts/AceMq.Amqp.DevCerts.csproj" />
+    <ProjectReference Include="../../src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj" />
   </ItemGroup>
 
 </Project>
