@@ -15,6 +15,7 @@ var assemblies = new[]
     typeof(AceMq.Amqp.Avro.AvroCodec).Assembly,
     typeof(AceMq.Amqp.DevCerts.DevelopmentCertificates).Assembly,
     typeof(AceMq.Amqp.Yaml.YamlCodec).Assembly,
+    typeof(AceMq.Amqp.Toml.TomlCodec).Assembly,
 };
 
 foreach (var assembly in assemblies)

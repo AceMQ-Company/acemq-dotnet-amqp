@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Toml</PackageId>
+    <Description>TOML codec for AceMq.Amqp, for configuration-shaped messages a person edits. A separate package so the core keeps no serialization dependency.</Description>
+    <PackageTags>$(PackageTags);toml</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <!-- Brings System.Text.Json with it, at a higher version than the core pins.
+         NuGet resolves to the higher one, so an application taking both ends up on
+         it. Worth knowing rather than discovering, and the reason this is a
+         separate package rather than part of the core. -->
+    <PackageReference Include="Tomlyn" Version="2.10.1" />
+  </ItemGroup>
+
+</Project>

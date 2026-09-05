@@ -37,8 +37,17 @@ wants one does not acquire the rest:
 | `AceMq.Amqp.Protobuf` | `ProtobufCodec` | `Google.Protobuf` |
 | `AceMq.Amqp.Avro` | `AvroCodec` | `Apache.Avro` |
 | `AceMq.Amqp.Yaml` | `YamlCodec` | `YamlDotNet` |
+| `AceMq.Amqp.Toml` | `TomlCodec` | `Tomlyn` |
 
-TOML is not written yet. Java has it.
+That is every format the Java library has.
+
+**What each costs you.** `YamlDotNet` has no dependencies of its own.
+`Google.Protobuf` has none either. `Apache.Avro` brings `Newtonsoft.Json` and
+`System.CodeDom`. `Tomlyn` brings `System.Text.Json` at a **higher version than the
+core pins**, and NuGet resolves to the higher one — so an application taking the TOML
+package moves from `System.Text.Json` 8.0.5 to 10.0.2. Nothing breaks, but it is the
+kind of thing worth knowing before it happens, and it is exactly why these are
+separate packages rather than part of the core.
 
 ## Protocol Buffers
 
@@ -195,6 +204,54 @@ is bounded, because the parser shares aliases rather than materialising them. A
 480-byte document nominally naming 10¹⁰ nodes reads in milliseconds. That is
 measured in a test, because if it stopped being true this codec would be a denial of
 service anybody could post.
+
+## TOML
+
+```bash
+dotnet add package AceMq.Amqp.Toml
+```
+
+```csharp
+using var mq = await AceMqConnection.ConnectAsync(url, new TomlCodec());
+```
+
+The same audience as YAML — a message a person reads and edits — with the ambiguity
+removed:
+
+```toml
+service = "orders"
+enabled = true
+regions = ["eu-west-1", "us-east-1"]
+```
+
+One way to write a string, no significant indentation, and **no Norway problem**. In
+YAML `country: NO` is the boolean false; in TOML an unquoted `NO` is not a value at
+all, so the mistake is a parse error rather than a country turning into `false`
+somewhere downstream. Where a human edits the message and a machine acts on it, that
+matters more than terseness.
+
+Duplicate keys are refused rather than resolved — silently taking the first or the
+last would be a message that means something other than it looks like.
+
+Keys are camelCased on the wire and read case-insensitively, so a message
+hand-edited by somebody who capitalised one still reads.
+
+### The shape has to suit it
+
+TOML is a **table format**: a message body must be an object at the top level. A bare
+list or number is not a TOML document, and the codec says so rather than emitting
+something that is not TOML:
+
+```
+AceFatalException: List`1 cannot be written as TOML: ... TOML is a table format, so a
+message body has to be an object at the top level. Use JsonCodec where the payload is
+a list, a scalar, or a deep tree.
+```
+
+Deep nesting reads poorly too. Where the payload is a tree rather than a table, JSON
+is the honest answer.
+
+Like YAML, it **never volunteers for a message with no content type**.
 
 ### XML reads are restricted
 
