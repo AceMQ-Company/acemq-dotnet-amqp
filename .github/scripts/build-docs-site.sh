@@ -167,6 +167,7 @@ NAV='<nav class="top">
   </div>
 
   <a class="enterprise" href="https://acemq.org/">JVM libraries</a>
+  <a class="enterprise" href="https://acemq.org/acemq-go-amqp/">Go library</a>
   <a class="enterprise" href="https://acemq.com">Enterprise support</a>
 </nav>
 <main>'
