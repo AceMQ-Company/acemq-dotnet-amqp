@@ -13,6 +13,8 @@
     <ProjectReference Include="../../src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj" />
+    <ProjectReference Include="../../src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj" />
+    <ProjectReference Include="../../src/AceMq.Amqp.DevCerts/AceMq.Amqp.DevCerts.csproj" />
   </ItemGroup>
 
 </Project>

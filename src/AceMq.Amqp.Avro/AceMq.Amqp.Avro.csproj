@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Avro</PackageId>
+    <Description>Avro codec for AceMq.Amqp, with fixed-schema and schema-registry modes. A separate package so the core keeps no serialization dependency.</Description>
+    <PackageTags>$(PackageTags);avro</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <!-- The Apache implementation, the same one the Java library uses, so schema
+         resolution behaves identically on both sides. It brings Newtonsoft.Json and
+         System.CodeDom with it, which is precisely why this is its own package. -->
+    <PackageReference Include="Apache.Avro" Version="1.12.2" />
+  </ItemGroup>
+
+</Project>

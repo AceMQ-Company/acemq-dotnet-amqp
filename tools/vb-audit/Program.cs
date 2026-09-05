@@ -12,6 +12,8 @@ var assemblies = new[]
     typeof(AceMq.Amqp.RabbitMq.RabbitMqTransport).Assembly,
     typeof(AceMq.Amqp.Diagnostics.AceMqActuator).Assembly,
     typeof(AceMq.Amqp.Protobuf.ProtobufCodec).Assembly,
+    typeof(AceMq.Amqp.Avro.AvroCodec).Assembly,
+    typeof(AceMq.Amqp.DevCerts.DevelopmentCertificates).Assembly,
 };
 
 foreach (var assembly in assemblies)
@@ -78,6 +80,35 @@ foreach (var type in assembly.GetExportedTypes())
                 $"{group.Count()} overloads");
         }
     }
+}
+
+// The audit has silently covered fewer assemblies than the solution ships, twice,
+// each time a package was added. Comparing against the solution turns that from
+// something to remember into a failed build.
+var solution = Path.GetFullPath(Path.Combine(
+    AppContext.BaseDirectory, "..", "..", "..", "..", "..", "AceMq.Amqp.slnx"));
+if (File.Exists(solution))
+{
+    var shipped = System.Text.RegularExpressions.Regex
+        .Matches(File.ReadAllText(solution), @"src/([A-Za-z.]+)/\1\.csproj")
+        .Select(m => m.Groups[1].Value)
+        .ToHashSet(StringComparer.Ordinal);
+    var scanned = assemblies.Select(a => a.GetName().Name!).ToHashSet(StringComparer.Ordinal);
+    var uncovered = shipped.Except(scanned).OrderBy(n => n).ToList();
+    if (uncovered.Count > 0)
+    {
+        Console.WriteLine(
+            "audit coverage: FAILED -- the solution ships assemblies this audit does not scan:");
+        foreach (var name in uncovered) Console.WriteLine("  " + name);
+        Console.WriteLine("Add a ProjectReference and a typeof(...) entry for each.");
+        return 3;
+    }
+    Console.WriteLine($"audit coverage: all {shipped.Count} shipped assemblies are scanned");
+}
+else
+{
+    Console.WriteLine($"audit coverage: FAILED -- no solution file at {solution}");
+    return 3;
 }
 
 var types = assemblies.SelectMany(a => a.GetExportedTypes()).ToList();

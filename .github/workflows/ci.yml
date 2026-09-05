@@ -48,6 +48,11 @@ jobs:
           dotnet test tests/AceMq.Amqp.Protobuf.Tests/AceMq.Amqp.Protobuf.Tests.csproj
           --configuration Release --no-build --verbosity normal
 
+      - name: Test the Avro codec
+        run: >
+          dotnet test tests/AceMq.Amqp.Avro.Tests/AceMq.Amqp.Avro.Tests.csproj
+          --configuration Release --no-build --verbosity normal
+
       - name: Compile and run the C# example
         run: dotnet run --project examples/csharp --configuration Release
 
@@ -68,7 +73,7 @@ jobs:
         # and it has to hold for the transport too, or the promise only covers code
         # that never talks to a broker.
         run: |
-          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj; do
+          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj; do
             grep -q '<TargetFramework>netstandard2.0</TargetFramework>' "$p" \
               || { echo "$p no longer targets netstandard2.0"; exit 1; }
             echo "netstandard2.0 confirmed: $p"
