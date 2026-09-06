@@ -1,5 +1,15 @@
 # acemq-dotnet-amqp
 
+[![ci](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml)
+[![release](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml/badge.svg)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml)
+[![authorship guard](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml)
+[![version](https://img.shields.io/badge/version-0.1.7-blue)](https://acemq.org/nuget/)
+[![packages](https://img.shields.io/badge/packages-acemq.org%2Fnuget-blue)](https://acemq.org/nuget/)
+[![docs](https://img.shields.io/badge/docs-acemq.org-blue)](https://acemq.org/acemq-dotnet-amqp/)
+[![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-netstandard2.0-512BD4)](#requirements)
+[![brokers](https://img.shields.io/badge/broker-RabbitMQ-lightgrey)](#requirements)
+
 AceMQ for .NET. The same message envelope, the same patterns and the same metric
 names as [acemq-java-amqp](https://github.com/AceMQ-Company/acemq-java-amqp) — with a
 native API rather than a transliterated Java one.
