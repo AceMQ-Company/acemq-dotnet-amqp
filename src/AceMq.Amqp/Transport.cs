@@ -78,6 +78,30 @@ public sealed class OutboundMessage
 }
 
 /// <summary>A message as it arrived, before decoding.</summary>
+/// <summary>
+/// A delivery the broker is still holding, and the means to settle it.
+/// </summary>
+/// <remarks>
+/// Returned by <see cref="ITransportConnection.PullAsync"/>. A delivery that is
+/// never settled stays unacknowledged until the connection closes, at which
+/// point the broker gives it to somebody else — so settle it, in a finally if
+/// need be.
+/// </remarks>
+public interface IPulledDelivery
+{
+    /// <summary>The message.</summary>
+    InboundDelivery Delivery { get; }
+
+    /// <summary>Confirms it. The broker removes it from the queue.</summary>
+    Task AcknowledgeAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns it. With <paramref name="requeue"/> it goes back on the queue;
+    /// without, it is dead-lettered or dropped as the queue is configured.
+    /// </summary>
+    Task RejectAsync(bool requeue, CancellationToken cancellationToken);
+}
+
 public sealed class InboundDelivery
 {
     public InboundDelivery(
@@ -179,6 +203,19 @@ public interface ITransportConnection : IDisposable
     /// republished.
     /// </remarks>
     Task<InboundDelivery?> ReceiveAsync(
+        string queue, TimeSpan timeout, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes one message and holds it until it is settled.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ReceiveAsync"/> acknowledges as it reads, which suits a replay
+    /// that is republishing what it took and loses the message if the process
+    /// dies mid-flight. This one leaves the message on the broker until the
+    /// caller says what happened to it, which is what a job reading a queue on a
+    /// schedule needs.
+    /// </remarks>
+    Task<IPulledDelivery?> PullAsync(
         string queue, TimeSpan timeout, CancellationToken cancellationToken);
 
     Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken);

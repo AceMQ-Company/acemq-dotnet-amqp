@@ -470,6 +470,60 @@ public sealed class RabbitMqTransport : ITransport
         /// number of messages and stop. A subscription would immediately be handed the
         /// messages the replay had just republished.
         /// </remarks>
+        public async Task<IPulledDelivery?> PullAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                // autoAck false, unlike ReceiveAsync: the broker keeps the
+                // message until the caller settles it, which is the difference
+                // between a job that can crash safely and one that loses what
+                // it was holding.
+                var result = await _channel.BasicGetAsync(queue, autoAck: false, cancellationToken)
+                    .ConfigureAwait(false);
+                if (result != null)
+                {
+                    return new PulledDelivery(_channel, result.DeliveryTag, Read(queue, result));
+                }
+                if (DateTime.UtcNow >= deadline) return null;
+                await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private sealed class PulledDelivery : IPulledDelivery
+        {
+            private readonly IChannel _channel;
+            private readonly ulong _deliveryTag;
+            private int _settled;
+
+            internal PulledDelivery(IChannel channel, ulong deliveryTag, InboundDelivery delivery)
+            {
+                _channel = channel;
+                _deliveryTag = deliveryTag;
+                Delivery = delivery;
+            }
+
+            public InboundDelivery Delivery { get; }
+
+            public async Task AcknowledgeAsync(CancellationToken cancellationToken)
+            {
+                // Settled once. Acknowledging twice is a channel error on
+                // RabbitMQ, and a caller with a finally and an explicit call is
+                // the ordinary way to arrive here twice.
+                if (Interlocked.Exchange(ref _settled, 1) != 0) return;
+                await _channel.BasicAckAsync(_deliveryTag, multiple: false, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            public async Task RejectAsync(bool requeue, CancellationToken cancellationToken)
+            {
+                if (Interlocked.Exchange(ref _settled, 1) != 0) return;
+                await _channel.BasicNackAsync(_deliveryTag, multiple: false, requeue, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
         public async Task<InboundDelivery?> ReceiveAsync(
             string queue, TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -478,28 +532,35 @@ public sealed class RabbitMqTransport : ITransport
             {
                 var result = await _channel.BasicGetAsync(queue, autoAck: true, cancellationToken)
                     .ConfigureAwait(false);
-                if (result != null)
-                {
-                    var headers = new Dictionary<string, object>();
-                    if (result.BasicProperties.Headers != null)
-                    {
-                        foreach (var pair in result.BasicProperties.Headers)
-                        {
-                            if (pair.Value == null) continue;
-                            headers[pair.Key] = pair.Value is byte[] bytes
-                                ? Encoding.UTF8.GetString(bytes)
-                                : pair.Value;
-                        }
-                    }
-                    return new InboundDelivery(
-                        queue, result.Exchange, result.RoutingKey, result.Body.ToArray(),
-                        headers, result.BasicProperties.MessageId,
-                        result.BasicProperties.ContentType, result.Redelivered,
-                        result.BasicProperties.ReplyTo);
-                }
+                if (result != null) return Read(queue, result);
                 if (DateTime.UtcNow >= deadline) return null;
                 await Task.Delay(25, cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        /// <summary>Turns a basic.get result into a delivery.</summary>
+        /// <remarks>
+        /// Shared by ReceiveAsync and PullAsync. Two copies of a header mapping
+        /// drift, and the one that drifts is the one nobody is looking at.
+        /// </remarks>
+        private static InboundDelivery Read(string queue, BasicGetResult result)
+        {
+            var headers = new Dictionary<string, object>();
+            if (result.BasicProperties.Headers != null)
+            {
+                foreach (var pair in result.BasicProperties.Headers)
+                {
+                    if (pair.Value == null) continue;
+                    headers[pair.Key] = pair.Value is byte[] bytes
+                        ? Encoding.UTF8.GetString(bytes)
+                        : pair.Value;
+                }
+            }
+            return new InboundDelivery(
+                queue, result.Exchange, result.RoutingKey, result.Body.ToArray(),
+                headers, result.BasicProperties.MessageId,
+                result.BasicProperties.ContentType, result.Redelivered,
+                result.BasicProperties.ReplyTo);
         }
 
         public async Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken)

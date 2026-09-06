@@ -718,6 +718,62 @@ public sealed class AceMqConnection : IDisposable
     }
 
     /// <summary>Moves messages off a queue and republishes them.</summary>
+    /// <summary>
+    /// Takes one message from a queue without starting a consumer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For a tool draining a dead-letter queue, a job that runs on a schedule
+    /// rather than continuously, or a test that wants exactly one message.
+    /// </para>
+    /// <para>
+    /// It is the wrong shape for ordinary work. Polling costs a round trip per
+    /// message whether one is there or not, and
+    /// <see cref="ConsumeAsync{T}(string, Func{IMessage{T}, Task{Ack}})"/> is both
+    /// faster and kinder to the broker.
+    /// </para>
+    /// <para>
+    /// <strong>The message is held until it is settled.</strong> Losing the
+    /// returned value without acknowledging or rejecting it leaves the message
+    /// unacknowledged until the connection closes, and the broker then gives it
+    /// to somebody else. Settle it in a <c>finally</c> if the work between can
+    /// throw.
+    /// </para>
+    /// <returns>The message, or null when nothing arrived before the timeout.</returns>
+    /// </remarks>
+    public async Task<PulledMessage<T>?> PullAsync<T>(string queue, TimeSpan timeout)
+    {
+        if (queue == null) throw new ArgumentNullException(nameof(queue));
+
+        var pulled = await _connection.PullAsync(queue, timeout, CancellationToken.None)
+            .ConfigureAwait(false);
+        if (pulled == null) return null;
+
+        var delivery = pulled.Delivery;
+        var envelope = Envelope.FromWire(delivery.Headers, delivery.RoutingKey, delivery.MessageId);
+
+        T payload;
+        try
+        {
+            payload = _codec.Decode<T>(delivery.Body);
+        }
+        catch
+        {
+            // Returned rather than swallowed: the caller decides whether a body
+            // it cannot read should go back on the queue or be dead-lettered,
+            // and leaving it unsettled while an exception unwinds would hold it
+            // until the connection closes.
+            await pulled.RejectAsync(false, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        return new PulledMessage<T>(payload, envelope, delivery, pulled);
+    }
+
+    /// <summary>Takes one message, waiting up to five seconds for it.</summary>
+    public Task<PulledMessage<T>?> PullAsync<T>(string queue) =>
+        PullAsync<T>(queue, TimeSpan.FromSeconds(5));
+
     public Replay Replay(string queue)
     {
         EnsureOpen();

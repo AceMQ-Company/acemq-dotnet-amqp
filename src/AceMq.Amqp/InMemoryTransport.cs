@@ -180,6 +180,19 @@ public sealed class InMemoryTransport : ITransport
 
         internal bool TryDequeue(out InboundDelivery delivery) => _messages.TryDequeue(out delivery!);
 
+        /// <summary>Puts a pulled message back, marked as a redelivery.</summary>
+        /// <remarks>
+        /// A ConcurrentQueue cannot push to the front, so this goes to the back.
+        /// A broker returns a requeued message closer to the head, which means
+        /// order after a reject differs here — worth knowing before relying on
+        /// it, and not worth a lock on the hot path to imitate.
+        /// </remarks>
+        internal void Requeue(InboundDelivery delivery) =>
+            _messages.Enqueue(new InboundDelivery(
+                delivery.Queue, delivery.Exchange, delivery.RoutingKey, delivery.Body,
+                delivery.Headers, delivery.MessageId, delivery.ContentType,
+                redelivered: true, delivery.ReplyTo));
+
         internal int Count => _messages.Count;
 
         internal void DeadLetter(InboundDelivery delivery, string reason)
@@ -292,6 +305,56 @@ public sealed class InMemoryTransport : ITransport
             lock (_subscriptions) _subscriptions.Add(subscription);
             subscription.Start();
             return Task.FromResult<ISubscription>(subscription);
+        }
+
+        public async Task<IPulledDelivery?> PullAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken)
+        {
+            var q = _broker.Queues.GetOrAdd(queue, _ => new Queue());
+            var deadline = DateTime.UtcNow + timeout;
+            while (true)
+            {
+                if (q.TryDequeue(out var delivery))
+                {
+                    // Held rather than gone: rejecting with requeue has to put
+                    // it back, or this transport would be more forgiving than a
+                    // broker and would certify code that loses messages.
+                    return new PulledDelivery(q, delivery);
+                }
+                if (DateTime.UtcNow >= deadline) return null;
+                await Task.Delay(5, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private sealed class PulledDelivery : IPulledDelivery
+        {
+            private readonly Queue _queue;
+            private int _settled;
+
+            internal PulledDelivery(Queue queue, InboundDelivery delivery)
+            {
+                _queue = queue;
+                Delivery = delivery;
+            }
+
+            public InboundDelivery Delivery { get; }
+
+            public Task AcknowledgeAsync(CancellationToken cancellationToken)
+            {
+                // Already off the queue, so there is nothing to do but record
+                // that it was settled.
+                Interlocked.Exchange(ref _settled, 1);
+                return Task.CompletedTask;
+            }
+
+            public Task RejectAsync(bool requeue, CancellationToken cancellationToken)
+            {
+                if (Interlocked.Exchange(ref _settled, 1) == 0 && requeue)
+                {
+                    _queue.Requeue(Delivery);
+                }
+                return Task.CompletedTask;
+            }
         }
 
         public async Task<InboundDelivery?> ReceiveAsync(
