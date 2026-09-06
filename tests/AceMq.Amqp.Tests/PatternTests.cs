@@ -357,6 +357,33 @@ public sealed class PatternTests : IDisposable
         Assert.Equal(1999, order.TotalCents);
     }
 
+    // The same, without the caller writing JSON by hand.
+    [Fact]
+    public async Task RecordsAPayloadWithTheConnectionsCodec()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("outbox-for");
+
+        var arrived = new TaskCompletionSource<OutboxOrder>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<OutboxOrder>("outbox-for", message =>
+        {
+            arrived.TrySetResult(message.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var store = new InMemoryOutboxStore();
+        await store.AddAsync(OutboxRecord.For(
+            mq, "", "outbox-for", new OutboxOrder { OrderId = "o-3", TotalCents = 75 }));
+
+        using var relay = mq.Outbox(store);
+        Assert.Equal(1, await relay.DrainAsync());
+
+        var order = await arrived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("o-3", order.OrderId);
+        Assert.Equal(75, order.TotalCents);
+    }
+
     // And the envelope survives the trip, so a consumer can still correlate.
     [Fact]
     public async Task PublishesTheEnvelopeItWasGiven()

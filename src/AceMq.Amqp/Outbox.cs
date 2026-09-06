@@ -47,6 +47,30 @@ public sealed class OutboxRecord
             envelope.Id, exchange, routingKey, envelope.Type, payload,
             envelope.CorrelationId, envelope.CausationId, DateTimeOffset.UtcNow, 0, null);
 
+    /// <summary>
+    /// A record for a payload, encoded with the connection's codec.
+    /// </summary>
+    /// <remarks>
+    /// The alternative is writing the encoded payload out by hand, and
+    /// hand-written JSON in the middle of a transaction is a typo waiting to
+    /// become a message nothing can decode. This encodes with the same codec the
+    /// consumer will read with.
+    /// </remarks>
+    public static OutboxRecord For<T>(
+        AceMqConnection connection, string exchange, string routingKey, T payload) =>
+        For(connection, exchange, routingKey, payload, Amqp.Envelope.Of(routingKey).Build());
+
+    /// <inheritdoc cref="For{T}(AceMqConnection, string, string, T)"/>
+    public static OutboxRecord For<T>(
+        AceMqConnection connection, string exchange, string routingKey, T payload, Envelope envelope)
+    {
+        if (connection == null) throw new ArgumentNullException(nameof(connection));
+        if (envelope == null) throw new ArgumentNullException(nameof(envelope));
+
+        var body = connection.Codec.Encode(payload!);
+        return Of(exchange, routingKey, envelope, Encoding.UTF8.GetString(body));
+    }
+
     public string Id { get; }
     public string Exchange { get; }
     public string RoutingKey { get; }
