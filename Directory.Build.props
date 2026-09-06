@@ -13,7 +13,7 @@
     Keeping this in step matters for anyone building locally.
   -->
   <PropertyGroup>
-    <Version>0.1.7</Version>
+    <Version>0.1.8</Version>
 
     <Authors>AceMQ</Authors>
     <Company>AceMQ</Company>
