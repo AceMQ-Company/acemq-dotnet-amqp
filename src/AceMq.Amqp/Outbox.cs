@@ -14,7 +14,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -201,6 +203,8 @@ public sealed class OutboxRelay : IDisposable
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _lease;
     private readonly CancellationTokenSource _stop = new CancellationTokenSource();
+    private readonly Dictionary<string, IPublisher<string>> _publishers =
+        new Dictionary<string, IPublisher<string>>();
     private long _published;
     private long _failed;
     private bool _running;
@@ -264,7 +268,7 @@ public sealed class OutboxRelay : IDisposable
         {
             try
             {
-                var publisher = _mq.Publisher<string>(record.Exchange, record.RoutingKey);
+                var publisher = PublisherFor(record.Exchange, record.RoutingKey);
                 await publisher.SendAsync(record.Payload, record.Envelope()).ConfigureAwait(false);
                 await _store.MarkPublishedAsync(record.Id).ConfigureAwait(false);
                 Interlocked.Increment(ref _published);
@@ -278,6 +282,59 @@ public sealed class OutboxRelay : IDisposable
         }
 
         return moved;
+    }
+
+    /// <summary>
+    /// A publisher for one destination, encoding the stored payload verbatim.
+    /// </summary>
+    /// <remarks>
+    /// Cached, because publishers are meant to be long lived and building one per
+    /// record would create a channel's worth of work for every message.
+    /// </remarks>
+    private IPublisher<string> PublisherFor(string exchange, string routingKey)
+    {
+        var key = exchange + " " + routingKey;
+        lock (_publishers)
+        {
+            if (_publishers.TryGetValue(key, out var existing)) return existing;
+            var publisher = _mq.Publisher<string>(
+                exchange, routingKey, PublishOptions.Defaults(), null,
+                new VerbatimCodec(_mq.Codec.ContentType));
+            _publishers[key] = publisher;
+            return publisher;
+        }
+    }
+
+    /// <summary>
+    /// Puts the stored payload on the wire unchanged.
+    /// </summary>
+    /// <remarks>
+    /// This is what makes an outbox message readable by a typed consumer. The
+    /// payload was serialised inside the caller's transaction — which is the whole
+    /// reason the pattern works — so the relay's job is to send those bytes, not to
+    /// encode them again. Publishing through the connection's codec produces JSON
+    /// containing JSON, and the only consumer able to read the queue is one that
+    /// takes a string and parses it by hand.
+    ///
+    /// It never decodes. Nothing consumes through this codec, and a relay able to
+    /// read its own messages would be doing something it has no business doing.
+    /// </remarks>
+    private sealed class VerbatimCodec : ICodec
+    {
+        internal VerbatimCodec(string contentType) => ContentType = contentType;
+
+        /// <summary>The connection's, because that is what a consumer will be asked to read.</summary>
+        public string ContentType { get; }
+
+        public byte[] Encode(object payload) =>
+            Encoding.UTF8.GetBytes(Convert.ToString(payload, CultureInfo.InvariantCulture) ?? "");
+
+        public object Decode(byte[] body, Type target) =>
+            throw new NotSupportedException("the outbox relay only publishes");
+
+        public bool CanDecode(string? contentType) => false;
+
+        public override string ToString() => $"OutboxRelay.Verbatim[{ContentType}]";
     }
 
     /// <summary>Publishes batches until the store has nothing left.</summary>

@@ -17,6 +17,12 @@ using AceMq.Amqp;
 
 namespace AceMq.Amqp.Tests;
 
+public sealed class OutboxOrder
+{
+    public string OrderId { get; set; } = "";
+    public long TotalCents { get; set; }
+}
+
 public sealed class PatternTests : IDisposable
 {
     private readonly string _url = "memory://" + Guid.NewGuid().ToString("N");
@@ -315,6 +321,70 @@ public sealed class PatternTests : IDisposable
     }
 
     // ---- outbox ----------------------------------------------------------
+
+    // The property a message count cannot see: what the relay published is
+    // readable by an ordinary typed consumer.
+    //
+    // The payload was serialised inside the writer's transaction, so publishing
+    // it through the connection's codec would encode it a second time and put
+    // JSON containing JSON on the queue. Everything would still look right --
+    // the record is marked published, the count is 1 -- and the only consumer
+    // able to read it would be one taking a string and parsing it by hand.
+    [Fact]
+    public async Task PublishesAPayloadATypedConsumerCanRead()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("outbox-typed");
+
+        var arrived = new TaskCompletionSource<OutboxOrder>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<OutboxOrder>("outbox-typed", message =>
+        {
+            arrived.TrySetResult(message.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var store = new InMemoryOutboxStore();
+        await store.AddAsync(OutboxRecord.Of(
+            "", "outbox-typed", Envelope.Of("order.placed").Build(),
+            "{\"orderId\":\"o-1\",\"totalCents\":1999}"));
+
+        using var relay = mq.Outbox(store);
+        Assert.Equal(1, await relay.DrainAsync());
+
+        var order = await arrived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("o-1", order.OrderId);
+        Assert.Equal(1999, order.TotalCents);
+    }
+
+    // And the envelope survives the trip, so a consumer can still correlate.
+    [Fact]
+    public async Task PublishesTheEnvelopeItWasGiven()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("outbox-envelope");
+
+        var arrived = new TaskCompletionSource<IMessage<OutboxOrder>>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<OutboxOrder>("outbox-envelope", message =>
+        {
+            arrived.TrySetResult(message);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var store = new InMemoryOutboxStore();
+        await store.AddAsync(OutboxRecord.Of(
+            "", "outbox-envelope",
+            Envelope.Of("order.placed").CorrelationId("checkout-9").Build(),
+            "{\"orderId\":\"o-2\",\"totalCents\":250}"));
+
+        using var relay = mq.Outbox(store);
+        await relay.DrainAsync();
+
+        var message = await arrived.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal("order.placed", message.Envelope.Type);
+        Assert.Equal("checkout-9", message.Envelope.CorrelationId);
+    }
 
     [Fact]
     public async Task PublishesWhatTheOutboxWasGiven()

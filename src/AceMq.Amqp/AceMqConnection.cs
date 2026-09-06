@@ -155,18 +155,35 @@ public sealed class AceMqConnection : IDisposable
     /// request names here, so a request published without one cannot be answered.
     /// </remarks>
     public IPublisher<T> Publisher<T>(
-        string exchange, string routingKey, PublishOptions options, string? replyTo)
+        string exchange, string routingKey, PublishOptions options, string? replyTo) =>
+        Publisher<T>(exchange, routingKey, options, replyTo, _codec);
+
+    /// <summary>
+    /// A publisher that encodes with a codec of its own rather than the
+    /// connection's.
+    /// </summary>
+    /// <remarks>
+    /// Internal, and used by the outbox relay. A record's payload was serialised
+    /// inside the writer's transaction, so the relay's job is to put those bytes
+    /// on the wire unchanged — sending them through the connection's codec would
+    /// encode them a second time.
+    /// </remarks>
+    internal IPublisher<T> Publisher<T>(
+        string exchange, string routingKey, PublishOptions options, string? replyTo, ICodec codec)
     {
         EnsureOpen();
         IPublishInterceptor[] interceptors;
         lock (_publishInterceptors) interceptors = _publishInterceptors.ToArray();
 
         var publisher = new Publisher<T>(
-            _connection, _codec, exchange, routingKey, options, _inFlight,
+            _connection, codec, exchange, routingKey, options, _inFlight,
             _config.ConfirmTimeout, replyTo, () => _publishingPaused, interceptors);
         lock (_owned) _owned.Add(publisher);
         return publisher;
     }
+
+    /// <summary>The codec this connection encodes and decodes with.</summary>
+    internal ICodec Codec => _codec;
 
     /// <summary>Starts consuming a queue.</summary>
     public Task<IMessageConsumer> ConsumeAsync<T>(string queue, Func<IMessage<T>, Task<Ack>> handler) =>
