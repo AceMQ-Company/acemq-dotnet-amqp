@@ -132,7 +132,7 @@ public sealed class XmlCodec : ICodec
 /// reading both, until nothing is left that speaks the old one. The first codec
 /// encodes; all of them can decode.
 /// </remarks>
-public sealed class CompositeCodec : ICodec
+public sealed class CompositeCodec : ICodec, IContentTypeCodec
 {
     private readonly IReadOnlyList<ICodec> _codecs;
 
@@ -157,15 +157,41 @@ public sealed class CompositeCodec : ICodec
     public object Decode(byte[] body, Type target) => Decode(body, target, null);
 
     /// <summary>Decodes with whichever codec recognises the content type.</summary>
+    /// <remarks>
+    /// With no content type nothing can be ruled out, so every codec is a
+    /// candidate rather than the first one being assumed right. Candidates are
+    /// tried in turn and the first that reads the body wins -- so a message that
+    /// claims one format and is written in another is still read -- and only when
+    /// every one has refused is anything reported, with all the reasons.
+    /// </remarks>
     public object Decode(byte[] body, Type target, string? contentType)
     {
-        foreach (var codec in _codecs)
+        var candidates = contentType == null
+            ? _codecs.ToList()
+            : _codecs.Where(c => c.CanDecode(contentType)).ToList();
+        if (candidates.Count == 0)
         {
-            if (codec.CanDecode(contentType)) return codec.Decode(body, target);
+            throw new AceFatalException(
+                $"no codec here reads '{contentType ?? "(none)"}'. Available: " +
+                string.Join(", ", _codecs.Select(c => c.ContentType)));
         }
+
+        var refusals = new List<string>();
+        foreach (var codec in candidates)
+        {
+            try
+            {
+                return codec.Decode(body, target);
+            }
+            catch (Exception failure)
+            {
+                refusals.Add($"{codec}: {failure.Message}");
+            }
+        }
+
         throw new AceFatalException(
-            $"no codec here reads '{contentType ?? "(none)"}'. Available: " +
-            string.Join(", ", _codecs.Select(c => c.ContentType)));
+            $"no codec could read this message as {target.Name}. Tried " +
+            string.Join("; ", refusals));
     }
 
     public bool CanDecode(string? contentType) => _codecs.Any(c => c.CanDecode(contentType));

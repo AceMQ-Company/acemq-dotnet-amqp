@@ -238,7 +238,7 @@ public sealed class AceMqConnection : IDisposable
                 {
                     envelope = Envelope.FromWire(
                         delivery.Headers, delivery.RoutingKey, delivery.MessageId);
-                    payload = (T)codec.Decode(delivery.Body, typeof(T));
+                    payload = codec.Decode<T>(delivery.Body, delivery.ContentType);
                 }
                 catch (Exception e)
                 {
@@ -772,7 +772,7 @@ public sealed class AceMqConnection : IDisposable
         T payload;
         try
         {
-            payload = _codec.Decode<T>(delivery.Body);
+            payload = _codec.Decode<T>(delivery.Body, delivery.ContentType);
         }
         catch
         {

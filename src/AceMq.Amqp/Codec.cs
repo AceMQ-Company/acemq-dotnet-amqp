@@ -36,11 +36,41 @@ public interface ICodec
     bool CanDecode(string? contentType);
 }
 
+/// <summary>
+/// A codec that needs the message's content type in order to choose.
+/// </summary>
+/// <remarks>
+/// <see cref="ICodec.Decode"/> is not given one, because most codecs read a
+/// single format and have nothing to choose between. A <see cref="CompositeCodec"/>
+/// does, so the library looks for this interface and hands the content type over
+/// when a codec implements it — rather than making every codec take a parameter
+/// it has no use for.
+/// </remarks>
+public interface IContentTypeCodec
+{
+    /// <summary>Decodes, knowing what the sender said the body was.</summary>
+    object Decode(byte[] body, Type target, string? contentType);
+}
+
 /// <summary>Convenience over <see cref="ICodec"/> for a known payload type.</summary>
 public static class CodecExtensions
 {
     public static T Decode<T>(this ICodec codec, byte[] body) =>
         (T)codec.Decode(body, typeof(T));
+
+    /// <summary>
+    /// Decodes a delivery, letting a codec that chooses by content type see one.
+    /// </summary>
+    /// <remarks>
+    /// Every path that decodes something off the wire goes through this. One that
+    /// called <see cref="ICodec.Decode"/> directly would be right for a single
+    /// codec and would quietly read a composite with whichever codec came first,
+    /// whatever the message actually is.
+    /// </remarks>
+    public static T Decode<T>(this ICodec codec, byte[] body, string? contentType) =>
+        (T)(codec is IContentTypeCodec chooser
+            ? chooser.Decode(body, typeof(T), contentType)
+            : codec.Decode(body, typeof(T)));
 }
 
 /// <summary>JSON, and the default when nothing else is chosen.</summary>

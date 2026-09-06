@@ -120,6 +120,70 @@ public sealed class ExtensibilityTests : IDisposable
         Assert.Equal("A-2", ((Order)composite.Decode(asJson, typeof(Order), "application/json")).Id);
     }
 
+    // The property the composite exists for, through a consumer rather than by
+    // calling the codec directly.
+    //
+    // A consumer that decoded without the content type would hand an XML body to
+    // the JSON codec, which fails -- and the message would be dead-lettered as
+    // undecodable while a codec that could read it sat in the same composite.
+    [Fact]
+    public async Task AConsumerReadsBothFormatsOffOneQueue()
+    {
+        var url = "memory://" + Guid.NewGuid().ToString("N");
+        using var reader = await AceMqConnection.ConnectAsync(
+            ConnectionConfig.ForUrl(url).Build(),
+            CompositeCodec.Of(new JsonCodec(), new XmlCodec()),
+            CancellationToken.None);
+        await reader.DeclareQueueAsync("mixed");
+
+        var read = new List<string>();
+        var both = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await reader.ConsumeAsync<Order>("mixed", message =>
+        {
+            lock (read)
+            {
+                read.Add(message.Payload.Id);
+                if (read.Count == 2) both.TrySetResult(true);
+            }
+            return Task.FromResult(Ack.Accept());
+        });
+
+        using var json = await AceMqConnection.ConnectAsync(url);
+        await json.Publisher<Order>("", "mixed").SendAsync(new Order { Id = "A-json", Total = 1m });
+
+        using var xml = await AceMqConnection.ConnectAsync(url, new XmlCodec());
+        await xml.Publisher<Order>("", "mixed").SendAsync(new Order { Id = "A-xml", Total = 2m });
+
+        await both.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains("A-json", read);
+        Assert.Contains("A-xml", read);
+    }
+
+    // Without a content type nothing can be ruled out, so every codec is tried
+    // rather than the first one being assumed right.
+    [Fact]
+    public void TriesEveryCodecWhenThereIsNoContentType()
+    {
+        var composite = CompositeCodec.Of(new JsonCodec(), new XmlCodec());
+        var asXml = new XmlCodec().Encode(new Order { Id = "A-3", Total = 3m });
+
+        var back = (Order)composite.Decode(asXml, typeof(Order));
+
+        Assert.Equal("A-3", back.Id);
+    }
+
+    [Fact]
+    public void SaysWhatItTriedWhenNothingCouldReadTheBody()
+    {
+        var composite = CompositeCodec.Of(new JsonCodec(), new XmlCodec());
+
+        var error = Assert.Throws<AceFatalException>(
+            () => composite.Decode(Encoding.UTF8.GetBytes("not a message"), typeof(Order)));
+
+        Assert.Contains("JsonCodec", error.Message);
+        Assert.Contains("XmlCodec", error.Message);
+    }
+
     [Fact]
     public void FindsCodecsByName()
     {
