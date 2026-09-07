@@ -118,6 +118,21 @@ public sealed class Topology
             return this;
         }
 
+        /// <summary>Adds an exchange unless this topology already names it.</summary>
+        /// <remarks>
+        /// For the two exchanges the library owns rather than the caller. Declaring
+        /// one twice is harmless at the broker, but a plan that lists
+        /// <c>acemq.dlx</c> once per queue is a plan somebody stops reading.
+        /// </remarks>
+        private Builder SharedExchange(string name, string type)
+        {
+            foreach (var exchange in _exchanges)
+            {
+                if (string.Equals(exchange.Name, name, StringComparison.Ordinal)) return this;
+            }
+            return Exchange(name, type);
+        }
+
         public Builder Queue(string name) =>
             Queue(name, QueueType.Classic, null);
 
@@ -143,12 +158,23 @@ public sealed class Topology
         /// receive what it gives up on.
         /// </summary>
         /// <remarks>
-        /// Three declarations and a binding, as one call, because they are only
-        /// correct together. A queue whose <c>x-dead-letter-exchange</c> points at an
-        /// exchange nobody declared, or at one with no queue bound to it, throws
-        /// messages away exactly as if dead-lettering had never been configured — and
-        /// nothing reports it. The dead-letter queue is named after the queue it
-        /// serves, so the pairing is visible in the broker's UI.
+        /// <para>
+        /// Several declarations and their bindings, as one call, because they are
+        /// only correct together. A queue whose <c>x-dead-letter-exchange</c> points
+        /// at an exchange nobody declared, or at one with no queue bound to it,
+        /// throws messages away exactly as if dead-lettering had never been
+        /// configured — and nothing reports it.
+        /// </para>
+        /// <para>
+        /// The names are <see cref="Naming.DeadLetterQueue"/> and
+        /// <see cref="Naming.ParkedQueue"/> reached through
+        /// <see cref="Naming.DeadLetterExchange"/>, which is what Java, Go, Python and
+        /// Ruby produce. This method used to produce <c>{name}.dlx</c> and
+        /// <c>{name}.dead</c>, which was a third convention living in the same
+        /// repository as the consumer path's <c>.dlq</c> and <c>.parked</c> — three
+        /// places to look for one message, decided by which part of the library
+        /// happened to create the queue.
+        /// </para>
         /// </remarks>
         public Builder QueueWithDeadLetter(string name) =>
             QueueWithDeadLetter(name, QueueType.Classic, null);
@@ -156,20 +182,46 @@ public sealed class Topology
         public Builder QueueWithDeadLetter(
             string name, QueueType type, IReadOnlyDictionary<string, object>? arguments)
         {
-            var exchange = name + ".dlx";
-            var dead = name + ".dead";
-
             var args = new Dictionary<string, object>();
             if (arguments != null)
             {
                 foreach (var pair in arguments) args[pair.Key] = pair.Value;
             }
-            args["x-dead-letter-exchange"] = exchange;
+            args[RetryLadder.DeadLetterExchangeArgument] = Naming.DeadLetterExchange;
 
-            Exchange(exchange, "fanout");
+            // The routing key has to be overridden, and this line is what makes a
+            // shared exchange work at all. A message the broker dead-letters keeps
+            // the routing key it arrived under, so without this it would reach
+            // acemq.dlx as 'orders.placed', match no binding, and be dropped —
+            // which is the silent loss this method exists to prevent. A per-queue
+            // fanout did not need it, which is why it was not here before.
+            args[RetryLadder.DeadLetterRoutingKeyArgument] = Naming.DeadLetterQueue(name);
+
             Queue(name, type, args);
-            Queue(dead, type, null);
-            Bind(dead, exchange, string.Empty);
+            return WithDeadLetterQueues(name);
+        }
+
+        /// <summary>
+        /// The two queues a message ends up in when it cannot be handled, and the
+        /// exchange they are reached through.
+        /// </summary>
+        /// <remarks>
+        /// Neither of them gets dead-lettering of its own. A dead-letter queue that
+        /// dead-letters is a loop, and a loop is how a poison message becomes an
+        /// outage.
+        /// </remarks>
+        private Builder WithDeadLetterQueues(string name)
+        {
+            SharedExchange(Naming.DeadLetterExchange, Naming.DeadLetterExchangeType);
+
+            var dead = Naming.DeadLetterQueue(name);
+            Queue(dead, QueueType.Classic, null);
+            Bind(dead, Naming.DeadLetterExchange, dead);
+
+            var parked = Naming.ParkedQueue(name);
+            Queue(parked, QueueType.Classic, null);
+            Bind(parked, Naming.DeadLetterExchange, parked);
+
             return this;
         }
 
@@ -207,17 +259,17 @@ public sealed class Topology
 
             Queue(name, type, arguments);
 
-            // Neither of these gets wiring of its own. A dead-letter queue that
-            // dead-letters is a loop, and a loop is how a poison message becomes an
-            // outage.
-            Queue(ladder.DeadLetterQueue, QueueType.Classic, null);
-            Queue(ladder.ParkedQueue, QueueType.Classic, null);
+            // The same two queues, the same exchange and the same bindings the
+            // dead-letter builder produces. A message that ran out of attempts and a
+            // message a handler gave up on land in one place, whichever call declared
+            // it.
+            WithDeadLetterQueues(name);
 
             if (ladder.IsEmpty) return this;
 
             if (RetryLadder.IsNamedExchange)
             {
-                Exchange(RetryLadder.RetryExchange, RetryLadder.RetryExchangeType);
+                SharedExchange(RetryLadder.RetryExchange, RetryLadder.RetryExchangeType);
                 Bind(name, RetryLadder.RetryExchange, RetryLadder.RoutingKeyFor(name));
             }
 

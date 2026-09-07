@@ -27,7 +27,7 @@ native API rather than a transliterated Java one.
 | `IPublisher<T>` | Publishing with confirms, back pressure, unroutable messages reported |
 | `ConsumeAsync<T>` | Handlers returning a disposition: accept, retry, dead-letter, park, release |
 | `ICodec` | JSON by default, camelCase on the wire so C# and Java agree; raw bytes available |
-| `Topology` | exchanges, queues and dead-letter wiring declared as one unit |
+| `Topology` | exchanges, queues and dead-letter wiring declared as one unit, on `acemq.dlx` |
 | `Requester` / `Responder` | request and reply, correlated on a shared reply queue |
 | `OrderedQueue<T>` | order per key across partitions; a partition halts rather than reorder |
 | `Pipeline<T>` | steps on their own queues, type-checked against each other |
@@ -93,6 +93,29 @@ instead would hand it to whatever dead-lettering the queue happens to be declare
 which is usually nothing, and neither the broker nor the queue can write down what the
 handler was unable to do.
 
+Both queues are bound by their own names to one durable direct exchange, `acemq.dlx`,
+which is what Java declares and what Go, Python and Ruby are converging on:
+
+```
+acemq.dlx  (direct, durable)
+    orders.placed.dlq     bound on 'orders.placed.dlq'
+    orders.placed.parked  bound on 'orders.placed.parked'
+
+orders.placed
+    x-dead-letter-exchange    = "acemq.dlx"
+    x-dead-letter-routing-key = "orders.placed.dlq"
+```
+
+`Topology.QueueWithDeadLetter` produced `{queue}.dlx` and `{queue}.dead` until 0.1.9,
+which meant one repository held three conventions and which one you got depended on
+whether the queue was created by a topology or by a consumer. It now produces the same
+shape as everything else. The routing-key override is not decoration: a message the
+broker dead-letters keeps the routing key it arrived under, so on a shared direct
+exchange it would otherwise match no binding and be dropped. `Replay` still recognises
+a `.dead` suffix, because brokers already running have queues by that name with
+messages in them and `mq.Replay("orders.dead")` must not start draining a queue into
+itself.
+
 **Short waits happen here, long ones happen in the broker.** Below
 `RetryPolicy.DefaultBrokerWaitThreshold` — thirty seconds, and configurable with
 `WaitInBrokerFrom`, where zero turns broker waits off entirely — the consumer holds the
@@ -150,14 +173,12 @@ orders.placed.retry.40s
     x-dead-letter-routing-key = "orders.placed"
 ```
 
-> The exchange on that middle line is the one part of this the five libraries do not yet
-> agree on: Java declares a named `acemq.retry` direct exchange with a binding per source
-> queue, while Python and Ruby use the default exchange, which routes by queue name and
-> needs neither. This library follows Java for now because that is what most of the
-> released code does. The choice is `RetryLadder.RetryExchange` and the routing key
-> derived beside it, and nothing else reads the decision — switching is a one-line edit,
-> and `RetryContractTests` pins the table by reading the constant rather than repeating
-> it.
+> The exchange on that middle line was the last part of this the five libraries had not
+> settled. It is settled now, on Java's shape: a named `acemq.retry` direct exchange with
+> a binding per source queue, rather than the default exchange Python and Ruby were
+> using. The choice is `RetryLadder.RetryExchange` and the routing key derived beside it,
+> and nothing else reads the decision — `RetryContractTests` pins the table by reading
+> the constant rather than repeating it.
 
 ## Why the fixtures matter more than the code
 

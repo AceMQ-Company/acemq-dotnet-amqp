@@ -307,8 +307,11 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         ?? "amqp://guest:guest@localhost:5672";
 
     private readonly string _suffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+    private readonly ITestOutputHelper _output;
     private AceMqConnection _mq = null!;
     private readonly List<string> _declared = new List<string>();
+
+    public RabbitMqPatternTests(ITestOutputHelper output) => _output = output;
 
     private string Name(string what) => $"acemq.test.{_suffix}.{what}";
 
@@ -335,6 +338,14 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         return name;
     }
 
+    /// <summary>
+    /// The whole dead-letter topology, applied to a real broker and printed.
+    /// </summary>
+    /// <remarks>
+    /// The plan is written to the test output on purpose. Five libraries declare
+    /// these queues, and the only check that catches a difference all five have
+    /// written a passing test for is a person reading the five outputs side by side.
+    /// </remarks>
     [Fact]
     public async Task AppliesATopologyAndReportsIt()
     {
@@ -343,18 +354,35 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
 
         var plan = await _mq.ApplyAsync(topology);
         _declared.Add(queue);
-        _declared.Add(queue + ".dead");
+        _declared.Add(AceMq.Amqp.Naming.DeadLetterQueue(queue));
+        _declared.Add(AceMq.Amqp.Naming.ParkedQueue(queue));
+
+        _output.WriteLine("dead-letter topology for " + queue + ":");
+        _output.WriteLine(plan.Render());
 
         Assert.True(await _mq.QueueExistsAsync(queue));
-        Assert.True(await _mq.QueueExistsAsync(queue + ".dead"));
-        Assert.Contains("exchange " + queue + ".dlx", plan.Render());
+        Assert.True(await _mq.QueueExistsAsync(queue + ".dlq"));
+        Assert.True(await _mq.QueueExistsAsync(queue + ".parked"));
+
+        // One exchange for the broker, named the same thing as Java's, rather than
+        // one per queue named after it.
+        Assert.Contains("exchange acemq.dlx (direct)", plan.Render());
+        Assert.Contains($"bind {queue}.dlq to acemq.dlx on '{queue}.dlq'", plan.Render());
+        Assert.Contains($"bind {queue}.parked to acemq.dlx on '{queue}.parked'", plan.Render());
+        Assert.DoesNotContain(".dead", plan.Render());
     }
 
     [Fact]
     public async Task DeadLettersByRepublishingWithTheReasonAttached()
     {
         var queue = await QueueAsync("dl");
+
+        // Declared here as well as by the consumer's failure path, because the poll
+        // below asks for its depth: a passive declare of a queue that does not exist
+        // yet is a 404 that closes the channel it ran on, and the race is this test's
+        // rather than the library's.
         var dead = AceMq.Amqp.Naming.DeadLetterQueue(queue);
+        await _mq.DeclareQueueAsync(dead);
         _declared.Add(dead);
 
         using (var consumer = await _mq.ConsumeAsync<string>(

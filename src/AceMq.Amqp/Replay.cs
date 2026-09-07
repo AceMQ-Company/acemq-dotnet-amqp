@@ -52,9 +52,21 @@ public sealed class Replay
     /// The queue a dead-letter or parking queue serves, or the queue itself.
     /// </summary>
     /// <remarks>
-    /// <c>.dlq</c> and <c>.parked</c> are the names the whole family uses;
-    /// <c>.dead</c> is what this library's <see cref="Topology.Builder.QueueWithDeadLetter(string)"/>
-    /// produces and is recognised so that topologies already declared keep working.
+    /// <para>
+    /// <c>.dlq</c> and <c>.parked</c> are the names the whole family uses and the
+    /// only ones anything in this library still produces.
+    /// </para>
+    /// <para>
+    /// <c>.dead</c> is recognised as well, and nothing creates it any more. It is
+    /// what <see cref="Topology.Builder.QueueWithDeadLetter(string)"/> produced
+    /// before it was settled on the group convention, so brokers already running
+    /// have queues by that name with messages in them. Dropping the suffix would
+    /// not break a build or fail a test; it would quietly make
+    /// <c>mq.Replay("orders.dead")</c> republish to <c>orders.dead</c> instead of
+    /// <c>orders</c>, which is an operator draining a queue into itself while
+    /// watching a count that never falls. It costs one array element to keep, and
+    /// it can go once no broker has one.
+    /// </para>
     /// </remarks>
     private static string SourceOf(string from)
     {

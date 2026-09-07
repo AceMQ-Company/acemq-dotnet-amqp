@@ -479,6 +479,15 @@ public sealed class AceMqConnection : IDisposable
     /// here: the source was declared by whoever owns it, possibly with arguments this
     /// call does not know, and re-declaring it with different ones is a channel error
     /// rather than a no-op.
+    /// <para>
+    /// The binding to <see cref="Naming.DeadLetterExchange"/> goes on at the same
+    /// time. This library publishes to the queue directly and does not need it, but a
+    /// dead-letter queue that exists without it is one an operator can only find by
+    /// name — and one the broker's own dead-lettering, from a rejected message or a
+    /// queue length limit, cannot reach. Declared here rather than only in
+    /// <see cref="Topology"/> so that a queue this path created and a queue a
+    /// topology declared are the same shape.
+    /// </para>
     /// </remarks>
     private async Task<Ack> MoveAsync(
         string destination, InboundDelivery delivery, Envelope envelope, bool declareFirst)
@@ -488,7 +497,16 @@ public sealed class AceMqConnection : IDisposable
             if (declareFirst)
             {
                 await _connection
+                    .DeclareExchangeAsync(
+                        Naming.DeadLetterExchange, Naming.DeadLetterExchangeType, true,
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+                await _connection
                     .DeclareQueueAsync(destination, QueueType.Classic, true, null, CancellationToken.None)
+                    .ConfigureAwait(false);
+                await _connection
+                    .BindQueueAsync(
+                        destination, Naming.DeadLetterExchange, destination, CancellationToken.None)
                     .ConfigureAwait(false);
             }
 

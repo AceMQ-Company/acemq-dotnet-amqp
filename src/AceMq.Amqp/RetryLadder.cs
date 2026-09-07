@@ -45,9 +45,9 @@ namespace AceMq.Amqp;
 /// <para>
 /// The one-second delay gets no queue. Below the threshold the wait happens in the
 /// consumer, where a second lost to a restart is a second, and the broker is spared a
-/// queue per rung of a schedule that mostly runs in the time it takes to notice. The
-/// Java library takes the other view and gives every delay a rung; the threshold is
-/// what this library, Python and Ruby do.
+/// queue per rung of a schedule that mostly runs in the time it takes to notice. Java
+/// gave every delay a rung and is gaining a threshold of its own; thirty seconds is
+/// what this library, Go, Python and Ruby all use.
 /// </para>
 /// <para>
 /// The rungs are exactly <see cref="RetryPolicy.BrokerRungs"/>, which is a finite list
@@ -63,11 +63,10 @@ public sealed class RetryLadder
     /// <remarks>
     /// <para>
     /// <strong>This constant, and <see cref="RoutingKeyFor"/> beside it, are the whole
-    /// of the choice.</strong> The five libraries do not currently agree: Java declares
-    /// a named <c>acemq.retry</c> direct exchange and binds each source queue to it,
-    /// while Python and Ruby use the default exchange, which routes by queue name and
-    /// so needs no exchange and no binding at all. Java's shape is what the majority
-    /// of released code does and is what this library follows until the five converge.
+    /// of the choice.</strong> The five libraries have settled on Java's shape: a named
+    /// <c>acemq.retry</c> direct exchange with each source queue bound to it, rather
+    /// than the default exchange Python and Ruby were using, which routes by queue name
+    /// and so needs no exchange and no binding at all.
     /// </para>
     /// <para>
     /// Setting this to the empty string switches the whole library to the default

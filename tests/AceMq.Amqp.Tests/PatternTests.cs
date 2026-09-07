@@ -57,13 +57,74 @@ public sealed class PatternTests : IDisposable
         await mq.ApplyAsync(topology);
 
         // The point of declaring them as one unit: the dead-letter exchange and the
-        // queue bound to it exist, so Ack.DeadLetter has somewhere to put a message.
-        // Wiring these by hand and forgetting one loses messages silently.
+        // queues bound to it exist, so Ack.DeadLetter and Ack.Park have somewhere to
+        // put a message. Wiring these by hand and forgetting one loses messages
+        // silently.
         Assert.True(await mq.QueueExistsAsync("orders.placed"));
-        Assert.True(await mq.QueueExistsAsync("orders.placed.dead"));
+        Assert.True(await mq.QueueExistsAsync("orders.placed.dlq"));
+        Assert.True(await mq.QueueExistsAsync("orders.placed.parked"));
+
+        // The names the whole family uses. This builder used to produce
+        // orders.placed.dlx and orders.placed.dead, which meant one repository held
+        // three conventions and an operator had to know which part of the library
+        // created the queue before they could find the message.
+        Assert.Equal("orders.placed.dlq", Naming.DeadLetterQueue("orders.placed"));
+        Assert.Equal("orders.placed.parked", Naming.ParkedQueue("orders.placed"));
 
         var queue = topology.Queues.Single(q => q.Name == "orders.placed");
-        Assert.Equal("orders.placed.dlx", queue.Arguments["x-dead-letter-exchange"]);
+        Assert.Equal("acemq.dlx", queue.Arguments["x-dead-letter-exchange"]);
+
+        // Without this the broker would dead-letter into acemq.dlx under the routing
+        // key the message arrived with, which matches no binding on a direct
+        // exchange and is dropped.
+        Assert.Equal("orders.placed.dlq", queue.Arguments["x-dead-letter-routing-key"]);
+
+        var exchange = topology.Exchanges.Single(e => e.Name == "acemq.dlx");
+        Assert.Equal("direct", exchange.Type);
+        Assert.True(exchange.Durable);
+
+        Assert.Contains(
+            topology.Bindings,
+            b => b.Queue == "orders.placed.dlq"
+                && b.Exchange == "acemq.dlx"
+                && b.RoutingKey == "orders.placed.dlq");
+        Assert.Contains(
+            topology.Bindings,
+            b => b.Queue == "orders.placed.parked"
+                && b.Exchange == "acemq.dlx"
+                && b.RoutingKey == "orders.placed.parked");
+    }
+
+    [Fact]
+    public void DeclaresOneSharedDeadLetterExchangeForEveryQueue()
+    {
+        var topology = Topology.Define()
+            .QueueWithDeadLetter("orders.placed")
+            .QueueWithDeadLetter("orders.cancelled")
+            .Build();
+
+        // One exchange, not one per queue. A plan that lists acemq.dlx once per
+        // queue is a plan somebody stops reading, and a broker that grows an
+        // exchange per queue is a management UI nobody can scan.
+        Assert.Single(topology.Exchanges, e => e.Name == "acemq.dlx");
+        Assert.Equal(4, topology.Bindings.Count);
+    }
+
+    [Fact]
+    public void SendsARetryTopologysGiveUpQueuesToTheSamePlace()
+    {
+        var topology = Topology.Define()
+            .QueueWithRetry("orders.placed", RetryPolicy.Fixed(3, TimeSpan.FromMinutes(1)))
+            .Build();
+
+        // The retry builder and the dead-letter builder have to agree, or which
+        // call declared the queue decides where an operator looks for the message.
+        Assert.Contains(topology.Queues, q => q.Name == "orders.placed.dlq");
+        Assert.Contains(topology.Queues, q => q.Name == "orders.placed.parked");
+        Assert.Contains(topology.Exchanges, e => e.Name == "acemq.dlx");
+        Assert.Contains(
+            topology.Bindings,
+            b => b.Queue == "orders.placed.dlq" && b.Exchange == "acemq.dlx");
     }
 
     [Fact]

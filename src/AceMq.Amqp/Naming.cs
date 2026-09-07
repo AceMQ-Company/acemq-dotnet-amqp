@@ -37,6 +37,31 @@ public static class Naming
     /// <summary>Infix of a retry rung queue, between the source name and the delay.</summary>
     public const string RetryInfix = ".retry.";
 
+    /// <summary>
+    /// The exchange the dead-letter and parking queues are reached through.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One exchange for the whole broker rather than one per queue, and named the
+    /// same thing in every library — Java's <c>RetryTopology</c> declares this and
+    /// Go, Python and Ruby are converging on it. A per-queue exchange means an
+    /// operator has to know the queue's name before they can find the wiring, and
+    /// a broker accumulates one exchange per queue for no benefit; a shared one is
+    /// a single place in the management UI where every dead letter in the system
+    /// is visibly bound.
+    /// </para>
+    /// <para>
+    /// The queues are bound to it under their own names, so <c>orders.new.dlq</c>
+    /// is reached with the routing key <c>orders.new.dlq</c>. That is why it is
+    /// direct: with a topic exchange a queue bound as <c>orders.#</c> would collect
+    /// another queue's dead letters.
+    /// </para>
+    /// </remarks>
+    public const string DeadLetterExchange = "acemq.dlx";
+
+    /// <summary>The type the dead-letter exchange is declared with.</summary>
+    public const string DeadLetterExchangeType = "direct";
+
     /// <summary><c>orders.new</c> becomes <c>orders.new.dlq</c>.</summary>
     public static string DeadLetterQueue(string queue) =>
         Require(queue) + DeadLetterSuffix;
