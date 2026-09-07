@@ -173,6 +173,62 @@ public sealed class Topology
             return this;
         }
 
+        /// <summary>
+        /// Declares a queue together with the rungs its retry policy's long waits use,
+        /// and the queues a message ends up in when it runs out of them.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// It takes the policy rather than a list of delays on purpose. The rungs a
+        /// consumer will publish into are derived from the policy it is running, so
+        /// anything else here would be a second copy of the same list, free to drift
+        /// from the first — and the way that drift shows up is a retry published to a
+        /// queue nobody declared, at the moment the service is already failing. One
+        /// value produces both, or the topology is not a description of what the
+        /// service needs.
+        /// </para>
+        /// <para>
+        /// A consumer declares the same rungs when it starts, which is belt and
+        /// braces rather than duplication: this is the version somebody reviews in a
+        /// deployment plan, and that one is the version that runs when nobody
+        /// reviewed anything.
+        /// </para>
+        /// </remarks>
+        /// <param name="name">The queue being consumed.</param>
+        /// <param name="policy">Whose schedule the rungs are.</param>
+        public Builder QueueWithRetry(string name, RetryPolicy policy) =>
+            QueueWithRetry(name, policy, QueueType.Classic, null);
+
+        public Builder QueueWithRetry(
+            string name, RetryPolicy policy, QueueType type,
+            IReadOnlyDictionary<string, object>? arguments)
+        {
+            var ladder = RetryLadder.For(name, policy);
+
+            Queue(name, type, arguments);
+
+            // Neither of these gets wiring of its own. A dead-letter queue that
+            // dead-letters is a loop, and a loop is how a poison message becomes an
+            // outage.
+            Queue(ladder.DeadLetterQueue, QueueType.Classic, null);
+            Queue(ladder.ParkedQueue, QueueType.Classic, null);
+
+            if (ladder.IsEmpty) return this;
+
+            if (RetryLadder.IsNamedExchange)
+            {
+                Exchange(RetryLadder.RetryExchange, RetryLadder.RetryExchangeType);
+                Bind(name, RetryLadder.RetryExchange, RetryLadder.RoutingKeyFor(name));
+            }
+
+            foreach (var rung in ladder.Rungs)
+            {
+                Queue(rung.Queue, QueueType.Classic, rung.Arguments);
+            }
+
+            return this;
+        }
+
         public Topology Build() =>
             new Topology(_exchanges.ToArray(), _queues.ToArray(), _bindings.ToArray());
     }

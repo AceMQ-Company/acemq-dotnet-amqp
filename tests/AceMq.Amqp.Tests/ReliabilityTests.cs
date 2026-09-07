@@ -157,7 +157,7 @@ public sealed class ReliabilityTests : IDisposable
         using var consumer = await mq.ConsumeAsync<string>(
             _q,
             ConsumerOptions.Defaults().WithRetry(
-                RetryPolicy.Fixed(3, TimeSpan.FromMilliseconds(5)).WithJitter(0)),
+                RetryPolicy.Fixed(3, TimeSpan.FromMilliseconds(5))),
             message =>
             {
                 attempts.Enqueue(message.Attempt);
@@ -166,15 +166,49 @@ public sealed class ReliabilityTests : IDisposable
 
         await mq.Publisher<string>("", _q).SendAsync("doomed");
 
-        var broker = _url.Substring("memory://".Length);
-        await Eventually(
-            () => InMemoryTransport.DeadLettered(broker, _q).Count > 0,
-            "the message to be given up on");
+        var dead = await mq.Transport.ReceiveAsync(
+            Naming.DeadLetterQueue(_q), TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        // Three attempts, then dead-lettered -- not retried forever.
-        Assert.Equal(3, attempts.Count);
-        var dead = InMemoryTransport.DeadLettered(broker, _q).Single();
-        Assert.Contains("gave up after 3 attempt", dead.Headers[AceHeaders.Error].ToString());
+        // Three attempts, then dead-lettered -- not retried forever. The counter came
+        // off the wire, so it is the same three a second consumer on this queue would
+        // have seen.
+        Assert.NotNull(dead);
+        Assert.Equal(new[] { 1, 2, 3 }, attempts.ToArray());
+        Assert.Contains("gave up after 3 attempt", dead!.Headers[AceHeaders.Error].ToString());
+
+        // Republished and then acknowledged, so nothing is left waiting on the queue
+        // it gave up on.
+        Assert.Equal(0, await mq.MessageCountAsync(_q));
+    }
+
+    [Fact]
+    public async Task AdvancesTheAttemptOnTheWireRatherThanCountingInMemory()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var seen = new ConcurrentQueue<int>();
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q,
+            ConsumerOptions.Defaults().WithRetry(
+                RetryPolicy.Fixed(3, TimeSpan.FromMilliseconds(5))),
+            message =>
+            {
+                seen.Enqueue(message.Envelope.Attempt);
+                return Task.FromResult(
+                    message.Envelope.Attempt < 3
+                        ? Ack.Retry("not yet")
+                        : Ack.Accept());
+            });
+
+        await mq.Publisher<string>("", _q).SendAsync("eventually fine");
+        await Eventually(() => seen.Count >= 3, "three attempts");
+        await Task.Delay(100);
+
+        // x-acemq-attempt, not a dictionary in this process. A requeue would hand
+        // back the bytes the broker was given and every delivery would be attempt one.
+        Assert.Equal(new[] { 1, 2, 3 }, seen.ToArray());
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
     }
 
     // ---- health ----------------------------------------------------------

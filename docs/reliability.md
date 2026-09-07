@@ -15,9 +15,11 @@ await mq.ConsumeAsync<OrderPlaced>(
     Handle);
 ```
 
-Five attempts, doubling from a second, capped at a minute. After the last one the
-message is dead-lettered with the reason attached, rather than occupying a consumer
-indefinitely.
+Five attempts, doubling from a second, capped at a minute. Each retry republishes the
+message with `x-acemq-attempt` advanced rather than handing it back to the broker
+unchanged, so the count travels with the message instead of living in one process. After
+the last attempt it is republished to `{queue}.dlq` with the reason attached, rather than
+occupying a consumer indefinitely.
 
 ```csharp
 RetryPolicy.None()                                    // one attempt
@@ -34,8 +36,40 @@ shape for one that is *overloaded*: every consumer that failed at the same momen
 retries at the same moment, and the dependency that was struggling gets the whole
 herd at once. That is how a brief problem becomes a sustained one.
 
-Jitter defaults to 0.2 — each delay is spread ±20%. Set it to zero only when you
-want reproducible timings in a test.
+Jitter defaults to 0.2 — each delay is spread ±20%, **both** ways. One-sided jitter only
+ever delays, which turns a thundering herd into a slower thundering herd rather than
+dispersing it. Set it to zero only when you want reproducible timings in a test.
+
+### Where the waiting happens
+
+A wait shorter than thirty seconds is spent in the consumer, which holds the delivery
+for the duration. A wait of thirty seconds or more is spent in the broker: the message
+is republished into a `{queue}.retry.{delay}` queue whose `x-message-ttl` is the wait and
+whose dead-letter target is the queue it came from, and the broker hands it back when the
+time is up.
+
+```csharp
+RetryPolicy.Exponential(6, TimeSpan.FromSeconds(10))
+    .WaitInBrokerFrom(TimeSpan.FromMinutes(1))   // move the line
+    .WaitInBrokerFrom(TimeSpan.Zero);            // or wait for everything here
+```
+
+The reason for the split is that a consumer sleeping on a five-minute backoff is holding
+an *unacknowledged* message. Restart it — a deploy, a crash, an autoscaler — and the
+broker redelivers at once, so a five-minute policy delivers in none. Below thirty seconds
+that costs seconds and one prefetch slot; above it, it costs the whole wait, which is the
+bug worth spending a queue on.
+
+Broker waits are never jittered: a rung's time-to-live is fixed when the queue is
+declared, so a moved delay would name a queue that is not there — and the spread comes
+free anyway, because each message's time-to-live starts when it arrives rather than when
+the batch failed.
+
+`policy.Schedule()` lists the delays without jitter and `policy.BrokerRungs()` lists the
+ones that need a queue, which is what to read when deciding whether a policy is the one
+you meant. `Topology.Define().QueueWithRetry(name, policy)` declares them, and a consumer
+declares them again when it starts — a rung that does not exist loses the message rather
+than reporting anything.
 
 ### Giving up by age, not only by attempts
 

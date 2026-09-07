@@ -145,11 +145,40 @@ public sealed class InMemoryTransport : ITransport
         internal string RoutingKey { get; }
     }
 
+    /// <summary>
+    /// Identity rather than equality, for tracking one particular message.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="InboundDelivery"/> has no equality of its own, so the default
+    /// comparer would already do this — spelling it out means a later decision to give
+    /// deliveries value equality does not silently make two identical messages the
+    /// same entry here. <c>ReferenceEqualityComparer</c> in the framework needs .NET 5,
+    /// and this assembly targets netstandard2.0.
+    /// </remarks>
+    private sealed class ReferenceEqualityComparer<T> : IEqualityComparer<T> where T : class
+    {
+        internal static readonly ReferenceEqualityComparer<T> Instance =
+            new ReferenceEqualityComparer<T>();
+
+        public bool Equals(T? x, T? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(T obj) =>
+            System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+    }
+
     private sealed class Queue
     {
         private readonly ConcurrentQueue<InboundDelivery> _messages =
             new ConcurrentQueue<InboundDelivery>();
         private readonly List<InboundDelivery> _deadLettered = new List<InboundDelivery>();
+
+        // Messages the time-to-live has taken out of this queue. A ConcurrentQueue
+        // cannot remove from the middle, so they are marked and skipped instead of
+        // being taken out — which is enough, because the only thing a rung queue is
+        // ever asked is how many messages it is holding.
+        private readonly ConcurrentDictionary<InboundDelivery, byte> _expired =
+            new ConcurrentDictionary<InboundDelivery, byte>(
+                ReferenceEqualityComparer<InboundDelivery>.Instance);
 
         internal QueueType DeclaredType { get; private set; } = QueueType.Classic;
 
@@ -178,7 +207,50 @@ public sealed class InMemoryTransport : ITransport
 
         internal void Enqueue(InboundDelivery delivery) => _messages.Enqueue(delivery);
 
-        internal bool TryDequeue(out InboundDelivery delivery) => _messages.TryDequeue(out delivery!);
+        /// <summary>How long a message may sit here, or null when it may sit for ever.</summary>
+        /// <remarks>
+        /// Read from <c>x-message-ttl</c> as it was declared. A retry rung is a queue
+        /// nothing consumes, so without this the in-memory broker would hold a message
+        /// waiting on a rung for ever and a test of the whole retry path would pass
+        /// against RabbitMQ and hang here — or, worse, the other way round.
+        /// </remarks>
+        internal TimeSpan? MessageTtl
+        {
+            get
+            {
+                if (!Arguments.TryGetValue(RetryLadder.MessageTtlArgument, out var value)) return null;
+                try
+                {
+                    return TimeSpan.FromMilliseconds(
+                        Convert.ToDouble(value, CultureInfo.InvariantCulture));
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>Where an expired message goes, as this queue was declared.</summary>
+        internal string? DeadLetterRoutingKey =>
+            Arguments.TryGetValue(RetryLadder.DeadLetterRoutingKeyArgument, out var key)
+                ? Convert.ToString(key, CultureInfo.InvariantCulture)
+                : null;
+
+        /// <summary>Takes a message out because its time-to-live ran out.</summary>
+        internal bool Expire(InboundDelivery delivery) => _expired.TryAdd(delivery, 0);
+
+        internal bool TryDequeue(out InboundDelivery delivery)
+        {
+            while (_messages.TryDequeue(out delivery!))
+            {
+                // Skipped rather than handed over: it expired while it was sitting
+                // here, and the broker has already sent it on to its dead-letter
+                // target.
+                if (!_expired.TryRemove(delivery, out _)) return true;
+            }
+            return false;
+        }
 
         /// <summary>Puts a pulled message back, marked as a redelivery.</summary>
         /// <remarks>
@@ -193,7 +265,7 @@ public sealed class InMemoryTransport : ITransport
                 delivery.Headers, delivery.MessageId, delivery.ContentType,
                 redelivered: true, delivery.ReplyTo));
 
-        internal int Count => _messages.Count;
+        internal int Count => Math.Max(0, _messages.Count - _expired.Count);
 
         internal void DeadLetter(InboundDelivery delivery, string reason)
         {
@@ -254,12 +326,60 @@ public sealed class InMemoryTransport : ITransport
             foreach (var queueName in matched)
             {
                 var queue = _broker.Queues.GetOrAdd(queueName, _ => new Queue());
-                queue.Enqueue(new InboundDelivery(
+                var delivery = new InboundDelivery(
                     queueName, message.Exchange, message.RoutingKey, message.Body,
                     new Dictionary<string, object>((IDictionary<string, object>)message.Headers),
-                    message.MessageId, message.ContentType, false, message.ReplyTo));
+                    message.MessageId, message.ContentType, false, message.ReplyTo);
+                queue.Enqueue(delivery);
+                ArmExpiry(queue, delivery);
             }
             return Task.FromResult(ConfirmResult.Ok(matched.Count > 0));
+        }
+
+        /// <summary>
+        /// Sends a message on to this queue's dead-letter target once its time-to-live
+        /// runs out.
+        /// </summary>
+        /// <remarks>
+        /// A timer per message rather than a sweeper, because the number of messages
+        /// sitting on a delay queue in a test is small and a sweeper would be a
+        /// background thread this transport otherwise does not need.
+        /// <para>
+        /// The dead-letter target is read as a routing key on the default exchange,
+        /// which is what a rung queue declares and all this transport needs to
+        /// support. A rung declared against a named exchange resolves through the same
+        /// routing as any other publish, so both shapes of the retry contract work
+        /// here.
+        /// </para>
+        /// </remarks>
+        private void ArmExpiry(Queue queue, InboundDelivery delivery)
+        {
+            var ttl = queue.MessageTtl;
+            if (ttl == null || ttl.Value <= TimeSpan.Zero) return;
+
+            var target = queue.DeadLetterRoutingKey;
+            if (string.IsNullOrEmpty(target)) return;
+
+            var exchange = queue.Arguments.TryGetValue(
+                RetryLadder.DeadLetterExchangeArgument, out var e)
+                ? Convert.ToString(e, CultureInfo.InvariantCulture) ?? string.Empty
+                : string.Empty;
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(ttl.Value).ConfigureAwait(false);
+                if (!queue.Expire(delivery)) return;
+                if (!IsOpen) return;
+
+                await SendAsync(
+                        new OutboundMessage(
+                            exchange, target!, delivery.Body, delivery.Headers,
+                            delivery.MessageId, delivery.ContentType,
+                            persistent: true, mandatory: false, expiration: null,
+                            priority: null, replyTo: delivery.ReplyTo),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            });
         }
 
         private List<string> Route(OutboundMessage message)
@@ -485,6 +605,12 @@ public sealed class InMemoryTransport : ITransport
                         });
                         break;
                     case AckKind.DeadLetter:
+                    case AckKind.Park:
+                        // Reached only by a caller driving this transport directly.
+                        // The retry engine never returns either: it republishes to
+                        // {queue}.dlq or {queue}.parked with x-acemq-error set and
+                        // then accepts, because a broker cannot write onto a message
+                        // it is rejecting.
                         _queue.DeadLetter(delivery, ack.Reason ?? "no reason given");
                         break;
                 }

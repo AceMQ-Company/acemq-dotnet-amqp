@@ -133,7 +133,7 @@ public sealed class MessagingTests : IDisposable
     }
 
     [Fact]
-    public async Task DeadLettersAMessageItCannotDecodeRatherThanLoopingOnIt()
+    public async Task ParksAMessageItCannotDecodeRatherThanLoopingOnIt()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);
         await mq.DeclareQueueAsync("work");
@@ -150,17 +150,23 @@ public sealed class MessagingTests : IDisposable
         using var bytes = await AceMqConnection.ConnectAsync(_url, new BytesCodec());
         await bytes.Publisher<string>("", "work").SendAsync("not json at all");
 
-        var broker = _url.Substring("memory://".Length);
-        await Eventually(
-            () => InMemoryTransport.DeadLettered(broker, "work").Count > 0 ? "dead-lettered" : null,
-            "the undecodable message to be dead-lettered");
+        // Parked rather than dead-lettered: a message that failed five times and a
+        // message nothing could read are two different problems, and whoever drains
+        // the dead letters should not have to sort them by hand.
+        //
+        // Read at the transport level rather than through a codec, because the whole
+        // point of this message is that no codec can read it.
+        var parked = Naming.ParkedQueue("work");
+        var dead = await mq.Transport.ReceiveAsync(
+            parked, TimeSpan.FromSeconds(5), CancellationToken.None);
 
-        // It reached the dead-letter list rather than the handler, and the reason
-        // says what could not be read rather than only that something failed.
+        // It reached the parking queue rather than the handler, and the reason says
+        // what could not be read rather than only that something failed.
+        Assert.NotNull(dead);
         Assert.Equal(0, handled);
-        var dead = InMemoryTransport.DeadLettered(broker, "work").Single();
-        Assert.Contains("could not decode as OrderPlaced",
-            dead.Headers[AceHeaders.Error].ToString());
+        Assert.Contains(
+            "could not decode as OrderPlaced",
+            dead!.Headers[AceHeaders.Error].ToString());
     }
 
     [Fact]

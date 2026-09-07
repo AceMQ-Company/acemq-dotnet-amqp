@@ -235,7 +235,7 @@ does not pay to carry the route around.
 Dead-lettering keeps the messages. This puts them back once whatever broke is fixed:
 
 ```csharp
-var replay = mq.Replay("orders.placed.dead");
+var replay = mq.Replay("orders.placed.dlq");
 
 await replay.PendingAsync();     // how many are waiting
 await replay.ReplayAllAsync();   // all of them
@@ -243,8 +243,8 @@ await replay.ReplayAsync(100);   // the first hundred
 ```
 
 By default they go back to the queue the dead-letter queue is named after, so
-`orders.placed.dead` replays into `orders.placed`. `Into("somewhere.else")` overrides
-that.
+`orders.placed.dlq` replays into `orders.placed`. `.parked` and `.dead` are recognised
+the same way, and `Into("somewhere.else")` overrides it.
 
 Selective replay takes a filter:
 
@@ -261,3 +261,11 @@ Replayed messages carry `x-acemq-replayed-from`, `x-acemq-replayed-at` and
 `x-acemq-replay-count`, and the failure reason is cleared — it belonged to the
 attempt that failed, and leaving it on would make every replayed message look like it
 had already failed again.
+
+**`x-acemq-attempt` is reset to 1 as well.** A dead-letter queue is full of messages that
+were given up on at the *last* attempt of their policy, and the attempt counter now
+travels with the message — so without the reset each one would arrive back on attempt
+five of five and be dead-lettered again before a handler saw it. The operator who has
+just fixed the bug would have moved two thousand messages from one queue to the same
+queue. `KeepingAttempts()` puts back exactly what was there, for an audit or for a queue
+read by something that counts attempts itself.

@@ -173,6 +173,52 @@ public sealed class PatternTests : IDisposable
     }
 
     [Fact]
+    public async Task GivesAReplayedMessageAFreshSetOfAttempts()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        await mq.DeclareQueueAsync("work.dlq");
+
+        // A message dead-lettered on the last attempt of its policy, which is what a
+        // dead-letter queue is full of.
+        await mq.Publisher<string>("", "work.dlq").SendAsync(
+            "exhausted",
+            Envelope.Of("job").Attempt(5).Error("gave up after 5 attempt(s)").Build());
+
+        Assert.Equal("work", mq.Replay("work.dlq").To);
+        Assert.Equal(1, await mq.Replay("work.dlq").ReplayAllAsync());
+
+        // Back on attempt one. Without the reset it would arrive still on attempt five,
+        // be given up on before any handler saw it, and the operator who has just fixed
+        // the bug would have moved the whole queue to the same queue.
+        var back = await mq.Transport.ReceiveAsync(
+            "work", TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.NotNull(back);
+        var envelope = Envelope.FromWire(back!.Headers);
+        Assert.Equal(1, envelope.Attempt);
+        Assert.Null(envelope.Error);
+    }
+
+    [Fact]
+    public async Task PutsBackExactlyWhatWasThereWhenAskedTo()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        await mq.DeclareQueueAsync("work.dlq");
+
+        await mq.Publisher<string>("", "work.dlq").SendAsync(
+            "audited", Envelope.Of("job").Attempt(5).Build());
+
+        // For an audit, or for a queue read by something that counts attempts itself.
+        Assert.Equal(1, await mq.Replay("work.dlq").KeepingAttempts().ReplayAllAsync());
+
+        var back = await mq.Transport.ReceiveAsync(
+            "work", TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.NotNull(back);
+        Assert.Equal(5, Envelope.FromWire(back!.Headers).Attempt);
+    }
+
+    [Fact]
     public async Task LeavesBehindWhatTheFilterRejects()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

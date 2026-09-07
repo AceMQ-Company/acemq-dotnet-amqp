@@ -81,6 +81,34 @@ public sealed class Envelope
     public static Builder Of(string type) => new Builder(type);
 
     /// <summary>
+    /// The same envelope on a different attempt.
+    /// </summary>
+    /// <remarks>
+    /// Used by the retry engine, which advances the count and republishes rather than
+    /// requeueing. A copy rather than a mutation because an envelope is shared with
+    /// the handler that has just seen it, and the number it saw should stay the number
+    /// it saw.
+    /// </remarks>
+    public Envelope WithAttempt(int attempt) =>
+        new Envelope(
+            Id, Type, Version, CorrelationId, CausationId, attempt, FirstSeen, Origin, Error,
+            Headers);
+
+    /// <summary>
+    /// The same envelope carrying a reason it could not be handled, or none.
+    /// </summary>
+    /// <remarks>
+    /// The reason is the one thing whoever finds the message in a dead-letter queue
+    /// actually needs, and the broker cannot write it: a message the broker
+    /// dead-letters arrives with its own <c>x-death</c> bookkeeping and nothing about
+    /// what the handler was unable to do.
+    /// </remarks>
+    public Envelope WithError(string? error) =>
+        new Envelope(
+            Id, Type, Version, CorrelationId, CausationId, Attempt, FirstSeen, Origin, error,
+            Headers);
+
+    /// <summary>
     /// Reads an envelope back off the wire.
     /// </summary>
     /// <param name="headers">Every header on the message, engine and application alike.</param>

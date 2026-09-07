@@ -23,7 +23,7 @@ namespace AceMq.Amqp;
 /// <para>
 /// A handler returns one of these rather than throwing to signal success or
 /// failure. An exception escaping the handler is still handled — it is treated as
-/// <see cref="Retry"/> — but returning the disposition says what was meant, and
+/// <see cref="Retry(string)"/> — but returning the disposition says what was meant, and
 /// distinguishes "this will never work" from "try again shortly", which an
 /// exception on its own cannot.
 /// </para>
@@ -40,16 +40,53 @@ public sealed class Ack
     /// <summary>Handled. The broker may forget it.</summary>
     public static Ack Accept() => new Ack(AckKind.Accept, null, null);
 
-    /// <summary>Deliver it again after a delay, because this attempt failed recoverably.</summary>
+    /// <summary>
+    /// Deliver it again after a delay, because this attempt failed recoverably.
+    /// </summary>
+    /// <remarks>
+    /// The delay is honoured only when the consumer has no <see cref="RetryPolicy"/>.
+    /// With one, the policy decides — otherwise a handler could ask for a wait shorter
+    /// than the backoff the fleet has agreed on, and the backoff would mean nothing.
+    /// </remarks>
     public static Ack Retry(TimeSpan after, string reason) =>
         new Ack(AckKind.Retry, after, reason ?? throw new ArgumentNullException(nameof(reason)));
+
+    /// <summary>
+    /// Deliver it again as soon as the policy allows, because this attempt failed
+    /// recoverably.
+    /// </summary>
+    /// <remarks>
+    /// The delay comes from the consumer's <see cref="RetryPolicy"/>, which is where
+    /// it belongs: a handler knows that it failed, not how many attempts are left or
+    /// how long the fleet has agreed to back off for.
+    /// </remarks>
+    public static Ack Retry(string reason) =>
+        new Ack(AckKind.Retry, null, reason ?? throw new ArgumentNullException(nameof(reason)));
 
     /// <summary>
     /// Send it to the dead-letter queue: this message will never succeed, and
     /// retrying only delays the discovery.
     /// </summary>
+    /// <remarks>
+    /// Carried out by republishing to <c>{queue}.dlq</c> with the reason on
+    /// <c>x-acemq-error</c> and then acknowledging the original — not by rejecting it.
+    /// See <see cref="AceMqConnection.ConsumeAsync{T}(string, Func{IMessage{T}, Task{Ack}})"/>
+    /// for why.
+    /// </remarks>
     public static Ack DeadLetter(string reason) =>
         new Ack(AckKind.DeadLetter, null, reason ?? throw new ArgumentNullException(nameof(reason)));
+
+    /// <summary>
+    /// Send it to <c>{queue}.parked</c>, where a person will have to look at it.
+    /// </summary>
+    /// <remarks>
+    /// Parked and not dead-lettered, because they are different problems: a message
+    /// that failed five times and a message nothing could read want different
+    /// treatment, and whoever drains the dead letters should not have to sort them by
+    /// hand. A body that will not decode is parked automatically.
+    /// </remarks>
+    public static Ack Park(string reason) =>
+        new Ack(AckKind.Park, null, reason ?? throw new ArgumentNullException(nameof(reason)));
 
     /// <summary>
     /// Give it back to the broker for someone else, without counting an attempt.
@@ -67,6 +104,7 @@ public sealed class Ack
     public bool IsAccept => Kind == AckKind.Accept;
     public bool IsRetry => Kind == AckKind.Retry;
     public bool IsDeadLetter => Kind == AckKind.DeadLetter;
+    public bool IsPark => Kind == AckKind.Park;
     public bool IsRelease => Kind == AckKind.Release;
 
     public override string ToString() =>
@@ -80,6 +118,9 @@ public enum AckKind
     Retry,
     DeadLetter,
     Release,
+
+    /// <summary>Send it somewhere a person will look, rather than to the dead letters.</summary>
+    Park,
 }
 
 /// <summary>A decoded message and everything that arrived with it.</summary>
@@ -114,9 +155,16 @@ public interface IMessage<out T>
     /// Delivery attempt, starting at 1.
     /// </summary>
     /// <remarks>
-    /// Counted by this consumer rather than read from the envelope, because a broker
-    /// redelivers the original bytes and the header a publisher wrote never advances.
-    /// The count is per process: a consumer restart begins it again.
+    /// Read off the wire, because <c>x-acemq-attempt</c> is defined as the count the
+    /// retry engine increments, and a retry republishes with it advanced rather than
+    /// requeueing the original bytes.
+    /// <para>
+    /// Counting in this process instead — from the broker's redelivery flag, keyed by
+    /// message id — is wrong the moment there is more than one consumer: a requeued
+    /// message can come back to a different one, which has never seen it and calls it
+    /// attempt one. A policy of five attempts then retries for ever, and the count is
+    /// lost across a restart as well. This library used to count that way.
+    /// </para>
     /// </remarks>
     int Attempt { get; }
 
@@ -218,11 +266,15 @@ public sealed class ConsumerOptions
         new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, store);
 
     /// <summary>
-    /// Returns a failed message to the queue rather than dead-lettering it.
+    /// Returns a failed message to the queue rather than retrying it.
     /// </summary>
     /// <remarks>
     /// Off by default, because requeueing a message that fails deterministically
-    /// produces a hot loop that looks like throughput.
+    /// produces a hot loop that looks like throughput. It also hands the broker back
+    /// the bytes it gave out, so <c>x-acemq-attempt</c> does not advance and the retry
+    /// policy never reaches its limit — which is the whole reason the ordinary path
+    /// republishes instead. This exists for a queue whose failures really are
+    /// "somebody else should take this", and for nothing else.
     /// </remarks>
     public ConsumerOptions RequeueingOnFailure() =>
         new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay, RetryPolicy, Idempotency);

@@ -14,13 +14,14 @@ Disposing the consumer stops delivery.
 
 ## The disposition is a return value, not an exception
 
-Four things can happen to a message, and the handler says which:
+Five things can happen to a message, and the handler says which:
 
 | | |
 |---|---|
 | `Ack.Accept()` | Handled. The broker may forget it. |
-| `Ack.Retry(after, reason)` | Failed in a way another attempt might survive. |
-| `Ack.DeadLetter(reason)` | Will never succeed. Stop now and keep the evidence. |
+| `Ack.Retry(reason)` | Failed in a way another attempt might survive. The policy decides when. |
+| `Ack.DeadLetter(reason)` | Will never succeed. Stop now and keep the evidence, in `{queue}.dlq`. |
+| `Ack.Park(reason)` | A person has to look at this one. Goes to `{queue}.parked`. |
 | `Ack.Release()` | Give it back for someone else, without counting an attempt. |
 
 An exception escaping the handler is still handled — it becomes a retry — but
@@ -61,12 +62,22 @@ message.ReceivedAt
 if (message.Attempt >= 5) return Ack.DeadLetter("five attempts, giving up");
 ```
 
+The number is read off the wire, from `x-acemq-attempt`, not counted in this process. A
+retry republishes the message with it advanced, so it means the same thing to every
+consumer on the queue, survives a restart, and does not start again at one when a
+message moves between instances.
+
 ## A message that cannot be decoded is not retried
 
-If the body does not parse as the handler's type, the message is dead-lettered
-immediately with the reason attached, and the handler is never called. It would not
-parse on the next attempt either, and a poison message on an infinite retry loop
+If the body does not parse as the handler's type, the message is sent to
+`{queue}.parked` with the reason attached, and the handler is never called. It would
+not parse on the next attempt either, and a poison message on an infinite retry loop
 looks exactly like throughput until someone reads the queue depth.
+
+Parked rather than dead-lettered, because they are different problems: a message that
+failed five times wants the person who owns the dependency, and a message nothing could
+read wants the person who owns the publisher. Whoever drains the dead letters should not
+have to sort them by hand.
 
 ## Prefetch
 
@@ -87,27 +98,37 @@ ConsumerOptions.Defaults()
     .WithPrefetch(50)
     .WithRetryDelay(TimeSpan.FromSeconds(10))   // when a handler throws
     .As(new BytesCodec())                       // decode differently from the connection
-    .RequeueingOnFailure()                      // return to the queue instead of dead-lettering
+    .RequeueingOnFailure()                      // hand it straight back to the broker
 ```
 
-`RequeueingOnFailure` is off by default. Requeueing a message that fails
-deterministically produces a hot loop that shows up on a dashboard as work being
-done.
+`RequeueingOnFailure` is off by default, and should stay off unless a queue's failures
+really do mean "somebody else should take this". Requeueing a message that fails
+deterministically produces a hot loop that shows up on a dashboard as work being done —
+and it hands the broker back the bytes it gave out, so `x-acemq-attempt` never advances
+and the retry policy never reaches its limit.
 
-## Dead-lettering needs somewhere to go
+## Where a dead letter goes
 
-`Ack.DeadLetter` nacks the message without requeueing it. On RabbitMQ that sends it
-to the queue's configured dead-letter exchange — **and if the queue has none, the
-broker discards it**. The disposition is not enough on its own; the topology has to
-be declared:
+`Ack.DeadLetter` **republishes** the message to `{queue}.dlq` with the reason on
+`x-acemq-error`, and only then acknowledges the original. Acknowledging a failure looks
+wrong and is what makes it reliable: by the time the acknowledgement happens the message
+is already somewhere else.
+
+Rejecting it instead — `basic.nack` with no requeue — would hand it to whatever
+dead-lettering the queue happens to be declared with, and **if the queue has none the
+broker discards it**. Nor can a broker write onto a message it is rejecting, so the one
+thing whoever finds it actually needs — what the handler was unable to do — would not be
+there.
+
+Nothing has to be declared for this to work. The consumer declares `{queue}.dlq` and
+`{queue}.parked` the first time it needs them, and the topology can declare them up front
+along with the retry rungs:
 
 ```csharp
-await mq.DeclareExchangeAsync("orders.dlx", "fanout");
-await mq.DeclareQueueAsync("orders.dead", QueueType.Classic, null);
-await mq.BindAsync("orders.dead", "orders.dlx", "");
-
-await mq.DeclareQueueAsync("orders.placed", QueueType.Classic,
-    new Dictionary<string, object> { ["x-dead-letter-exchange"] = "orders.dlx" });
+await mq.ApplyAsync(
+    Topology.Define()
+        .QueueWithRetry("orders.placed", RetryPolicy.Exponential(6, TimeSpan.FromSeconds(10)))
+        .Build());
 ```
 
 ## Retries, duplicates and shutdown

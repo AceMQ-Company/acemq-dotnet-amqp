@@ -213,40 +213,39 @@ public sealed class AceMqConnection : IDisposable
         EnsureOpen();
         if (handler == null) throw new ArgumentNullException(nameof(handler));
         var codec = options.Codec ?? _codec;
+        var policy = options.RetryPolicy;
 
-        // Attempts are counted here rather than read off the wire.
-        //
-        // A broker redelivers the same bytes: RabbitMQ's basic.nack with requeue
-        // puts the original message back, envelope and all, so the attempt header a
-        // publisher wrote never advances no matter how many times a handler retries.
-        // Reading it back would make "give up after five attempts" a loop that never
-        // ends. Counting redeliveries in the consumer makes the number mean what the
-        // handler needs it to mean, and makes every transport agree.
-        //
-        // The count lives in this process and is dropped when the message is
-        // accepted or dead-lettered. A consumer restart therefore starts the count
-        // again, which is the honest limit of counting without persisting.
-        var attempts = new System.Collections.Concurrent.ConcurrentDictionary<string, int>();
+        // The rungs a long wait is spent in, worked out before anything is subscribed
+        // and declared here rather than on the failure path. A rung that does not
+        // exist loses the message rather than reporting anything — an unroutable
+        // publish is dropped — so the moment to find out is the one where nothing has
+        // failed yet.
+        var ladder = RetryLadder.For(queue, policy ?? RetryPolicy.None());
+        await ladder.DeclareAsync(_connection, CancellationToken.None).ConfigureAwait(false);
 
         var subscription = await _connection.SubscribeAsync(
             queue, options.PrefetchCount, consumerArguments,
             async delivery =>
             {
-                Envelope envelope;
+                var envelope = Envelope.FromWire(
+                    delivery.Headers, delivery.RoutingKey, delivery.MessageId);
+
                 T payload;
                 try
                 {
-                    envelope = Envelope.FromWire(
-                        delivery.Headers, delivery.RoutingKey, delivery.MessageId);
                     payload = codec.Decode<T>(delivery.Body, delivery.ContentType);
                 }
                 catch (Exception e)
                 {
-                    // A message this consumer cannot decode will not decode on the
-                    // next attempt either. Retrying it forever is how a poison
-                    // message becomes an outage, so it goes straight to the
-                    // dead-letter queue with the reason attached.
-                    return Ack.DeadLetter($"could not decode as {typeof(T).Name}: {e.Message}");
+                    // A body that will not decode decodes no better next time, so it
+                    // is parked rather than retried. Parked and not dead-lettered: a
+                    // message that failed five times and a message nothing could read
+                    // are two different problems, and whoever drains the dead letters
+                    // should not have to sort them by hand.
+                    return await SettleAsync(
+                        queue, ladder, policy, delivery, envelope,
+                        Ack.Park($"could not decode as {typeof(T).Name}: {e.Message}"))
+                        .ConfigureAwait(false);
                 }
 
                 // Held here rather than rejected, so a paused consumer keeps its
@@ -260,7 +259,11 @@ public sealed class AceMqConnection : IDisposable
                     if (resumed != paused.Task) return Ack.Release();
                 }
 
-                var attempt = attempts.AddOrUpdate(envelope.Id, envelope.Attempt, (_, n) => n + 1);
+                // Read off the wire, not counted here. A retry republishes with this
+                // advanced, so the number travels with the message: a fleet of
+                // consumers all agree on it, a message that moves between them keeps
+                // it, and a restart does not forget it.
+                var attempt = envelope.Attempt;
 
                 // Claimed before the handler runs, so a redelivery that arrives while
                 // the first attempt is still in flight is not handled twice in
@@ -322,20 +325,6 @@ public sealed class AceMqConnection : IDisposable
                     interceptor.AfterHandle(interceptorContext, ack);
                 }
 
-                // A policy turns "retry after a fixed delay forever" into a bounded
-                // number of attempts that then dead-letters, which is the difference
-                // between a transient failure recovering and a poison message
-                // occupying a consumer indefinitely.
-                if (ack.IsRetry && options.RetryPolicy != null)
-                {
-                    var age = DateTimeOffset.UtcNow - envelope.FirstSeen;
-                    var next = options.RetryPolicy.NextDelay(attempt, age);
-                    ack = next.HasValue
-                        ? Ack.Retry(next.Value, ack.Reason ?? "retrying")
-                        : Ack.DeadLetter(
-                            $"gave up after {attempt} attempt(s): {ack.Reason ?? "no reason given"}");
-                }
-
                 if (options.Idempotency != null)
                 {
                     if (ack.IsAccept)
@@ -350,10 +339,8 @@ public sealed class AceMqConnection : IDisposable
 
                 RecordConsume(queue, envelope, attempt, ack, clock.Elapsed, span);
 
-                // The message is finished with, either way. Keeping its counter would
-                // leak an entry per message handled.
-                if (ack.IsAccept || ack.IsDeadLetter) attempts.TryRemove(envelope.Id, out _);
-                return ack;
+                return await SettleAsync(queue, ladder, policy, delivery, envelope, ack)
+                    .ConfigureAwait(false);
             },
             CancellationToken.None).ConfigureAwait(false);
 
@@ -361,6 +348,210 @@ public sealed class AceMqConnection : IDisposable
         lock (_owned) _owned.Add(consumer);
         return consumer;
     }
+
+    /// <summary>
+    /// Carries out a handler's decision and tells the transport what to do with the
+    /// original delivery.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Everything except accepting and releasing is done by <em>republishing</em> and
+    /// then acknowledging the original. Acknowledging a failure looks wrong and is
+    /// what makes this reliable: by the time the acknowledgement happens the message
+    /// has been safely republished elsewhere, so the original is a copy that has been
+    /// dealt with.
+    /// </para>
+    /// <para>
+    /// The alternatives are both worse. Rejecting without requeue hands the message to
+    /// whatever dead-lettering the queue happens to be declared with — nothing, in the
+    /// common case, which discards it — and neither the broker nor the queue can write
+    /// <c>x-acemq-error</c> onto it, which is the one thing whoever finds it in the
+    /// dead-letter queue actually needs. Rejecting <em>with</em> requeue hands back the
+    /// bytes the broker was given, so <c>x-acemq-attempt</c> never advances and the
+    /// count has to live in this process — where it is per-process, lost on restart,
+    /// and wrong the moment a second consumer joins the queue.
+    /// </para>
+    /// <para>
+    /// What it costs is that a retried message goes to the back of its queue rather
+    /// than the front, and that a crash between the republish and the acknowledgement
+    /// delivers it twice. Both are the right way round: at-least-once is what the rest
+    /// of this library is built to survive.
+    /// </para>
+    /// </remarks>
+    private async Task<Ack> SettleAsync(
+        string queue, RetryLadder ladder, RetryPolicy? policy,
+        InboundDelivery delivery, Envelope envelope, Ack ack)
+    {
+        switch (ack.Kind)
+        {
+            case AckKind.Accept:
+            case AckKind.Release:
+                return ack;
+
+            case AckKind.Park:
+                return await MoveAsync(
+                        ladder.ParkedQueue, delivery,
+                        envelope.WithError(ack.Reason ?? "parked with no reason given"),
+                        declareFirst: true)
+                    .ConfigureAwait(false);
+
+            case AckKind.DeadLetter:
+                return await MoveAsync(
+                        ladder.DeadLetterQueue, delivery,
+                        envelope.WithError(ack.Reason ?? "no reason given"),
+                        declareFirst: true)
+                    .ConfigureAwait(false);
+
+            default:
+                return await RetryAsync(queue, ladder, policy, delivery, envelope, ack)
+                    .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Works out whether there is another attempt, how long it waits and where, and
+    /// republishes the message accordingly.
+    /// </summary>
+    /// <remarks>
+    /// A short wait is spent here, holding one prefetch slot; a long one is spent in a
+    /// rung queue, because a consumer that sleeps through a five-minute backoff loses
+    /// the whole wait when it restarts — the broker redelivers the unacknowledged
+    /// message at once, and a five-minute policy delivers in none. Giving up is decided
+    /// here too, and not left to the broker, because the broker cannot say why.
+    /// </remarks>
+    private async Task<Ack> RetryAsync(
+        string queue, RetryLadder ladder, RetryPolicy? policy,
+        InboundDelivery delivery, Envelope envelope, Ack ack)
+    {
+        var reason = ack.Reason ?? "no reason given";
+        var advanced = envelope.WithAttempt(envelope.Attempt + 1);
+
+        if (policy == null)
+        {
+            // No policy means no give-up: the delay the handler asked for, waited
+            // here, for ever. Bounding it is exactly what a policy is for, which is
+            // why one is worth configuring.
+            var asked = ack.Delay ?? TimeSpan.Zero;
+            if (asked > TimeSpan.Zero) await Task.Delay(asked).ConfigureAwait(false);
+            return await MoveAsync(queue, delivery, advanced, declareFirst: false)
+                .ConfigureAwait(false);
+        }
+
+        var next = policy.NextWait(envelope.Attempt, AgeOf(envelope));
+        if (next == null)
+        {
+            return await MoveAsync(
+                    ladder.DeadLetterQueue, delivery,
+                    envelope.WithError($"{GaveUp(policy, envelope)}: {reason}"),
+                    declareFirst: true)
+                .ConfigureAwait(false);
+        }
+
+        if (next.InBroker)
+        {
+            var rung = ladder.RungFor(next.Delay);
+            if (rung != null)
+            {
+                // Nothing is set on the message itself. A per-message expiration looks
+                // like the flexible answer and is a trap: RabbitMQ expires messages
+                // only from the head of a queue, so one long wait at the front holds
+                // back every shorter one behind it.
+                return await MoveAsync(rung, delivery, advanced, declareFirst: false)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        if (next.Delay > TimeSpan.Zero) await Task.Delay(next.Delay).ConfigureAwait(false);
+        return await MoveAsync(queue, delivery, advanced, declareFirst: false)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Publishes the message somewhere else and, only once the broker has taken it,
+    /// accepts the original.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="declareFirst"/> is on for the dead-letter and parking queues
+    /// and off for everything else. Those two are wanted only when something has
+    /// already gone wrong, so declaring them then costs a round trip nobody notices
+    /// and saves a message that would otherwise be published at a queue that does not
+    /// exist and quietly dropped. The source queue and the rungs are never declared
+    /// here: the source was declared by whoever owns it, possibly with arguments this
+    /// call does not know, and re-declaring it with different ones is a channel error
+    /// rather than a no-op.
+    /// </remarks>
+    private async Task<Ack> MoveAsync(
+        string destination, InboundDelivery delivery, Envelope envelope, bool declareFirst)
+    {
+        try
+        {
+            if (declareFirst)
+            {
+                await _connection
+                    .DeclareQueueAsync(destination, QueueType.Classic, true, null, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            // Started from what arrived rather than from the envelope alone, so a
+            // header this version does not materialise — a routing slip, a claim
+            // check, anything a newer library added — survives the move. The envelope
+            // is then laid over the top, which is what advances the attempt and writes
+            // the reason.
+            var headers = new Dictionary<string, object>(
+                (IDictionary<string, object>)delivery.Headers);
+            foreach (var pair in envelope.ToWire()) headers[pair.Key] = pair.Value;
+            if (envelope.Error == null) headers.Remove(AceHeaders.Error);
+
+            var result = await _connection.SendAsync(
+                    new OutboundMessage(
+                        string.Empty, destination, delivery.Body, headers,
+                        envelope.Id, delivery.ContentType,
+                        persistent: true, mandatory: true, expiration: null, priority: null,
+                        replyTo: delivery.ReplyTo),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+
+            if (!result.Confirmed || !result.Routed)
+            {
+                throw new PublishFailedException(
+                    $"moving a message to '{destination}' " +
+                    (result.Reason ?? "matched no queue"));
+            }
+
+            return Ack.Accept();
+        }
+        catch (Exception e)
+        {
+            // The move did not happen, so the original must not be acknowledged.
+            // Released instead: the broker keeps it and hands it to somebody, which is
+            // the only outcome here that does not lose it. The attempt does not
+            // advance, which is the honest consequence — the message really has not
+            // been anywhere.
+            System.Diagnostics.Activity.Current?.SetStatus(
+                System.Diagnostics.ActivityStatusCode.Error,
+                $"could not move a message to '{destination}': {e.Message}");
+            return Ack.Release();
+        }
+    }
+
+    /// <summary>How old the message is, as the give-up rule means it.</summary>
+    /// <remarks>
+    /// A message with no <c>x-acemq-first-seen</c> reads back as the epoch, which would
+    /// make everything published by something that does not write the header look
+    /// fifty years old and be given up on immediately. Unknown is treated as new.
+    /// </remarks>
+    private static TimeSpan AgeOf(Envelope envelope)
+    {
+        if (envelope.FirstSeen <= DateTimeOffset.FromUnixTimeMilliseconds(0)) return TimeSpan.Zero;
+        var age = DateTimeOffset.UtcNow - envelope.FirstSeen;
+        return age < TimeSpan.Zero ? TimeSpan.Zero : age;
+    }
+
+    /// <summary>Which of the two limits was reached, in words the reason can carry.</summary>
+    private static string GaveUp(RetryPolicy policy, Envelope envelope) =>
+        envelope.Attempt >= policy.MaxAttempts
+            ? $"gave up after {policy.MaxAttempts} attempt(s)"
+            : $"gave up on a message older than {policy.MaxMessageAge}";
 
     /// <summary>
     /// Stops handing messages to handlers, without closing anything.
@@ -818,6 +1009,11 @@ public sealed class AceMqConnection : IDisposable
             AckKind.Accept => MetricNames.OutcomeAcked,
             AckKind.Retry => MetricNames.OutcomeRetried,
             AckKind.DeadLetter => MetricNames.OutcomeDeadLettered,
+            // Parking counts as dead-lettering for the metric. The queues differ
+            // because the two need different people; the number an operator alerts on
+            // is "messages this consumer could not handle", and splitting it would
+            // mean every dashboard had to add the two back together.
+            AckKind.Park => MetricNames.OutcomeDeadLettered,
             _ => MetricNames.OutcomeRejected,
         };
 
@@ -833,7 +1029,7 @@ public sealed class AceMqConnection : IDisposable
         AceMqTelemetry.ConsumeAttempts.Record(attempt, tags);
 
         if (ack.IsRetry) AceMqTelemetry.RetriedTotal.Add(1, tags);
-        if (ack.IsDeadLetter) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
+        if (ack.IsDeadLetter || ack.IsPark) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
 
         span?.SetTag(MetricNames.TagOutcome, outcome);
         span?.SetTag("acemq.attempt", attempt);

@@ -39,16 +39,33 @@ public sealed class Replay
 {
     private readonly ITransportConnection _connection;
     private string _to;
+    private bool _restart = true;
 
     internal Replay(ITransportConnection connection, string from)
     {
         _connection = connection;
         From = from;
-        // By convention a dead-letter queue is named after the queue it serves, so
-        // the default destination is that queue.
-        _to = from.EndsWith(".dead", StringComparison.Ordinal)
-            ? from.Substring(0, from.Length - ".dead".Length)
-            : from;
+        _to = SourceOf(from);
+    }
+
+    /// <summary>
+    /// The queue a dead-letter or parking queue serves, or the queue itself.
+    /// </summary>
+    /// <remarks>
+    /// <c>.dlq</c> and <c>.parked</c> are the names the whole family uses;
+    /// <c>.dead</c> is what this library's <see cref="Topology.Builder.QueueWithDeadLetter(string)"/>
+    /// produces and is recognised so that topologies already declared keep working.
+    /// </remarks>
+    private static string SourceOf(string from)
+    {
+        foreach (var suffix in new[] { Naming.DeadLetterSuffix, Naming.ParkedSuffix, ".dead" })
+        {
+            if (from.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                return from.Substring(0, from.Length - suffix.Length);
+            }
+        }
+        return from;
     }
 
     /// <summary>The queue being drained.</summary>
@@ -57,10 +74,30 @@ public sealed class Replay
     /// <summary>Where the messages are being sent.</summary>
     public string To => _to;
 
+    /// <summary>Whether each replayed message gets a fresh set of attempts.</summary>
+    public bool Restarts => _restart;
+
     /// <summary>Sends them to a named queue rather than the default destination.</summary>
     public Replay Into(string queue)
     {
         _to = queue ?? throw new ArgumentNullException(nameof(queue));
+        return this;
+    }
+
+    /// <summary>
+    /// Puts back exactly what was there, attempt counter and all.
+    /// </summary>
+    /// <remarks>
+    /// Off the default path, because a replay normally wants the opposite. A message
+    /// that was dead-lettered on the last attempt of its policy comes back still on
+    /// that attempt, and the consumer gives up on it again before a handler sees it —
+    /// so the operator who has just fixed the bug has moved two thousand messages from
+    /// one queue to the same queue. Ask for this when the point is an audit, or when
+    /// the queue is read by something that counts attempts itself.
+    /// </remarks>
+    public Replay KeepingAttempts()
+    {
+        _restart = false;
         return this;
     }
 
@@ -126,8 +163,9 @@ public sealed class Replay
     }
 
     /// <summary>
-    /// The message as it should go back out: the failure reason cleared, and the
-    /// replay counters advanced so a message that keeps failing is recognisable.
+    /// The message as it should go back out: the failure reason cleared, the attempt
+    /// counter restarted, and the replay counters advanced so a message that keeps
+    /// failing is recognisable.
     /// </summary>
     private OutboundMessage Republished(InboundDelivery delivery)
     {
@@ -138,6 +176,15 @@ public sealed class Replay
         // it on would make every replayed message look like it had already failed
         // again.
         headers.Remove(AceHeaders.Error);
+
+        // A fresh set of attempts, unless the caller asked otherwise. The counter now
+        // travels on the message — a retry republishes with it advanced — so a message
+        // dead-lettered on the last attempt of its policy would arrive back on that
+        // same attempt and be dead-lettered again before any handler saw it. Replaying
+        // two thousand messages from a queue to the same queue is not what anybody
+        // means by a replay.
+        if (_restart) headers[AceHeaders.Attempt] = 1;
+
         headers[AceHeaders.ReplayedFrom] = From;
         headers[AceHeaders.ReplayedAt] =
             DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture);

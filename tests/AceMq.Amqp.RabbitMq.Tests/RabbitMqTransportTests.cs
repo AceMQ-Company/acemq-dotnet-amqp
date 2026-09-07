@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+using System.Collections.Concurrent;
 using System.Linq;
 using AceMq.Amqp;
 using AceMq.Amqp.RabbitMq;
+using Xunit.Abstractions;
 
 namespace AceMq.Amqp.RabbitMq.Tests;
 
@@ -46,7 +48,21 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         ?? "amqp://guest:guest@localhost:5672";
 
     private readonly string _suffix = Guid.NewGuid().ToString("N").Substring(0, 8);
+    private readonly ITestOutputHelper _output;
     private AceMqConnection _mq = null!;
+
+    /// <summary>
+    /// Queues this test declared beyond the one every test gets, so that the suite
+    /// leaves the broker exactly as it found it.
+    /// </summary>
+    /// <remarks>
+    /// Counted rather than trusted: a suite that leaks a queue per run turns a broker
+    /// into a list of everything anybody has ever tested, and the retry rungs are
+    /// precisely the queues nobody declared by hand and so nobody thinks to delete.
+    /// </remarks>
+    private readonly ConcurrentBag<string> _alsoDeclared = new ConcurrentBag<string>();
+
+    public RabbitMqTransportTests(ITestOutputHelper output) => _output = output;
 
     private string Exchange => $"acemq.test.{_suffix}";
     private string Queue => $"acemq.test.{_suffix}.q";
@@ -62,6 +78,10 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        foreach (var queue in _alsoDeclared)
+        {
+            try { await _mq.DeleteQueueAsync(queue); } catch { /* it may never have been declared */ }
+        }
         try { await _mq.DeleteQueueAsync(Queue); } catch { /* the test may have failed before declaring */ }
         _mq.Dispose();
     }
@@ -102,6 +122,98 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         Assert.Equal("corr-1", received.Envelope.CorrelationId);
         Assert.Equal("acme", received.Headers["x-tenant"]);
         Assert.Equal(1, received.Attempt);
+    }
+
+    /// <summary>
+    /// The retry rungs, against a real broker, with the consumer switched off for the
+    /// duration of the wait.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the test the design exists for, and it cannot be written against a
+    /// fake. What it has to show is that the wait belongs to the broker: the message
+    /// sits on a queue with an <c>x-message-ttl</c>, the queue it came from is empty,
+    /// and then — with the consumer disposed, so nothing in this process is sleeping,
+    /// holding a delivery or counting anything — it comes back on its own, one attempt
+    /// further on.
+    /// </para>
+    /// <para>
+    /// A one-second threshold rather than the default thirty, so the test takes
+    /// seconds. The arithmetic under test is the same arithmetic either way; what is
+    /// being proved is where the waiting happens, not how long it is.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task WaitsALongRetryInTheBrokerWithNoConsumerRunning()
+    {
+        var delay = TimeSpan.FromSeconds(3);
+        var policy = RetryPolicy.Fixed(3, delay).WaitInBrokerFrom(TimeSpan.FromSeconds(1));
+        var ladder = RetryLadder.For(Queue, policy);
+
+        // Printed so the declaration can be read against the Python and Ruby libraries'
+        // by eye.
+        _output.WriteLine(ladder.Describe());
+
+        var rung = AceMq.Amqp.Naming.RetryQueue(Queue, delay);
+        _alsoDeclared.Add(rung);
+        _alsoDeclared.Add(ladder.DeadLetterQueue);
+        _alsoDeclared.Add(ladder.ParkedQueue);
+
+        var attempts = new ConcurrentQueue<int>();
+        var consumer = await _mq.ConsumeAsync<OrderPlaced>(
+            Queue,
+            ConsumerOptions.Defaults().WithRetry(policy),
+            message =>
+            {
+                attempts.Enqueue(message.Envelope.Attempt);
+                throw new InvalidOperationException("the warehouse is down");
+            });
+
+        await _mq.Publisher<OrderPlaced>(Exchange, "order.placed")
+            .SendAsync(new OrderPlaced { OrderId = "A-9", Total = 1m });
+
+        // The first attempt failed and the message went onto the rung.
+        await Eventually(
+            async () => await _mq.MessageCountAsync(rung) == 1,
+            "the message to be sitting on the rung");
+
+        // Nothing is waiting on the queue it came from either, which is the half of
+        // this that a per-message expiration would also satisfy — so the next two
+        // assertions are the ones that matter.
+        Assert.Equal(0, await _mq.MessageCountAsync(Queue));
+        _output.WriteLine(
+            $"waiting: {rung} holds 1, {Queue} holds 0, no consumer attached");
+
+        // Off entirely. From here nothing in this process can produce a redelivery,
+        // hold a prefetch slot, or shorten a wait — which is the difference between a
+        // retry that survives a deploy and one that does not.
+        consumer.Dispose();
+        Assert.Single(attempts);
+
+        await Eventually(
+            async () => await _mq.MessageCountAsync(Queue) == 1,
+            "the broker to hand the message back when the time-to-live expired");
+        Assert.Equal(0, await _mq.MessageCountAsync(rung));
+
+        // Back one attempt further on, because the retry republished with
+        // x-acemq-attempt advanced rather than requeueing the bytes the broker had.
+        var returned = await _mq.Transport.ReceiveAsync(
+            Queue, TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.NotNull(returned);
+        var envelope = Envelope.FromWire(returned!.Headers, returned.RoutingKey, returned.MessageId);
+        Assert.Equal(2, envelope.Attempt);
+        _output.WriteLine($"returned: attempt {envelope.Attempt} on {Queue}");
+    }
+
+    private static async Task Eventually(Func<Task<bool>> probe, string what)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await probe()) return;
+            await Task.Delay(100);
+        }
+        throw new TimeoutException($"timed out waiting for {what}");
     }
 
     [Fact]
@@ -239,29 +351,38 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeadLettersIntoTheQueueTheTopologyDeclared()
+    public async Task DeadLettersByRepublishingWithTheReasonAttached()
     {
-        var queue = Name("dl");
-        await _mq.ApplyAsync(Topology.Define().QueueWithDeadLetter(queue).Build());
-        _declared.Add(queue);
-        _declared.Add(queue + ".dead");
+        var queue = await QueueAsync("dl");
+        var dead = AceMq.Amqp.Naming.DeadLetterQueue(queue);
+        _declared.Add(dead);
 
         using (var consumer = await _mq.ConsumeAsync<string>(
             queue, _ => Task.FromResult(Ack.DeadLetter("not today"))))
         {
             await _mq.Publisher<string>("", queue).SendAsync("doomed");
 
-            // The whole point of declaring the pair together: a nack with requeue
-            // false lands in the dead-letter queue instead of vanishing.
             var deadline = DateTime.UtcNow.AddSeconds(20);
             while (DateTime.UtcNow < deadline)
             {
-                if (await _mq.MessageCountAsync(queue + ".dead") > 0) break;
+                if (await _mq.MessageCountAsync(dead) > 0) break;
                 await Task.Delay(100);
             }
         }
 
-        Assert.Equal(1, await _mq.MessageCountAsync(queue + ".dead"));
+        Assert.Equal(1, await _mq.MessageCountAsync(dead));
+
+        // Republished and then acknowledged, rather than rejected. That is what puts
+        // x-acemq-error on it: a broker dead-lettering a rejected message writes its
+        // own x-death bookkeeping and nothing about what the handler could not do, and
+        // a queue with no dead-letter exchange configured discards it entirely.
+        var delivery = await _mq.Transport.ReceiveAsync(
+            dead, TimeSpan.FromSeconds(10), CancellationToken.None);
+        Assert.NotNull(delivery);
+        Assert.Equal("not today", Envelope.FromWire(delivery!.Headers).Error);
+
+        // And nothing was left behind on the queue it was rejected from.
+        Assert.Equal(0, await _mq.MessageCountAsync(queue));
     }
 
     [Fact]

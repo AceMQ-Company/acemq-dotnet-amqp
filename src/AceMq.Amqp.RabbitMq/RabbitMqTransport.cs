@@ -432,13 +432,20 @@ public sealed class RabbitMqTransport : ITransport
                             .ConfigureAwait(false);
                         break;
                     case AckKind.DeadLetter:
-                        // requeue: false is what sends it to the queue's configured
-                        // dead-letter exchange. Without one it is discarded, which is
-                        // why the topology matters more than the disposition does.
+                    case AckKind.Park:
+                        // Reached only by a caller driving this transport directly.
+                        // The retry engine above never returns either of these: it
+                        // republishes to {queue}.dlq or {queue}.parked with
+                        // x-acemq-error set and then accepts the original, because
+                        // basic.nack cannot write onto the message it is rejecting and
+                        // a queue with no dead-letter exchange configured discards it.
                         await channel.BasicNackAsync(delivered.DeliveryTag, false, requeue: false)
                             .ConfigureAwait(false);
                         break;
                     case AckKind.Retry:
+                        // Likewise. A requeue hands back the bytes the broker was
+                        // given, so x-acemq-attempt never advances; the engine
+                        // republishes with it advanced instead.
                         if (ack.Delay.HasValue && ack.Delay.Value > TimeSpan.Zero)
                         {
                             await Task.Delay(ack.Delay.Value).ConfigureAwait(false);
