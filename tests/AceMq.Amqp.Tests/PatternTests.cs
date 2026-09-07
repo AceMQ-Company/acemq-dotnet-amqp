@@ -127,6 +127,54 @@ public sealed class PatternTests : IDisposable
             b => b.Queue == "orders.placed.dlq" && b.Exchange == "acemq.dlx");
     }
 
+    /// <summary>
+    /// The counterpart to declaring an exchange, which the transport did not have.
+    /// </summary>
+    /// <remarks>
+    /// Its absence was not a gap in an API nobody used; it was a leak. Anything that
+    /// declared an exchange it owned for a while had no way to take it away, so the
+    /// integration suite left one behind on every run and a broker used for testing
+    /// became a list of everything anybody had ever tested.
+    /// </remarks>
+    [Fact]
+    public async Task RemovesAnExchangeAndTheBindingsOnIt()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareExchangeAsync("temporary", "topic");
+        await mq.DeclareQueueAsync("listeners");
+        await mq.BindAsync("listeners", "temporary", "#");
+
+        await mq.Publisher<string>("temporary", "anything").SendAsync("first");
+        Assert.Equal(1, await mq.MessageCountAsync("listeners"));
+
+        await mq.DeleteExchangeAsync("temporary");
+
+        // The binding went with the exchange, the way a broker drops it, so a
+        // publish that used to be routed is now reported as unroutable rather than
+        // quietly delivered by a binding that outlived what it was bound to.
+        await Assert.ThrowsAsync<PublishFailedException>(
+            () => mq.Publisher<string>("temporary", "anything").SendAsync("second"));
+        Assert.Equal(1, await mq.MessageCountAsync("listeners"));
+    }
+
+    [Fact]
+    public async Task DropsAQueuesBindingsWithTheQueue()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareExchangeAsync("events", "topic");
+        await mq.DeclareQueueAsync("watchers");
+        await mq.BindAsync("watchers", "events", "#");
+
+        await mq.DeleteQueueAsync("watchers");
+        await mq.DeclareQueueAsync("watchers");
+
+        // Redeclared, and not still subscribed to everything on 'events'. A binding
+        // that outlives its queue is routing nobody asked for.
+        await Assert.ThrowsAsync<PublishFailedException>(
+            () => mq.Publisher<string>("events", "anything").SendAsync("ignored"));
+        Assert.Equal(0, await mq.MessageCountAsync("watchers"));
+    }
+
     [Fact]
     public async Task ReportsWhatApplyingWouldDoWithoutDoingIt()
     {

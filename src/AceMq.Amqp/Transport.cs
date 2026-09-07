@@ -222,6 +222,20 @@ public interface ITransportConnection : IDisposable
 
     Task DeleteQueueAsync(string name, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Removes an exchange and every binding on it.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart to <see cref="DeclareExchangeAsync"/>, and here mostly so
+    /// that something which declares an exchange can undo it. Without it a test
+    /// suite leaks one exchange per run: queues can be deleted and exchanges
+    /// cannot, so a broker used for integration testing turns into a list of
+    /// everything anybody has ever tested. Deleting an exchange that is not there
+    /// is not an error, because the caller cleaning up rarely knows whether the run
+    /// got far enough to create it.
+    /// </remarks>
+    Task DeleteExchangeAsync(string name, CancellationToken cancellationToken);
+
     Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken);
 
     /// <summary>

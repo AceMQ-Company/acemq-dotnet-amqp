@@ -496,6 +496,25 @@ public sealed class InMemoryTransport : ITransport
         public Task DeleteQueueAsync(string name, CancellationToken cancellationToken)
         {
             _broker.Queues.TryRemove(name, out _);
+
+            // A real broker drops a queue's bindings with the queue. Leaving them
+            // here would let a redeclared queue inherit routing nobody asked for,
+            // which is the sort of difference between this transport and RabbitMQ
+            // that a test passes on and production does not.
+            lock (_broker.Bindings)
+            {
+                _broker.Bindings.RemoveAll(b => string.Equals(b.Queue, name, StringComparison.Ordinal));
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task DeleteExchangeAsync(string name, CancellationToken cancellationToken)
+        {
+            _broker.Exchanges.TryRemove(name, out _);
+            lock (_broker.Bindings)
+            {
+                _broker.Bindings.RemoveAll(b => string.Equals(b.Exchange, name, StringComparison.Ordinal));
+            }
             return Task.CompletedTask;
         }
 

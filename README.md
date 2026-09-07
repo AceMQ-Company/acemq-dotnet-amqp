@@ -244,6 +244,15 @@ ACEMQ_TEST_AMQP_URL=amqp://guest:guest@localhost:5672 \
   dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
 ```
 
+It leaves the broker as it found it — both counts, not just the queues. Until
+`ITransportConnection.DeleteExchangeAsync` existed there was no way to undo
+`DeclareExchangeAsync`, so every run left an `acemq.test.{suffix}` exchange behind for
+ever and a broker used for integration testing became a list of everything anybody had
+ever tested. `acemq.retry` and `acemq.dlx` do survive a run, deliberately: they are
+declared once and shared by every queue on the broker, exactly as in a real deployment,
+so deleting them would be the suite tearing down somebody else's topology rather than
+its own.
+
 ## Next
 
 A C# service consuming a message a **Java** service published, envelope intact.

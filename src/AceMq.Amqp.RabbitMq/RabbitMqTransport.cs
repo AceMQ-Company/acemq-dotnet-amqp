@@ -581,6 +581,18 @@ public sealed class RabbitMqTransport : ITransport
             _channel.QueueDeleteAsync(name, ifUnused: false, ifEmpty: false,
                 cancellationToken: cancellationToken);
 
+        /// <summary>Removes an exchange and every binding on it.</summary>
+        /// <remarks>
+        /// <c>ifUnused</c> is off deliberately. The caller asked for the exchange to
+        /// go, and refusing because something is still bound to it would leave the
+        /// cleanup half done and the exchange behind for ever — which is the leak
+        /// this method exists to close. RabbitMQ treats deleting an exchange that is
+        /// not there as a success, so a cleanup path needs no guard.
+        /// </remarks>
+        public Task DeleteExchangeAsync(string name, CancellationToken cancellationToken) =>
+            _channel.ExchangeDeleteAsync(name, ifUnused: false,
+                cancellationToken: cancellationToken);
+
         public async Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken)
         {
             // A passive declare of a missing queue closes the channel, so this asks on

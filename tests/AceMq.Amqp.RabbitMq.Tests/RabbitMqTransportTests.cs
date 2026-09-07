@@ -62,6 +62,19 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
     /// </remarks>
     private readonly ConcurrentBag<string> _alsoDeclared = new ConcurrentBag<string>();
 
+    /// <summary>
+    /// Exchanges this test declared, which until <c>DeleteExchangeAsync</c> existed
+    /// could not be removed at all.
+    /// </summary>
+    /// <remarks>
+    /// Every run left <c>acemq.test.{suffix}</c> behind, for ever. The two the
+    /// library owns — <c>acemq.retry</c> and <c>acemq.dlx</c> — are deliberately not
+    /// in here: they are declared once and shared by every queue on the broker, the
+    /// same way a real deployment has them, so deleting them would be this suite
+    /// tearing down somebody else's topology rather than its own.
+    /// </remarks>
+    private readonly ConcurrentBag<string> _declaredExchanges = new ConcurrentBag<string>();
+
     public RabbitMqTransportTests(ITestOutputHelper output) => _output = output;
 
     private string Exchange => $"acemq.test.{_suffix}";
@@ -72,6 +85,7 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         Transports.Register(new RabbitMqTransport());
         _mq = await AceMqConnection.ConnectAsync(_url);
         await _mq.DeclareExchangeAsync(Exchange, "topic");
+        _declaredExchanges.Add(Exchange);
         await _mq.DeclareQueueAsync(Queue);
         await _mq.BindAsync(Queue, Exchange, "order.placed");
     }
@@ -83,6 +97,10 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
             try { await _mq.DeleteQueueAsync(queue); } catch { /* it may never have been declared */ }
         }
         try { await _mq.DeleteQueueAsync(Queue); } catch { /* the test may have failed before declaring */ }
+        foreach (var exchange in _declaredExchanges)
+        {
+            try { await _mq.DeleteExchangeAsync(exchange); } catch { /* likewise */ }
+        }
         _mq.Dispose();
     }
 

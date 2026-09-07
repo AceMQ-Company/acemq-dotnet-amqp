@@ -137,6 +137,16 @@ public sealed class AceMqConnection : IDisposable
     public Task DeleteQueueAsync(string name) =>
         _connection.DeleteQueueAsync(name, CancellationToken.None);
 
+    /// <summary>Removes an exchange and every binding on it.</summary>
+    /// <remarks>
+    /// The counterpart to <see cref="DeclareExchangeAsync"/>. Anything that declares
+    /// an exchange it owns for a while — a test, a migration, a temporary fan-out —
+    /// needs a way to take it away again, and until this existed there was none: a
+    /// suite could delete its queues and had to leave its exchanges on the broker.
+    /// </remarks>
+    public Task DeleteExchangeAsync(string name) =>
+        _connection.DeleteExchangeAsync(name, CancellationToken.None);
+
     public Task<bool> QueueExistsAsync(string name) =>
         _connection.QueueExistsAsync(name, CancellationToken.None);
 
