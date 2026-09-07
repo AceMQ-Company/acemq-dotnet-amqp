@@ -399,6 +399,10 @@ public sealed class AceMqConnection : IDisposable
                 return ack;
 
             case AckKind.Park:
+                AceMqDiagnostics.Report(
+                    AceMqDiagnostics.Parked, DiagnosticLevel.Warning,
+                    ack.Reason ?? "parked with no reason given",
+                    queue, ladder.ParkedQueue, envelope.Id, envelope.Attempt, null);
                 return await MoveAsync(
                         ladder.ParkedQueue, delivery,
                         envelope.WithError(ack.Reason ?? "parked with no reason given"),
@@ -406,6 +410,10 @@ public sealed class AceMqConnection : IDisposable
                     .ConfigureAwait(false);
 
             case AckKind.DeadLetter:
+                AceMqDiagnostics.Report(
+                    AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
+                    ack.Reason ?? "no reason given",
+                    queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
                 return await MoveAsync(
                         ladder.DeadLetterQueue, delivery,
                         envelope.WithError(ack.Reason ?? "no reason given"),
@@ -450,6 +458,10 @@ public sealed class AceMqConnection : IDisposable
         var next = policy.NextWait(envelope.Attempt, AgeOf(envelope));
         if (next == null)
         {
+            AceMqDiagnostics.Report(
+                AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
+                $"{GaveUp(policy, envelope)}: {reason}",
+                queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
             return await MoveAsync(
                     ladder.DeadLetterQueue, delivery,
                     envelope.WithError($"{GaveUp(policy, envelope)}: {reason}"),
@@ -469,6 +481,18 @@ public sealed class AceMqConnection : IDisposable
                 return await MoveAsync(rung, delivery, advanced, declareFirst: false)
                     .ConfigureAwait(false);
             }
+
+            // The policy wanted the broker to hold this and the ladder has nowhere to
+            // put it, so the wait falls back to this process — where a restart loses
+            // it, which is the whole thing the rungs exist to prevent. It should not
+            // be reachable: the rungs come from the same policy. If it is, the ladder
+            // was built from a different policy than the one deciding the delay, and
+            // that is worth saying out loud rather than absorbing silently.
+            AceMqDiagnostics.Report(
+                AceMqDiagnostics.RungMissing, DiagnosticLevel.Warning,
+                $"no rung for a broker wait of {Naming.Describe(next.Delay)}; " +
+                "waiting in the consumer instead, where a restart loses the wait",
+                queue, null, envelope.Id, envelope.Attempt, null);
         }
 
         if (next.Delay > TimeSpan.Zero) await Task.Delay(next.Delay).ConfigureAwait(false);
@@ -555,9 +579,19 @@ public sealed class AceMqConnection : IDisposable
             // the only outcome here that does not lose it. The attempt does not
             // advance, which is the honest consequence — the message really has not
             // been anywhere.
+            var failure = $"could not move a message to '{destination}': {e.Message}";
             System.Diagnostics.Activity.Current?.SetStatus(
-                System.Diagnostics.ActivityStatusCode.Error,
-                $"could not move a message to '{destination}': {e.Message}");
+                System.Diagnostics.ActivityStatusCode.Error, failure);
+
+            // The span alone was not enough. Unless the process was already exporting
+            // traces, and unless somebody went looking at the right one, a message the
+            // library could not move and handed back to the broker left no trace at
+            // all — and it is the single event on this path an operator most needs to
+            // see, because a release with no advance is a redelivery loop waiting to
+            // happen.
+            AceMqDiagnostics.Report(
+                AceMqDiagnostics.MoveFailed, DiagnosticLevel.Error, failure,
+                delivery.Queue, destination, envelope.Id, envelope.Attempt, e);
             return Ack.Release();
         }
     }

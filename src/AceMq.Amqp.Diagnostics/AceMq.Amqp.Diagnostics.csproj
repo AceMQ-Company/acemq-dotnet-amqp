@@ -5,13 +5,20 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <PackageId>AceMq.Amqp.Diagnostics</PackageId>
-    <Description>A small actuator for AceMq.Amqp: Prometheus metrics, health and version over HTTP, with no ASP.NET Core or OpenTelemetry dependency.</Description>
+    <Description>Diagnostics for AceMq.Amqp: Prometheus metrics, health and version over HTTP with no ASP.NET Core or OpenTelemetry dependency, and a bridge from the library's diagnostic events to Microsoft.Extensions.Logging.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <!-- Abstractions only, and deliberately here rather than in the core package.
+         On netstandard2.0 this brings DependencyInjection.Abstractions, System.Buffers
+         and System.Memory with it, which is four packages the core does not need and
+         a dependency-injection abstraction handed to every .NET Framework application
+         that only wanted to publish a message. AceMqDiagnostics is the seam; this is
+         the adapter, in the package whose job is already observability. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
 </Project>

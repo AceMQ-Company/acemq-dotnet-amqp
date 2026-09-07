@@ -48,6 +48,7 @@ native API rather than a transliterated Java one.
 | `AceMq.Amqp.DevCerts` | a tool that generates development certificates the library then refuses by default |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with two-sided jitter, waited here or in the broker, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
+| `AceMqDiagnostics` | the four events an operator needs said out loud, bridged to `ILogger` |
 | `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |
 | `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |
 | `InMemoryTransport` | An in-process broker for tests, routing the way RabbitMQ routes |
@@ -179,6 +180,37 @@ orders.placed.retry.40s
 > using. The choice is `RetryLadder.RetryExchange` and the routing key derived beside it,
 > and nothing else reads the decision — `RetryContractTests` pins the table by reading
 > the constant rather than repeating it.
+
+## When something goes wrong with a message
+
+Metrics say how many and traces say where, and neither of them tells an operator
+*which message and why* unless the process happens to be exporting traces and somebody
+happens to look at the right span. `AceMqDiagnostics` is the channel for that. Four
+events, each with the queue, the destination, the message id and the attempt:
+
+| | |
+|---|---|
+| `acemq.move.failed` | a republish failed, so the message was handed back to the broker with the attempt **not** advanced — a redelivery loop with nothing to explain it |
+| `acemq.message.dead-lettered` | attempts exhausted, or a handler gave up |
+| `acemq.message.parked` | the body could not be read |
+| `acemq.retry.rung-missing` | a broker wait was asked for with no rung to spend it in, so the wait fell back to this process where a restart loses it |
+
+```csharp
+// AceMq.Amqp.Diagnostics, which is where the Microsoft.Extensions.Logging
+// dependency lives rather than in the core package.
+using var logging = LoggerSink.SubscribedTo(loggerFactory);
+```
+
+Implement `IDiagnosticSink` directly if the application logs to something else — it is
+one method, and a sink that throws is swallowed rather than turned into a crashed
+consumer. The core package deliberately does not reference
+`Microsoft.Extensions.Logging.Abstractions`: on `netstandard2.0` it brings
+`Microsoft.Extensions.DependencyInjection.Abstractions`, `System.Buffers` and
+`System.Memory` with it, which is four packages added to a library that has two and a
+dependency-injection abstraction handed to every .NET Framework application that only
+wanted to publish a message. The same line the library takes on OpenTelemetry for
+metrics and ASP.NET Core for the actuator: seam in the core, adapter in the optional
+package.
 
 ## Why the fixtures matter more than the code
 
