@@ -63,9 +63,17 @@ written. A program publishes through `acemq-java-amqp` and pulls the message bac
 the transport level — the only place the engine's own headers are still visible,
 since the consumer API strips them by design.
 
-The C# tests then assert against those bytes. See `tools/fixture-generator/`.
+The C# tests then assert against those bytes, in `EnvelopeConformanceTests`.
 
-The next step for that tooling is moving it into the Java repository's own test
-suite, so CI regenerates the fixtures on every change and fails when they differ
-from what is committed. That turns "the port drifted" from something a customer
-finds into a red build on the commit that caused it.
+The generator lives in the Java repository's own test suite, so CI regenerates the
+fixtures on every change and fails when they differ from what is committed. That
+turns "the port drifted" from something a customer finds into a red build on the
+commit that caused it.
+
+A second fixture, `tests/AceMq.Amqp.Tests/fixtures/contract-fixtures.json`, pins the
+behaviour either side of the wire rather than the wire itself: the retry schedule, the
+queue names, the rung arguments and the declared topology. It is generated the same
+way, carried byte-identically by all five libraries, and asserted in
+`ContractConformanceTests`. `../scripts/check-fixtures.sh` compares every copy and
+fails on a single changed character. See [Testing](testing.md#cross-language-conformance)
+for what it pins and where this library still disagrees with it.

@@ -77,6 +77,11 @@ That exercise immediately pinned six behaviours no document stated plainly, any 
 which would have been a coin flip if transcribed by hand. They are on [the
 envelope](envelope.md) page.
 
+A second fixture does the same for the behaviour either side of the wire — the retry
+schedule, the queue names, the rung arguments and the declared topology — and all five
+libraries carry it byte for byte. [Testing](testing.md#cross-language-conformance)
+explains how that is checked, and where this library still disagrees with it.
+
 ## Where it runs
 
 `netstandard2.0`, which reaches **.NET Framework 4.6.2+**, .NET Core and modern .NET
