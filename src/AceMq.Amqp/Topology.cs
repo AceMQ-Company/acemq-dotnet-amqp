@@ -302,7 +302,27 @@ public sealed class Topology
         {
             var ladder = RetryLadder.For(name, policy);
 
-            Queue(name, type, arguments);
+            // The source queue is pointed at acemq.dlx, exactly as QueueWithDeadLetter
+            // points it. Without these two arguments this method declared {name}.dlq
+            // and {name}.parked, bound them to acemq.dlx, and then left the broker with
+            // no route into either: the queues existed and nothing the broker itself
+            // dead-lettered could ever reach them.
+            //
+            // The library's own give-up path still worked, because it republishes
+            // straight to {name}.dlq rather than relying on the broker. What was
+            // missing is the backstop underneath it -- a source-queue TTL expiring, an
+            // x-max-length drop, a reject from something that is not this library.
+            // Those were being discarded silently.
+            var args = new Dictionary<string, object>();
+            if (arguments is not null)
+            {
+                foreach (var pair in arguments) args[pair.Key] = pair.Value;
+            }
+
+            args[RetryLadder.DeadLetterExchangeArgument] = Naming.DeadLetterExchange;
+            args[RetryLadder.DeadLetterRoutingKeyArgument] = Naming.DeadLetterQueue(name);
+
+            Queue(name, type, args);
 
             // The same two queues, the same exchange and the same bindings the
             // dead-letter builder produces. A message that ran out of attempts and a

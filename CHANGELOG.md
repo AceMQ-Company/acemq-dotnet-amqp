@@ -54,6 +54,26 @@ While the version is `0.x` the public API may change in any release.
 > broker has to move. Reply queues are classic too, and asked for explicitly:
 > RabbitMQ does not allow a quorum queue to be exclusive or auto-delete.
 
+> ### ⚠ Migrating: `QueueWithRetry` now wires the source queue to `acemq.dlx`
+>
+> `Topology.Builder.QueueWithRetry` declared `{name}.dlq` and `{name}.parked` and
+> bound them to `acemq.dlx`, but left the source queue without
+> `x-dead-letter-exchange` and `x-dead-letter-routing-key`. The dead-letter
+> queues existed and the broker had no route into either of them.
+>
+> The library's own give-up path was unaffected — it republishes straight to
+> `{name}.dlq` rather than relying on the broker. What was missing is the
+> backstop underneath it: a source-queue TTL expiring, an `x-max-length` drop, a
+> rejection from something that is not this library. Those were being discarded
+> silently. `QueueWithDeadLetter` always set both arguments; only the retry
+> builder did not.
+>
+> **A queue already declared by `QueueWithRetry` cannot be redeclared with the
+> arguments**, because AMQP will not change a queue's arguments in place — the
+> declare is refused with `PRECONDITION_FAILED`. Drain the queue and recreate it.
+> Nothing on the queue is lost by upgrading on its own; the queue simply has to be
+> replaced before the new declaration will be accepted.
+
 ### Added
 
 - **A retry ladder.** Delays at or above 30 seconds wait in the broker, in a

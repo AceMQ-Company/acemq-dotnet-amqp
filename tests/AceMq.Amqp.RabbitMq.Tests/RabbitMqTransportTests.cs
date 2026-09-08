@@ -177,6 +177,20 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         _alsoDeclared.Add(ladder.DeadLetterQueue);
         _alsoDeclared.Add(ladder.ParkedQueue);
 
+        // Recreated through the builder this test later dry-runs against.
+        //
+        // The shared setup declares the queue plainly, and QueueWithRetry now puts
+        // x-dead-letter-exchange and x-dead-letter-routing-key on the source queue --
+        // so the two descriptions genuinely differ, and AMQP will not change a queue's
+        // arguments in place. That is a real migration cost of the fix and not
+        // something to hide: a queue declared by an earlier version has to be drained
+        // and recreated. Here there is nothing in it yet, so dropping it is honest and
+        // cheap; the binding has to be restored because it went with the queue.
+        await _mq.DeleteQueueAsync(Queue);
+        await _mq.ApplyAsync(
+            Topology.Define().QueueWithRetry(Queue, policy).Build(), ApplyMode.Declare);
+        await _mq.BindAsync(Queue, Exchange, "order.placed");
+
         var attempts = new ConcurrentQueue<int>();
         var consumer = await _mq.ConsumeAsync<OrderPlaced>(
             Queue,
