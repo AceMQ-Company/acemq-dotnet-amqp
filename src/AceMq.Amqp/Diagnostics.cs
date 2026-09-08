@@ -152,6 +152,32 @@ public static class AceMqDiagnostics
     /// <summary>A broker wait was asked for and no rung existed to spend it in.</summary>
     public const string RungMissing = "acemq.retry.rung-missing";
 
+    /// <summary>A saga step failed and the steps before it are being undone.</summary>
+    public const string SagaCompensating = "acemq.saga.compensating";
+
+    /// <summary>
+    /// A compensation failed, so something a saga did is still done.
+    /// </summary>
+    /// <remarks>
+    /// The one saga event worth waking somebody for. The others describe a system
+    /// that put itself back; this one describes a real-world effect that happened,
+    /// was meant to be undone, and was not — and no retry will resolve it, because
+    /// nothing is retrying.
+    /// </remarks>
+    public const string SagaUnresolved = "acemq.saga.unresolved";
+
+    /// <summary>
+    /// A message in the scheduler's control queue was not one the scheduler put there.
+    /// </summary>
+    /// <remarks>
+    /// The scheduler's queues are an implementation detail of <see cref="Scheduler"/>,
+    /// and a message arriving without the headers a scheduled message carries has no
+    /// destination to be sent to. It is dropped, because the control consumer has no
+    /// dead-letter queue by design — see <c>Scheduler.OnAsync</c> — so this event is
+    /// the only record that it existed.
+    /// </remarks>
+    public const string ScheduleForeign = "acemq.schedule.foreign-message";
+
     private static readonly List<IDiagnosticSink> Sinks = new List<IDiagnosticSink>();
 
     // Read on every event and written only when a sink is added or removed, so the
@@ -225,7 +251,7 @@ public static class AceMqDiagnostics
         }
     }
 
-    /// <summary>The library's own call, kept short at each of the four call sites.</summary>
+    /// <summary>The library's own call, kept short at each of the call sites.</summary>
     internal static void Report(
         string name, DiagnosticLevel level, string message,
         string? queue, string? destination, string? messageId, int attempt,

@@ -1,6 +1,6 @@
 # Patterns
 
-Five things most services building on a broker end up writing themselves.
+Seven things most services building on a broker end up writing themselves.
 
 ## Ordering by key
 
@@ -269,3 +269,162 @@ five of five and be dead-lettered again before a handler saw it. The operator wh
 just fixed the bug would have moved two thousand messages from one queue to the same
 queue. `KeepingAttempts()` puts back exactly what was there, for an audit or for a queue
 read by something that counts attempts itself.
+
+## Sagas
+
+A sequence of steps where each one knows how to undo itself. If a later step fails,
+the earlier ones are undone in reverse:
+
+```csharp
+var booking = Saga<Order>.Named("place-order")
+    .Step("take-payment", order => _payments.ChargeAsync(order))
+        .CompensateWith(order => _payments.RefundAsync(order))
+    .Step("reserve-stock", order => _inventory.ReserveAsync(order))
+        .CompensateWith(order => _inventory.ReleaseAsync(order))
+    .Step("book-courier", order => _couriers.BookAsync(order))
+    .Build();
+
+var result = await booking.RunAsync(order);
+```
+
+If `book-courier` throws, the stock is released and *then* the payment refunded —
+reverse order, because that is the order the world was changed in and a compensation
+often depends on state a later step has not yet altered.
+
+**A step with no compensation is legitimate**, not an oversight the library will warn
+about. `book-courier` above has none because nothing after it can fail; a step that
+only read something needs no undo either. A library cannot tell that case apart from a
+forgotten one, which is the argument for writing the compensation first and the action
+second.
+
+**Nothing is thrown.** A failed saga is not an exceptional condition to a caller that
+has to decide what happens next, and the interesting part is not the exception:
+
+```csharp
+if (result.HasUnresolved)
+{
+    // These are the ones to alert on.
+    _alerts.Raise($"{result.Saga} left {string.Join(", ", result.Unresolved)} undone");
+}
+```
+
+`Unresolved` is the list of steps whose *compensation* failed. **When a compensation
+throws, it is reported and the remaining ones still run** — stopping there would leave
+more undone than continuing does. Everything else a saga reports is recoverable by
+construction; these are real-world effects that happened, were meant to be undone, and
+were not. Nothing else in the system knows about them and no retry will resolve them.
+
+Both events go to `AceMqDiagnostics` — `acemq.saga.compensating` as a warning,
+`acemq.saga.unresolved` as an error.
+
+The token passed to `RunAsync(subject, cancellationToken)` cancels the forward path
+only. A step that observes it and throws is a failed step like any other and the
+earlier ones are undone; the compensations then run uncancelled, because a cancelled
+saga is precisely the one that most needs undoing.
+
+**This is not a distributed transaction.** Nothing is isolated: after `take-payment`
+the customer's money really has moved and anybody looking sees that it has. The refund
+is a *new* fact rather than an erasure of the old one. So the steps have to be things
+that can be undone by doing something else — sending an email cannot be compensated,
+and a step that sends one belongs last, after everything that can still fail.
+
+**It is not durable either.** This runs in one process with its state on the stack, so
+a crash midway leaves the saga half-applied with nothing to resume it. Where a saga
+must survive the process, the steps have to be messages and the state has to be in a
+database — a much larger thing, and it is not this.
+
+## Scheduling
+
+Delivering a message later:
+
+```csharp
+using var scheduler = await Scheduler.OnAsync(mq);
+
+await scheduler.InAsync(TimeSpan.FromHours(4), "billing", "invoice.due", invoice);
+await scheduler.AtAsync(renewalDate, "policies", "policy.renew", policy);
+```
+
+### Why not a per-message time to live
+
+The obvious implementation is to set `expiration` on the message, drop it in a queue
+nobody consumes and let it dead-letter to its destination. It is what most articles
+suggest and it is wrong for anything but a single fixed delay, because **a classic
+queue expires messages only at its head.**
+
+Put a four-hour message in, then a one-minute message behind it, and the one-minute
+message is delivered in four hours. Nothing reports this: the queue looks healthy, the
+message is not lost, it is simply late by a factor nobody predicted — and it fails in
+production under mixed load rather than in testing under uniform load.
+
+### The ladder
+
+A small set of queues, each with a *uniform* time to live, and a message hops through
+them until it is due:
+
+| Queue | `x-message-ttl` | dead-letters to |
+|---|---|---|
+| `acemq.schedule.1h` | 3600000 | `acemq.schedule` / `acemq.schedule.due` |
+| `acemq.schedule.10m` | 600000 | `acemq.schedule` / `acemq.schedule.due` |
+| `acemq.schedule.1m` | 60000 | `acemq.schedule` / `acemq.schedule.due` |
+| `acemq.schedule.10s` | 10000 | `acemq.schedule` / `acemq.schedule.due` |
+| `acemq.schedule.1s` | 1000 | `acemq.schedule` / `acemq.schedule.due` |
+
+Every message in a given rung has the same delay, so head-of-line expiry is not a
+problem — the head is always the message due soonest. Each expiry returns the message
+to `acemq.schedule.due`, where the scheduler either delivers it or puts it in the
+largest rung that does not overshoot. A four-hour delay is four one-hour hops; a
+ninety-second delay is one minute, then three tens. A one-day message takes
+twenty-four hops and a one-minute message takes one, which is the right way round:
+short delays are common and want to be cheap.
+
+`Scheduled`, `Delivered` and `Hops` are on the scheduler. `Hops` divided by
+`Delivered` is the average hop count, which is the number to look at when the
+scheduler is busier than expected.
+
+The cost is worth stating plainly: a long delay is several broker round trips rather
+than one, and **delivery is accurate to about the smallest rung in either
+direction** — the last remainder under a second is delivered rather than waited out,
+because another hop would cost more than the accuracy it buys. A scheduler that must
+fire at 09:00:00.000 exactly is a scheduler, not a message broker.
+
+The alternative is RabbitMQ's delayed-message-exchange plugin, which does this
+properly and is a plugin — so it is not available everywhere, and a library that
+silently required it would be a library that works on your laptop.
+
+### The wire contract
+
+The queue names, the three arguments on each rung and the four headers are shared with
+the Java library, and a .NET service and a Java service scheduling through one broker
+declare exactly the same topology. A difference in one argument is `PRECONDITION_FAILED`
+on whichever starts second.
+
+| Header | |
+|---|---|
+| `x-schedule-exchange` | where it should eventually go |
+| `x-schedule-routing-key` | the routing key it should eventually carry |
+| `x-schedule-due-at` | when it is due, as epoch milliseconds |
+| `x-schedule-content-type` | what the payload was encoded as |
+
+**These deliberately do not use the `x-acemq-` prefix.** That one is reserved: the
+envelope drops every header carrying it from the application's view on the way in, so
+a scheduler header using it would be written on publish and gone on consume.
+
+The content type is carried because the scheduler republishes *bytes* rather than
+objects, and a consumer picks its codec from the content type. Publishing pre-encoded
+bytes under `application/octet-stream` produces a message the intended consumer cannot
+decode — it arrives, it is the right bytes, and nothing can read it. The scheduler's
+own headers are not passed on to the destination: they are bookkeeping, and a consumer
+depending on them would be depending on how a message got to it.
+
+**The control consumer declares no dead-letter queues.** Every other consumer declares
+`{queue}.dlq` and `{queue}.parked` when it starts; the control queue's name is fixed
+and shared, so doing that here would put two durable queues nothing publishes to on
+the broker of every service that ever constructed a scheduler. It consumes as a
+private queue instead, and earns that by never giving up — it reads raw bytes, which
+cannot fail to decode, and accepts on every path. A message that reaches
+`acemq.schedule.due` without the headers a scheduled message carries is dropped and
+reported as `acemq.schedule.foreign-message`, because nothing else should be
+publishing into these queues at all.
+
+`Dispose` stops the consumer and leaves the queues: they are shared, and may be
+holding somebody else's messages.

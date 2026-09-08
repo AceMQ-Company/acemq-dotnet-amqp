@@ -6,6 +6,81 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 While the version is `0.x` the public API may change in any release.
 
+## [Unreleased]
+
+### Added
+
+- **`Saga<T>`**, a sequence of steps where each one knows how to undo itself. When a
+  step fails the completed ones are compensated in reverse — the order the world was
+  changed in, and the order a compensation depending on later state needs. A step with
+  no compensation is skipped rather than treated as an error, because a step that only
+  read something needs no undo and a library cannot tell that apart from a forgotten
+  one.
+
+  **A compensation that itself throws does not stop the others.** It is reported and
+  the remaining ones still run; stopping there would leave more undone than continuing
+  does. The step's name is collected into `SagaResult.Unresolved`, and `HasUnresolved`
+  is the flag to alert on: everything else a saga reports is recoverable by
+  construction, and these are real-world effects that happened, were meant to be
+  undone, and were not.
+
+  Nothing is thrown for a step failure. `RunAsync` returns a `SagaResult` carrying
+  whether it completed or compensated, the step that failed, the failure, the steps
+  that ran and the ones nobody could undo. `RunAsync(subject, cancellationToken)`
+  cancels the forward path only — a cancelled step is a failed step and the earlier
+  ones are undone, with the compensations run uncancelled, because a cancelled saga is
+  precisely the one that most needs undoing.
+
+  In-process and not durable, and it publishes nothing: it matches the behaviour of
+  Java's `org.acemq.amqp.patterns.Saga` but has no wire contract to hold to, so the
+  API is C#'s — async steps, `CancellationToken`, and synchronous overloads for steps
+  that do not need either.
+
+- **`Scheduler`**, delayed delivery through a ladder of TTL queues. `InAsync` and
+  `AtAsync` take an exchange, a routing key and a payload; the message waits on the
+  broker and arrives later.
+
+  The obvious implementation — one queue, `expiration` per message, dead-lettered to
+  the destination — is wrong for anything but a single fixed delay, because a classic
+  queue expires messages only at its head. A four-hour message in front of a
+  one-minute message delivers the one-minute message in four hours, and nothing
+  reports it. Instead there are five rungs with *uniform* time to live —
+  `acemq.schedule.1h`, `.10m`, `.1m`, `.10s`, `.1s` — each dead-lettering into
+  `acemq.schedule.due`, where the scheduler either delivers the message or puts it in
+  the largest rung that does not overshoot. Every message in a rung has the same
+  delay, so the head is always the one due soonest.
+
+  **This is a wire contract.** The exchange, the six queue names, the three arguments
+  on each rung and the four headers (`x-schedule-exchange`,
+  `x-schedule-routing-key`, `x-schedule-due-at` as epoch milliseconds, and
+  `x-schedule-content-type`) are exactly what Java's
+  `org.acemq.amqp.patterns.Scheduler` declares and writes. A .NET service and a Java
+  service scheduling through one broker declare the same topology; a difference in one
+  argument would be `PRECONDITION_FAILED` on whichever started second, and the
+  integration suite proves both halves — Java's literal argument table accepted, and a
+  table one millisecond different refused.
+
+  The headers deliberately avoid the `x-acemq-` prefix, which is reserved and dropped
+  from the application's view on the way in. The content type travels with the payload
+  because the scheduler republishes bytes rather than objects, and a consumer picks its
+  codec from it.
+
+  **The control consumer declares no dead-letter queues.** Since 0.3.0 every consumer
+  declares `{queue}.dlq` and `{queue}.parked` when it starts, and the control queue's
+  name is fixed and shared — so doing that here would leave
+  `acemq.schedule.due.dlq` and `acemq.schedule.due.parked` on the broker of every
+  service that ever constructed a scheduler, two durable queues nothing publishes to
+  and nobody drains. It consumes as a private queue, the same opt-out `Requester`
+  uses, and earns it by never giving up: it reads raw bytes, which cannot fail to
+  decode, and accepts on every path.
+
+- **`AceMqDiagnostics.SagaCompensating`, `SagaUnresolved` and `ScheduleForeign`** —
+  `acemq.saga.compensating`, `acemq.saga.unresolved` and
+  `acemq.schedule.foreign-message`. The last is how a message that reached
+  `acemq.schedule.due` without the headers a scheduled message carries is reported:
+  the control consumer has nowhere to put it, so it is dropped, and the event is the
+  only record that it existed.
+
 ## [0.3.0] - 2026-09-08
 
 ### Changed

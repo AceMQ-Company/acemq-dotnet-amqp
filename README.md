@@ -43,12 +43,14 @@ native API rather than a transliterated Java one.
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
 | `RoutingSlip` | a route the message carries, changeable at each step |
+| `Saga<T>` | steps that undo themselves, compensated in reverse, reporting what could not be |
+| `Scheduler` | deliver later, through a ladder of TTL queues rather than one that expires only at its head |
 | `DbSchemaRegistry` | schema ids that mean the same thing in every process |
 | `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
 | `AceMq.Amqp.DevCerts` | a tool that generates development certificates the library then refuses by default |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with two-sided jitter, waited here or in the broker, and at-least-once made safe |
 | `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
-| `AceMqDiagnostics` | the four events an operator needs said out loud, bridged to `ILogger` |
+| `AceMqDiagnostics` | the events an operator needs said out loud, bridged to `ILogger` |
 | `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |
 | `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |
 | `InMemoryTransport` | An in-process broker for tests, routing the way RabbitMQ routes |

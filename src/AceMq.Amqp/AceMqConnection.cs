@@ -231,22 +231,29 @@ public sealed class AceMqConnection : IDisposable
     /// </summary>
     /// <remarks>
     /// <para>
-    /// One caller: the reply queue a <see cref="Requester"/> reads its answers on. The
-    /// difference that matters is the name. Every other queue consumed here is one an
-    /// application chose and will keep choosing — <c>orders.new</c> is <c>orders.new</c>
-    /// on every restart, so the <c>{queue}.dlq</c> and <c>{queue}.parked</c> declared
-    /// beside it are the same two queues every time. A reply queue is
-    /// <c>acemq.reply.{a fresh guid}</c>, a name that exists once and is never used
-    /// again, so declaring a durable pair beside it would leave two queues on the
-    /// broker per requester ever constructed and no name by which anything could find
-    /// them later.
+    /// Two callers: the reply queue a <see cref="Requester"/> reads its answers on,
+    /// and the <c>acemq.schedule.due</c> control queue a <see cref="Scheduler"/> reads
+    /// expired messages from. Every other queue consumed here is one an application
+    /// chose and will keep choosing — <c>orders.new</c> is <c>orders.new</c> on every
+    /// restart, so the <c>{queue}.dlq</c> and <c>{queue}.parked</c> declared beside it
+    /// are the same two queues every time, and an operator can find them.
     /// </para>
     /// <para>
-    /// It is also the one consumer here with no failure path to serve. It decodes to
-    /// <c>byte[]</c>, which cannot fail, and its handler returns
-    /// <see cref="Ack.Accept"/> unconditionally — so it can reach neither
+    /// Neither of these is that. A reply queue is <c>acemq.reply.{a fresh guid}</c>, a
+    /// name that exists once and is never used again, so declaring a durable pair
+    /// beside it would leave two queues on the broker per requester ever constructed
+    /// and no name by which anything could find them later. The scheduler's control
+    /// queue is the opposite problem and the same answer: the name is fixed and
+    /// shared, so <c>acemq.schedule.due.dlq</c> and <c>acemq.schedule.due.parked</c>
+    /// would appear on the broker of every service that ever constructed a scheduler,
+    /// two durable queues nothing publishes to and nobody drains.
+    /// </para>
+    /// <para>
+    /// They are also the two consumers here with no failure path to serve. Both decode
+    /// to <c>byte[]</c>, which cannot fail, and both handlers return
+    /// <see cref="Ack.Accept"/> on every path — so neither can reach
     /// <c>{queue}.dlq</c> nor <c>{queue}.parked</c>, and queues nothing can reach are
-    /// not worth the litter. Give this consumer a handler that can give up and it needs
+    /// not worth the litter. Give either one a handler that can give up and it needs
     /// the argument turned back on.
     /// </para>
     /// </remarks>

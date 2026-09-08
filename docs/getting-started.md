@@ -83,7 +83,7 @@ missing reference the compiler tells you about.
 - [Publishing](publishing.md) — confirms, unroutable messages, options
 - [Consuming](consuming.md) — dispositions, retries, dead-lettering
 - [Exchanges, queues and bindings](topology.md) — routing, queue types, dead-letter wiring
-- [Patterns](patterns.md) — ordering, pipelines, the outbox, replay
+- [Patterns](patterns.md) — ordering, pipelines, the outbox, replay, sagas, scheduling
 - [Reliability](reliability.md) — retries, duplicates, draining before shutdown
 - [Security](security.md) — TLS, private certificate authorities, credentials
 - [Serialization](serialization.md) — codecs, payload encryption, schemas

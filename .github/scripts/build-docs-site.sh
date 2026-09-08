@@ -159,7 +159,7 @@ NAV='<nav class="top">
   <div class="group">
     <button type="button" aria-haspopup="true">Patterns</button>
     <div class="menu">
-      <a href="patterns.html">Ordering, pipelines, outbox, replay</a>
+      <a href="patterns.html">Ordering, pipelines, outbox, sagas, scheduling</a>
       <a href="request-reply.html">Request and reply</a>
       <a href="streams.html">Streams</a>
       <a href="reliability.html">Retries, duplicates, shutdown</a>

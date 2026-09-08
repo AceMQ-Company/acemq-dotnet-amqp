@@ -26,6 +26,12 @@ public sealed class OrderPlaced
     public decimal Total { get; set; }
 }
 
+public sealed class Invoice
+{
+    public string InvoiceId { get; set; } = "";
+    public long AmountCents { get; set; }
+}
+
 /// <summary>
 /// The RabbitMQ transport, against a real broker.
 /// </summary>
@@ -769,5 +775,283 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
 
         Assert.Equal(steps, visited.ToArray());
         foreach (var consumer in consumers) consumer.Dispose();
+    }
+
+    // ---- the scheduler ---------------------------------------------------
+    //
+    // The scheduler's own six queues and one exchange are deliberately not deleted
+    // afterwards, for the same reason acemq.retry and acemq.dlx are not: they are a
+    // fixed, shared topology that every service using the pattern declares, the same
+    // way a real deployment has one of them rather than one per caller. Deleting them
+    // would be this suite tearing down whatever else on the broker is scheduling.
+
+    /// <summary>
+    /// Java's declaration, transcribed rather than referenced.
+    /// </summary>
+    /// <remarks>
+    /// Written out as literals on purpose. Building this table from
+    /// <see cref="Scheduler"/>'s own constants would prove that the class agrees with
+    /// itself, which is not the question — the question is whether a broker holding
+    /// Java's version of these queues accepts .NET's declaration unchanged. So this is
+    /// a hand transcription of <c>Scheduler.declareTopology</c> in
+    /// <c>acemq-amqp-patterns</c>, and it fails if either side drifts.
+    /// </remarks>
+    private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, object>> JavasRungs() =>
+        new Dictionary<string, IReadOnlyDictionary<string, object>>
+        {
+            ["acemq.schedule.1h"] = RungArguments(3_600_000L),
+            ["acemq.schedule.10m"] = RungArguments(600_000L),
+            ["acemq.schedule.1m"] = RungArguments(60_000L),
+            ["acemq.schedule.10s"] = RungArguments(10_000L),
+            ["acemq.schedule.1s"] = RungArguments(1_000L),
+        };
+
+    private static IReadOnlyDictionary<string, object> RungArguments(long ttlMillis) =>
+        new Dictionary<string, object>
+        {
+            ["x-message-ttl"] = ttlMillis,
+            ["x-dead-letter-exchange"] = "acemq.schedule",
+            ["x-dead-letter-routing-key"] = "acemq.schedule.due",
+        };
+
+    /// <summary>
+    /// The topology a .NET scheduler declares is the one a Java scheduler declares.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the whole reason the scheduler's names and arguments are a contract
+    /// rather than an implementation detail. Two services on one broker declare the
+    /// same six queues; if one of them disagreed about a single argument, the second
+    /// to start would get 406 <c>PRECONDITION_FAILED</c> and stay down. Only a real
+    /// broker answers this question — AMQP has no way to read a queue's arguments
+    /// back, so the only thing that reports a difference is a redeclaration.
+    /// </para>
+    /// <para>
+    /// The acceptance half runs on a second connection, so a refusal would close that
+    /// channel rather than this test's. The refusal half goes through
+    /// <see cref="ApplyMode.DryRun"/>, which asks the same question on a throwaway
+    /// channel for exactly that reason.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task DeclaresTheSameSchedulerTopologyJavaDeclares()
+    {
+        using var scheduler = await Scheduler.OnAsync(_mq);
+
+        _output.WriteLine("exchange  acemq.schedule (direct, durable)");
+        _output.WriteLine("queue     acemq.schedule.due (classic, no arguments)");
+        _output.WriteLine("binding   acemq.schedule.due <- acemq.schedule [acemq.schedule.due]");
+
+        // Redeclared from a second connection with Java's literal table. The broker
+        // accepts an identical declaration and refuses any other, so this returning is
+        // the assertion.
+        using (var java = await AceMqConnection.ConnectAsync(_url))
+        {
+            await java.DeclareExchangeAsync("acemq.schedule", "direct");
+            foreach (var rung in JavasRungs())
+            {
+                await java.DeclareQueueAsync(rung.Key, QueueType.Classic, rung.Value);
+                await java.BindAsync(rung.Key, "acemq.schedule", rung.Key);
+
+                _output.WriteLine(
+                    $"queue     {rung.Key} (classic) "
+                    + $"x-message-ttl={rung.Value["x-message-ttl"]} "
+                    + $"x-dead-letter-exchange={rung.Value["x-dead-letter-exchange"]} "
+                    + $"x-dead-letter-routing-key={rung.Value["x-dead-letter-routing-key"]}");
+                _output.WriteLine($"binding   {rung.Key} <- acemq.schedule [{rung.Key}]");
+            }
+
+            await java.DeclareQueueAsync("acemq.schedule.due", QueueType.Classic, null);
+            await java.BindAsync("acemq.schedule.due", "acemq.schedule", "acemq.schedule.due");
+
+            Assert.True(java.IsOpen, "the broker closed the connection over a declaration");
+        }
+
+        // And the same table read back as a topology reports no drift at all.
+        var define = Topology.Define().Exchange("acemq.schedule", "direct");
+        foreach (var rung in JavasRungs())
+        {
+            define = define.Queue(rung.Key, QueueType.Classic, rung.Value)
+                .Bind(rung.Key, "acemq.schedule", rung.Key);
+        }
+        var plan = await _mq.ApplyAsync(define.Build(), ApplyMode.DryRun);
+
+        _output.WriteLine(plan.Render());
+        Assert.False(plan.HasDrift, plan.Render());
+    }
+
+    /// <summary>One argument different and the broker says no.</summary>
+    /// <remarks>
+    /// The other half of the proof. A test that only showed the matching table being
+    /// accepted would pass just as well against a broker that never checks anything.
+    /// </remarks>
+    [Fact]
+    public async Task RefusesASchedulerRungDeclaredWithADifferentArgument()
+    {
+        using var scheduler = await Scheduler.OnAsync(_mq);
+
+        // A millisecond off the hour. Everything else is Java's.
+        var wrong = new Dictionary<string, object>
+        {
+            ["x-message-ttl"] = 3_600_001L,
+            ["x-dead-letter-exchange"] = "acemq.schedule",
+            ["x-dead-letter-routing-key"] = "acemq.schedule.due",
+        };
+
+        var plan = await _mq.ApplyAsync(
+            Topology.Define().Queue("acemq.schedule.1h", QueueType.Classic, wrong).Build(),
+            ApplyMode.DryRun);
+
+        _output.WriteLine(plan.Render());
+        Assert.True(plan.HasDrift);
+        Assert.Contains("PRECONDITION_FAILED", plan.Render());
+
+        // A different dead-letter target is refused just as firmly, which is what stops
+        // one service quietly re-pointing everybody else's ladder.
+        var elsewhere = new Dictionary<string, object>
+        {
+            ["x-message-ttl"] = 3_600_000L,
+            ["x-dead-letter-exchange"] = "acemq.schedule",
+            ["x-dead-letter-routing-key"] = "somewhere.else",
+        };
+        var second = await _mq.ApplyAsync(
+            Topology.Define().Queue("acemq.schedule.1h", QueueType.Classic, elsewhere).Build(),
+            ApplyMode.DryRun);
+
+        Assert.True(second.HasDrift);
+        Assert.Contains("PRECONDITION_FAILED", second.Render());
+
+        // Asking the question did not break the connection.
+        Assert.True(_mq.IsOpen);
+    }
+
+    /// <summary>
+    /// A scheduled message waits in the broker and arrives intact.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The test the whole ladder exists for, and it cannot be written against a fake:
+    /// what has to be shown is that the waiting belongs to the broker. The message
+    /// leaves this process immediately, sits on a queue with an <c>x-message-ttl</c>,
+    /// and comes back on its own — with the bytes and the content type it was
+    /// published under, which is what lets a typed consumer on the far side decode it.
+    /// </para>
+    /// <para>
+    /// <strong>Accurate to about the smallest rung, in either direction.</strong> The
+    /// last remainder under a second is delivered rather than waited out, because
+    /// another hop would cost more than the accuracy it buys — so a message due in
+    /// 3.5s arrives at about 3s. Java's arithmetic is the same and arrives at the same
+    /// moment; a scheduler that must fire at 09:00:00.000 exactly is a scheduler, not
+    /// a message broker. What is asserted here is therefore the guarantee the ladder
+    /// actually makes: the delay minus one rung, and nothing at all before that.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task SchedulesAMessageThroughARealBrokerAndDeliversItLate()
+    {
+        var exchange = Name("sched");
+        var queue = await QueueAsync("sched.target");
+        await _mq.DeclareExchangeAsync(exchange, "topic");
+        try
+        {
+            await _mq.BindAsync(queue, exchange, "invoice.due");
+
+            var arrived = new TaskCompletionSource<IMessage<Invoice>>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using var consumer = await _mq.ConsumeAsync<Invoice>(queue, message =>
+            {
+                arrived.TrySetResult(message);
+                return Task.FromResult(Ack.Accept());
+            });
+
+            using var scheduler = await Scheduler.OnAsync(_mq);
+
+            var delay = TimeSpan.FromMilliseconds(3500);
+            var sent = DateTimeOffset.UtcNow;
+            await scheduler.InAsync(
+                delay, exchange, "invoice.due",
+                new Invoice { InvoiceId = "INV-42", AmountCents = 1999 });
+
+            // It went straight onto a rung and nothing in this process is waiting.
+            Assert.Equal(1, scheduler.Hops);
+            Assert.Equal(0, scheduler.Delivered);
+            // At least: the rungs are shared, so anything else on the broker using the
+            // pattern is waiting in the same queue, and an exact count here would be a
+            // test that fails for the wrong reason.
+            Assert.True(await _mq.MessageCountAsync("acemq.schedule.1s") >= 1);
+
+            // Not delivered early. This is the half a broken scheduler passes without:
+            // one that ignored the delay entirely would already have arrived.
+            await Task.Delay(TimeSpan.FromMilliseconds(1500));
+            Assert.False(arrived.Task.IsCompleted, "the message was delivered early");
+
+            var received = await arrived.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var waited = DateTimeOffset.UtcNow - sent;
+            _output.WriteLine(
+                $"scheduled for +{delay.TotalSeconds:0.0}s, arrived after "
+                + $"{waited.TotalSeconds:0.00}s in {scheduler.Hops} hop(s)");
+
+            // The guarantee: the delay less one rung, because the last remainder under
+            // a second is delivered rather than waited out.
+            var floor = delay - TimeSpan.FromSeconds(1);
+            Assert.True(waited >= floor, $"arrived after only {waited}, expected at least {floor}");
+
+            // Several hops, not one: a 3.5s delay is three seconds on the 1s rung and
+            // then a remainder too small to be worth another.
+            Assert.True(scheduler.Hops >= 2, $"only {scheduler.Hops} hop(s)");
+
+            // The payload survived the ladder as opaque bytes and decoded on arrival,
+            // which it can only do because the content type travelled with it.
+            Assert.Equal("INV-42", received.Payload.InvoiceId);
+            Assert.Equal(1999, received.Payload.AmountCents);
+            Assert.Equal("application/json", received.ContentType);
+            Assert.Equal("invoice.due", received.RoutingKey);
+
+            // The scheduler's bookkeeping is not passed on to the consumer.
+            Assert.False(received.Headers.ContainsKey(Scheduler.TargetExchangeHeader));
+            Assert.False(received.Headers.ContainsKey(Scheduler.DueAtHeader));
+        }
+        finally
+        {
+            try { await _mq.DeleteExchangeAsync(exchange); } catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// The control consumer declares no dead-letter queues.
+    /// </summary>
+    /// <remarks>
+    /// Since ADR-032 every consumer declares <c>{queue}.dlq</c> and
+    /// <c>{queue}.parked</c> when it starts. The scheduler's control queue has a fixed,
+    /// shared name, so an ordinary consumer would leave those two on the broker of
+    /// every service that ever constructed a scheduler — durable queues nothing
+    /// publishes to and nobody drains. It consumes as a private queue instead.
+    /// </remarks>
+    [Fact]
+    public async Task LeavesNoDeadLetterQueuesBehindForTheControlQueue()
+    {
+        // Cleared first, in case an earlier version of this library left them here.
+        foreach (var name in new[] { "acemq.schedule.due.dlq", "acemq.schedule.due.parked" })
+        {
+            try { await _mq.DeleteQueueAsync(name); } catch { /* never existed */ }
+        }
+
+        using var scheduler = await Scheduler.OnAsync(_mq);
+
+        // The default exchange and a routing key nothing is bound to, so the eventual
+        // delivery has somewhere legal to go and nowhere to land.
+        await scheduler.InAsync(TimeSpan.FromHours(4), "", Name("never"), "x");
+
+        Assert.False(await _mq.QueueExistsAsync("acemq.schedule.due.dlq"));
+        Assert.False(await _mq.QueueExistsAsync("acemq.schedule.due.parked"));
+        Assert.False(await _mq.QueueExistsAsync("acemq.schedule.1h.dlq"));
+        Assert.False(await _mq.QueueExistsAsync("acemq.schedule.1h.parked"));
+
+        // Tidy the message off the rung: it would sit there for an hour otherwise. Read
+        // as raw bytes, because that is what a rung holds and this test has no more
+        // business decoding it than the scheduler does.
+        using var inspector = await AceMqConnection.ConnectAsync(_url, new BytesCodec());
+        var waiting = await inspector.PullAsync<byte[]>("acemq.schedule.1h", TimeSpan.FromSeconds(5));
+        if (waiting != null) await waiting.AcknowledgeAsync();
     }
 }
