@@ -10,6 +10,57 @@ While the version is `0.x` the public API may change in any release.
 
 ### Added
 
+- **`AceMq.Amqp.Xml`**, a package whose `InteropXmlCodec` reads and writes the XML the
+  Java, Go, Python and Ruby libraries write. It writes `application/xml` and reads
+  `application/xml`, `text/xml` and any `+xml` suffix type; like the YAML and TOML
+  codecs it never volunteers for a message whose sender set no content type, because
+  that case belongs to `JsonCodec` and `BytesCodec`.
+
+  It depends on nothing. `System.Xml` is part of the framework and `System.Text.Json`
+  arrives with the core, which already pins it — so this is the cheapest of the format
+  packages to take on. It is a separate package for the other reason those exist: so
+  the core's list of formats does not grow every time somebody wants a different one.
+
+  **This is not the core's `XmlCodec`, which stays where it is.** That one is built on
+  `XmlSerializer` and remains right for .NET talking to .NET and for documents that
+  have to match an XSD. It is wrong for reading a message another language sent, and
+  wrong quietly: `XmlSerializer` matches element names case-sensitively, so Java's
+  `<orderId>` does not bind to a C# `OrderId` — and it does not complain. It returns an
+  object with every field at its default, so a service that reached for it to read a
+  Java queue would see empty orders and no errors. `AceMq.Amqp.Xml.Tests` decodes a
+  real Java body with each codec and asserts exactly that difference. The names differ
+  so a consumer importing both namespaces gets a choice rather than a `CS0104`.
+
+  **Every document type declaration is refused, and the refusal is not
+  configurable** — the same decision Java, Python and Ruby took. The usual reason
+  given for this is external entities, and it is the wrong one: there is no
+  `XmlResolver`, so `file:///etc/passwd` is already inert. Internal entity expansion is
+  not. Measured against this runtime with `DtdProcessing.Parse` rather than read off a
+  documentation table, 201 characters of three nested entities expand to 1,000, 248
+  characters of four expand to 10,000, and 311 characters of six expand to a
+  million — the last still inside the SDK's own 10,000,000-character entity cap, so
+  that cap is not what saves a consumer. The measurement is a test, so a runtime that
+  changed this fails the build rather than leaving the reasoning quietly untrue.
+
+  The refusal is in two layers because one is not enough. The body is scanned for
+  `<!DOCTYPE` before a parser sees it, so the failure names what is wrong instead of
+  surfacing an `XmlException` about a security property the caller never chose; then
+  the reader is created with `DtdProcessing.Prohibit` and `XmlResolver = null`, which
+  catches what the scan cannot see — a UTF-16 body, where `<!DOCTYPE` is not a UTF-8
+  substring but the reader sniffs the encoding and would read that DTD perfectly well.
+
+  **Both list shapes decode.** Jackson wraps a list in an element of its own where
+  Go's `encoding/xml` repeats the sibling, and a one-item list is indistinguishable
+  from a scalar in either. All three arrive as the same `List<string>` or `T[]`; the
+  unwrapping is driven by the declared member rather than guessed from the document,
+  which is the only way to tell a wrapped list from an object holding a field of its
+  own name. The codec writes the repeated-sibling form, which Jackson reads too.
+
+  The interop tests assert against `xml-interop-samples.json`, message bodies exactly
+  as the Java and Go libraries wrote them, copied from the Ruby and Python
+  repositories' fixtures — not against this codec's own output, which would prove
+  nothing about reading a Java message.
+
 - **`Saga<T>`**, a sequence of steps where each one knows how to undo itself. When a
   step fails the completed ones are compensated in reverse — the order the world was
   changed in, and the order a compensation depending on later state needs. A step with

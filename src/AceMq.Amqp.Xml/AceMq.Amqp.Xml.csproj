@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Xml</PackageId>
+    <Description>XML codec for AceMq.Amqp, reading and writing the same documents the Java, Go, Python and Ruby libraries do. A separate package so the core keeps no serialization dependency.</Description>
+    <PackageTags>$(PackageTags);xml</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <!-- Nothing else. System.Xml.ReaderWriter and System.Xml.XDocument are part of
+         netstandard2.0, and System.Text.Json arrives with the core, which already
+         pins it for JsonCodec. So this package adds no dependency a consumer does
+         not already have, which makes it the cheapest of the format packages to
+         take on. -->
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The tests run from the output directory, so the Java and Go bytes have to be
+         copied there. PreserveNewest rather than Never, because `dotnet test`
+         with `no-build` reads whatever is already in bin: a fixture that is not
+         copied on every build is a test asserting against a stale file and passing
+         for the wrong reason. -->
+    <None Include="fixtures/xml-interop-samples.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AceMq.Amqp\AceMq.Amqp.csproj" />
+    <ProjectReference Include="..\..\src\AceMq.Amqp.Xml\AceMq.Amqp.Xml.csproj" />
+  </ItemGroup>
+
+</Project>

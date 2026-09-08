@@ -40,6 +40,7 @@ native API rather than a transliterated Java one.
 | `AceMq.Amqp.Avro` | Avro, with a fixed schema or a registry that makes adding a field safe |
 | `AceMq.Amqp.Yaml` | YAML, for messages a person will read |
 | `AceMq.Amqp.Toml` | TOML, the same but without the ambiguity |
+| `AceMq.Amqp.Xml` | XML that Java, Go, Python and Ruby read and write, refusing every DTD |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
 | `RoutingSlip` | a route the message carries, changeable at each step |
@@ -243,6 +244,16 @@ other repository commits the same bytes.
 | --- | --- | --- |
 | `tests/AceMq.Amqp.Tests/fixtures/envelope-fixtures.json` | publishing through the Java library and reading the message back at the transport level | the wire headers |
 | `tests/AceMq.Amqp.Tests/fixtures/contract-fixtures.json` | Java's `ContractFixtures` generator | the retry schedule, the queue names, the rung arguments and the declared topology |
+
+A third fixture pins a narrower thing and is not part of that set:
+`tests/AceMq.Amqp.Xml.Tests/fixtures/xml-interop-samples.json` carries XML message
+bodies exactly as the Java and Go libraries wrote them, copied from the Ruby and
+Python repositories' own copies. `AceMq.Amqp.Xml` is asserted against those bytes
+rather than against its own output, because a codec that decodes what it encoded has
+proved nothing about reading a Java message. It is what caught the one real
+divergence in the format: Jackson wraps a list in an element of its own where Go's
+`encoding/xml` repeats the sibling, and both shapes are in the file because both are
+real.
 
 `../scripts/check-fixtures.sh` compares all five copies of both files and fails on a
 single changed character. That check is the load-bearing part. A library that quietly

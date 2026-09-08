@@ -490,10 +490,9 @@ public sealed class ExtensibilityTests : IDisposable
         Assert.Equal(1, await store.PendingCountAsync());
 
         // The lease was released and the attempt recorded, so the next pass sees it.
-        var again = await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30));
-        Assert.Equal(1, again.Count);
-        Assert.Equal(1, again[0].Attempts);
-        Assert.NotNull(again[0].LastError);
+        var again = Assert.Single(await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30)));
+        Assert.Equal(1, again.Attempts);
+        Assert.NotNull(again.LastError);
     }
 
     [Fact]

@@ -20,7 +20,7 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 | Codec | Content type | |
 |---|---|---|
 | `JsonCodec` | `application/json` | the default |
-| `XmlCodec` | `application/xml` | for systems that speak XML and will not change |
+| `XmlCodec` | `application/xml` | `XmlSerializer`, for .NET talking to .NET — see [XML](#xml) |
 | `StringCodec` | `text/plain` | text, as UTF-8 |
 | `BytesCodec` | `application/octet-stream` | bytes, untouched |
 | `CompositeCodec` | first codec's | reads several, writes one |
@@ -38,6 +38,7 @@ wants one does not acquire the rest:
 | `AceMq.Amqp.Avro` | `AvroCodec` | `Apache.Avro` |
 | `AceMq.Amqp.Yaml` | `YamlCodec` | `YamlDotNet` |
 | `AceMq.Amqp.Toml` | `TomlCodec` | `Tomlyn` |
+| `AceMq.Amqp.Xml` | `InteropXmlCodec` | nothing |
 
 That is every format the Java library has.
 
@@ -48,6 +49,11 @@ core pins**, and NuGet resolves to the higher one — so an application taking t
 package moves from `System.Text.Json` 8.0.5 to 10.0.2. Nothing breaks, but it is the
 kind of thing worth knowing before it happens, and it is exactly why these are
 separate packages rather than part of the core.
+
+`AceMq.Amqp.Xml` costs nothing: `System.Xml` is part of the framework and
+`System.Text.Json` arrives with the core, which already pins it. It is a separate
+package for the other reason these exist — so the core's list of formats does not
+grow by one every time somebody wants a different one.
 
 ## Protocol Buffers
 
@@ -253,16 +259,117 @@ is the honest answer.
 
 Like YAML, it **never volunteers for a message with no content type**.
 
-### XML reads are restricted
+## XML
 
-`XmlCodec` parses with DTD processing off and no external resolver, so a document
-cannot pull in an external entity. Without that, "we accept XML" becomes "we read
-files off the consumer's disk on request" — the XXE attack, which is old and still
-works against parsers left on their defaults. A test feeds it a hostile document and
-requires the refusal.
+```bash
+dotnet add package AceMq.Amqp.Xml
+```
 
-It inherits `XmlSerializer`'s constraints: a public parameterless constructor, public
-read/write members only, no interfaces or dictionaries.
+```csharp
+using var mq = await AceMqConnection.ConnectAsync(url, new InteropXmlCodec());
+```
+
+Here because most estates have something that speaks XML and will not be rewritten,
+and a messaging library that cannot talk to it forces a translation layer nobody
+wants to own. New services should publish JSON; this exists so the ones that cannot
+are not a special case.
+
+It writes `application/xml`, and reads `application/xml`, `text/xml` and any `+xml`
+suffix type — `application/soap+xml`, `application/atom+xml`, a vendor type. Like
+YAML and TOML it **never volunteers for a message with no content type**: XML is
+rarely what arrives unannounced, and a codec that guessed wrong there would turn a
+readable message into a rejected one. That case belongs to `JsonCodec` and
+`BytesCodec`.
+
+### Two XML codecs, and which one you want
+
+| | `XmlCodec` (core) | `InteropXmlCodec` (`AceMq.Amqp.Xml`) |
+|---|---|---|
+| Built on | `XmlSerializer` | `XmlReader` + `System.Text.Json` |
+| Writes | declaration, `xsi`/`xsd` namespaces, PascalCase | bare elements, camelCase |
+| Element names | the member's own name, matched case-**sensitively** | camelCased, matched case-insensitively |
+| Reads Java and Go messages | no | yes |
+| Use it for | .NET to .NET, and documents that must match an XSD | anything the other four languages send |
+
+The second row is the whole point. `XmlSerializer` binds element names
+case-sensitively, so Java's `<orderId>` does not bind to a C# `OrderId` — and it does
+not complain about that. It returns an object with every field at its default. A
+service that reached for the core codec to read a Java queue would see empty orders
+and no errors, which is the worst of both. There is a test in
+`AceMq.Amqp.Xml.Tests` that decodes a real Java body with each codec and asserts
+exactly that difference.
+
+The core `XmlCodec` stays where it is and keeps working. The names differ so that a
+consumer with both `using AceMq.Amqp;` and `using AceMq.Amqp.Xml;` gets a choice
+rather than a `CS0104`.
+
+### No document type declaration, ever
+
+A body carrying `<!DOCTYPE` is refused, and there is no way to relax it. The same
+decision Java, Python and Ruby took, for the same reason: a message body has no
+legitimate use for a DTD — it is one document produced by a serializer at the other
+end, and none of Jackson, `encoding/xml`, `ElementTree` or REXML writes one — so the
+configuration would only ever be wrong.
+
+The usual justification given for this is external entities, and it is the wrong one
+here. There is no `XmlResolver`, so `file:///etc/passwd` is already inert. **Internal
+entity expansion is not.** A billion-laughs bomb needs no network access and no
+readable file; it expands inside the parser. Measured against this runtime rather
+than read off a table, with `DtdProcessing.Parse`:
+
+| Nested entities | Source | Expands to |
+|---|---|---|
+| three | 201 characters | 1,000 characters |
+| four | 248 characters | 10,000 characters |
+| six | 311 characters | 1,000,000 characters |
+
+Exponential in the depth, and the six-level case is still inside the SDK's own
+default 10,000,000-character entity cap — so that cap is not what saves a consumer.
+The measurement is a test, not a comment: if a future runtime made expansion inert,
+it fails rather than quietly becoming untrue.
+
+The refusal is in two layers. The body is scanned for `<!DOCTYPE` before a parser
+sees it, so the failure names what is wrong instead of surfacing an `XmlException`
+about a security setting the caller never chose. Then the reader is created with
+`DtdProcessing.Prohibit` and `XmlResolver = null`, which catches what the scan cannot
+see — a UTF-16 body, where `<!DOCTYPE` is not a UTF-8 substring but the reader sniffs
+the encoding and would read the DTD perfectly well. Both are tested.
+
+### Both list shapes decode
+
+Jackson wraps a list in an element of its own; Go's `encoding/xml` repeats the
+sibling:
+
+```xml
+<lines><lines>widget</lines><lines>gasket</lines></lines>   <!-- Jackson, over a POJO -->
+<lines>widget</lines><lines>gasket</lines>                  <!-- encoding/xml, and Jackson over a Map -->
+```
+
+Both are real output from those libraries — the fixture in `AceMq.Amqp.Xml.Tests` was
+produced by running them — neither is going away, and both decode into the same
+`List<string>`. A one-item list is a third case, because `<lines>widget</lines>` on
+its own is indistinguishable from a scalar; the declared member is the only thing
+that can tell them apart, so the unwrapping is driven by the target type rather than
+guessed from the document. This codec writes the repeated-sibling form, which Jackson
+reads as well.
+
+### XML has no types
+
+Every leaf arrives as text. `<totalCents>4250</totalCents>` is the four characters
+`4250`, not a number, and `<paid>true</paid>` is the four characters `true`. Decoding
+reads numbers, booleans and enums back out of that text, so an `int` or a `bool`
+member works; decode into `string` and you get the text unchanged. There is no null
+either — an empty element reads as the empty string, and nothing here invents
+`xsi:nil`, because neither Jackson nor `encoding/xml` writes it.
+
+The root element is named after the payload's type, the way Jackson uses the class's
+simple name. Coming back, the root's name is **ignored**: it names the message rather
+than being part of it, which is how Java's `<Order>` and Go's `<order>` read into the
+same type.
+
+Attributes arrive as ordinary members beside the elements, and namespaces are cut
+back to the local name — a consumer wants the field, not the URI it was declared in,
+which is also what Jackson gives reading XML into a `Map`.
 
 ## Changing format without stopping
 
