@@ -73,7 +73,14 @@ public sealed class Requester : IDisposable
 
         // Replies are read as raw bytes and decoded once a caller claims them, so a
         // single reply queue can carry answers of different types.
-        requester._consumer = await mq.ConsumeAsync<byte[]>(
+        //
+        // Consumed as a private queue, which is what stops a consumer's start-up
+        // declarations following a name that is never reused. Every other consumer
+        // declares {queue}.dlq and {queue}.parked when it starts; doing that here would
+        // leave two durable queues per requester behind a guid nothing can look up
+        // again. This one cannot dead-letter anyway — bytes always decode, and the
+        // handler below always accepts.
+        requester._consumer = await mq.ConsumePrivateQueueAsync<byte[]>(
             replyQueue,
             ConsumerOptions.Defaults().As(new BytesCodec()),
             message =>

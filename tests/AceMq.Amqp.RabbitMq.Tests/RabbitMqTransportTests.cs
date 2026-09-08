@@ -90,13 +90,30 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         await _mq.BindAsync(Queue, Exchange, "order.placed");
     }
 
+    /// <summary>
+    /// Deletes a queue and the two a consumer declares beside it.
+    /// </summary>
+    /// <remarks>
+    /// The <c>.dlq</c> and <c>.parked</c> half is the reason this exists. Since
+    /// ADR-032 a consumer declares both when it starts rather than on the first
+    /// failure, so every queue this suite consumes now leaves a pair behind whether
+    /// or not anything in the test ever failed — and a suite that leaks a queue per
+    /// run turns a broker into a list of everything anybody has ever tested. Named
+    /// rather than pattern-matched, because deleting by prefix on a shared broker is
+    /// how one suite tears down another's queues.
+    /// </remarks>
+    private async Task DeleteWithFailureQueuesAsync(string queue)
+    {
+        foreach (var name in new[] { queue, Naming.DeadLetterQueue(queue), Naming.ParkedQueue(queue) })
+        {
+            try { await _mq.DeleteQueueAsync(name); } catch { /* it may never have been declared */ }
+        }
+    }
+
     public async Task DisposeAsync()
     {
-        foreach (var queue in _alsoDeclared)
-        {
-            try { await _mq.DeleteQueueAsync(queue); } catch { /* it may never have been declared */ }
-        }
-        try { await _mq.DeleteQueueAsync(Queue); } catch { /* the test may have failed before declaring */ }
+        foreach (var queue in _alsoDeclared) await DeleteWithFailureQueuesAsync(queue);
+        await DeleteWithFailureQueuesAsync(Queue);
         foreach (var exchange in _declaredExchanges)
         {
             try { await _mq.DeleteExchangeAsync(exchange); } catch { /* likewise */ }
@@ -369,9 +386,17 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        // The queue and the two a consumer declares beside it. Since ADR-032 those two
+        // are there from the moment a consumer starts rather than from the first
+        // failure, so a suite that deletes only what it named by hand now leaks a pair
+        // per queue it consumed.
         foreach (var queue in _declared)
         {
-            try { await _mq.DeleteQueueAsync(queue); } catch { /* already gone */ }
+            foreach (var name in
+                     new[] { queue, Naming.DeadLetterQueue(queue), Naming.ParkedQueue(queue) })
+            {
+                try { await _mq.DeleteQueueAsync(name); } catch { /* already gone */ }
+            }
         }
         _mq.Dispose();
     }

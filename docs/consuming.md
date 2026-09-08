@@ -120,9 +120,15 @@ broker discards it**. Nor can a broker write onto a message it is rejecting, so 
 thing whoever finds it actually needs — what the handler was unable to do — would not be
 there.
 
-Nothing has to be declared for this to work. The consumer declares `{queue}.dlq` and
-`{queue}.parked` the first time it needs them, and the topology can declare them up front
-along with the retry rungs:
+Nothing has to be declared for this to work. **A consumer declares `acemq.dlx`,
+`{queue}.dlq` and `{queue}.parked` when it starts**, before it subscribes and before
+anything has failed — with or without a retry policy, because giving up is not something
+a retry policy switches on. They are there in the management UI from the moment the
+service connects, which is what makes them something an operator can watch rather than
+something that appears on the day of the first incident.
+
+The same declarations, argument for argument, are what a topology makes, so it is safe
+to do both and in either order:
 
 ```csharp
 await mq.ApplyAsync(
@@ -130,6 +136,17 @@ await mq.ApplyAsync(
         .QueueWithRetry("orders.placed", RetryPolicy.Exponential(6, TimeSpan.FromSeconds(10)))
         .Build());
 ```
+
+Declaring the same queue twice with the *same* arguments is how AMQP is meant to be
+used; declaring it twice with different ones is a `PRECONDITION_FAILED` that stops the
+second consumer starting at all. That is why the consumer's declaration and
+`QueueWithRetry`'s come from one place: both queues classic, durable, and with no
+arguments of their own — a dead-letter queue that dead-letters is a loop.
+
+These were declared on the settle path until ADR-032 — the first time a message was
+actually dead-lettered or parked. The end state was the same; the window before it was
+not, and Java's `RetryTopology.declare` had been declaring them at start-up all along,
+which is what the shared contract fixture records.
 
 ## Retries, duplicates and shutdown
 

@@ -260,38 +260,96 @@ public sealed class RetryLadder
     /// them.
     /// </summary>
     /// <remarks>
-    /// Called before anything is subscribed, and not on the failure path. A rung that
-    /// does not exist loses the message rather than reporting anything — an
-    /// unroutable publish is dropped — so the moment to find out is the one where
-    /// nothing has failed yet. Declaring is idempotent, and a duplicate declaration is
-    /// a great deal cheaper than a lost message.
+    /// <para>
+    /// Called before anything is subscribed, and not on the failure path. A queue that
+    /// does not exist loses the message rather than reporting anything — an unroutable
+    /// publish is dropped — so the moment to find out is the one where nothing has
+    /// failed yet. Declaring is idempotent, and a duplicate declaration is a great deal
+    /// cheaper than a lost message.
+    /// </para>
+    /// <para>
+    /// The two halves are declared on different conditions, and the difference is the
+    /// point. The retry half — <see cref="RetryExchange"/>, the rungs, the binding
+    /// home — exists only because a rung expires through it, so a ladder with no rungs
+    /// declares none of it and leaves nothing behind on a broker it has no use for. The
+    /// dead-letter half is declared whatever the schedule is, because giving up is not
+    /// something a retry policy switches on: a handler that returns
+    /// <see cref="Ack.DeadLetter"/>, a body that will not decode, a consumer configured
+    /// with no policy at all — every one of those republishes to
+    /// <see cref="DeadLetterQueue"/> or <see cref="ParkedQueue"/>, and a queue nobody
+    /// declared is one the broker has nowhere to put the message.
+    /// </para>
+    /// <para>
+    /// This is Java's <c>RetryTopology.declare</c> and the shape the contract fixture
+    /// records as <c>declaredBy: both</c>. It used to happen here for the rungs and on
+    /// the settle path for the other three, which reached the same end state by the
+    /// first failure and left anything watching for the queues blind until then. It is
+    /// also the only place in this library that declares them from a consumer, which is
+    /// what stops the two declarations drifting into the
+    /// <c>PRECONDITION_FAILED</c> a second, differing declaration would be.
+    /// </para>
+    /// <para>
+    /// Everything here matches what
+    /// <see cref="Topology.Builder.QueueWithDeadLetter(string)"/>
+    /// declares, argument for argument, so a service that applied a topology first and
+    /// then started a consumer — or did it the other way round — declares the same
+    /// things twice rather than two different things once.
+    /// </para>
     /// </remarks>
     public async Task DeclareAsync(ITransportConnection connection, CancellationToken cancellationToken)
     {
         if (connection == null) throw new ArgumentNullException(nameof(connection));
-        if (IsEmpty) return;
 
-        if (IsNamedExchange)
+        if (!IsEmpty)
         {
-            await connection
-                .DeclareExchangeAsync(RetryExchange, RetryExchangeType, true, cancellationToken)
-                .ConfigureAwait(false);
+            if (IsNamedExchange)
+            {
+                await connection
+                    .DeclareExchangeAsync(RetryExchange, RetryExchangeType, true, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            foreach (var rung in Rungs)
+            {
+                await connection
+                    .DeclareQueueAsync(rung.Queue, QueueType.Classic, true, rung.Arguments, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (IsNamedExchange)
+            {
+                // One binding brings every expired message back to the queue it came
+                // from. The default exchange needs none: every queue is bound to it by
+                // its own name from the moment it exists.
+                await connection
+                    .BindQueueAsync(Source, RetryExchange, RoutingKeyFor(Source), cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        foreach (var rung in Rungs)
-        {
-            await connection
-                .DeclareQueueAsync(rung.Queue, QueueType.Classic, true, rung.Arguments, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await connection
+            .DeclareExchangeAsync(
+                Naming.DeadLetterExchange, Naming.DeadLetterExchangeType, true, cancellationToken)
+            .ConfigureAwait(false);
 
-        if (IsNamedExchange)
+        // Classic, and with no arguments of their own. Classic because that is what
+        // Java declares and what Topology declares, and a queue of this name declared
+        // quorum by one of them is a PRECONDITION_FAILED for the next. No arguments
+        // because dead-lettering a dead letter is a loop, and a loop is how one poison
+        // message becomes an outage.
+        //
+        // The bindings go on beside them. This library publishes to these queues
+        // directly and does not need them, but a dead-letter queue that exists without
+        // one is a queue an operator can only find by name — and one the broker's own
+        // dead-lettering, from a rejected message or a queue length limit, cannot reach
+        // at all.
+        foreach (var queue in new[] { DeadLetterQueue, ParkedQueue })
         {
-            // One binding brings every expired message back to the queue it came from.
-            // The default exchange needs none: every queue is bound to it by its own
-            // name from the moment it exists.
             await connection
-                .BindQueueAsync(Source, RetryExchange, RoutingKeyFor(Source), cancellationToken)
+                .DeclareQueueAsync(queue, QueueType.Classic, true, null, cancellationToken)
+                .ConfigureAwait(false);
+            await connection
+                .BindQueueAsync(queue, Naming.DeadLetterExchange, queue, cancellationToken)
                 .ConfigureAwait(false);
         }
     }

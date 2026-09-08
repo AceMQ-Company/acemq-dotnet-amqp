@@ -241,11 +241,21 @@ public sealed class DiagnosticsTests
             AceMqDiagnostics.Parked, DiagnosticLevel.Warning, "cannot read it",
             "orders.placed", "orders.placed.parked", "id-10", 1, null));
 
-        Assert.Equal(2, logger.Lines.Count);
-        Assert.Equal(LogLevel.Error, logger.Lines[0].Level);
-        Assert.Contains("could not move it", logger.Lines[0].Text);
-        Assert.IsType<InvalidOperationException>(logger.Lines[0].Failure);
-        Assert.Equal(LogLevel.Warning, logger.Lines[1].Level);
+        // This test's own two events and not everything that arrived.
+        // AceMqDiagnostics is a process-wide sink and xUnit runs test collections in
+        // parallel, so for as long as this bridge is subscribed it also receives
+        // whatever any other test's consumer dead-letters or parks. Asserting on
+        // Lines[0] made that somebody else's warning about one run in ten, which is a
+        // failure about test isolation wearing the costume of a failure about logging.
+        var mine = logger.LinesSoFar()
+            .Where(l => l.Text.Contains("could not move it") || l.Text.Contains("cannot read it"))
+            .ToList();
+
+        Assert.Equal(2, mine.Count);
+        Assert.Equal(LogLevel.Error, mine[0].Level);
+        Assert.Contains("could not move it", mine[0].Text);
+        Assert.IsType<InvalidOperationException>(mine[0].Failure);
+        Assert.Equal(LogLevel.Warning, mine[1].Level);
 
         // The fields go in as a scope as well as into the text, so a structured
         // backend can be queried by queue or by message id.
@@ -277,16 +287,31 @@ public sealed class DiagnosticsTests
 
     private sealed class CapturingLogger : ILogger
     {
+        // Locked, because the sink this is bridged to is process-wide and xUnit runs
+        // test collections in parallel: a consumer settling a message on another
+        // thread writes here while the test reading it enumerates, and an unguarded
+        // List does not survive that.
+        private readonly object _guard = new();
+
         internal List<(LogLevel Level, string Text, Exception? Failure)> Lines { get; } = new();
 
         internal List<string> Scopes { get; } = new();
 
+        /// <summary>The lines so far, safe to enumerate while more arrive.</summary>
+        internal List<(LogLevel Level, string Text, Exception? Failure)> LinesSoFar()
+        {
+            lock (_guard) return new List<(LogLevel, string, Exception?)>(Lines);
+        }
+
         public IDisposable BeginScope<TState>(TState state) where TState : notnull
         {
-            Scopes.Add(state.ToString() ?? "");
-            if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
+            lock (_guard)
             {
-                Scopes.Add(string.Join(",", pairs.Select(p => p.Key)));
+                Scopes.Add(state.ToString() ?? "");
+                if (state is IEnumerable<KeyValuePair<string, object?>> pairs)
+                {
+                    Scopes.Add(string.Join(",", pairs.Select(p => p.Key)));
+                }
             }
             return new Nothing();
         }
@@ -295,8 +320,10 @@ public sealed class DiagnosticsTests
 
         public void Log<TState>(
             LogLevel logLevel, EventId eventId, TState state, Exception? exception,
-            Func<TState, Exception?, string> formatter) =>
-            Lines.Add((logLevel, formatter(state, exception), exception));
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (_guard) Lines.Add((logLevel, formatter(state, exception), exception));
+        }
 
         private sealed class Nothing : IDisposable
         {

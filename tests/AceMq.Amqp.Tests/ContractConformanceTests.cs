@@ -731,29 +731,24 @@ public sealed class ContractConformanceTests
                 b.GetProperty("declaredBy").GetString()!, recorder.Bindings[key]);
         }
 
-        // Five entries, one difference, and it is about when rather than what. Java's
-        // RetryTopology.declare() declares acemq.dlx, the dead-letter queue and the
-        // parking queue when the consumer starts, so the fixture records them as
-        // declared by both halves. This library declares exactly the same three
-        // things, with the same types, durability and bindings — but on the settle
-        // path, the first time a message is actually dead-lettered or parked, which is
-        // asserted in
-        // TheConsumerDeclaresTheDeadLetterQueuesWhenItFirstNeedsThemRatherThanAtStartUp.
+        // Nothing, and the empty list is the assertion rather than a formality. Five
+        // entries used to be listed here as expected exceptions: acemq.dlx,
+        // {queue}.dlq, {queue}.parked and the two bindings, which the fixture records
+        // as declaredBy "both" because Java's RetryTopology.declare() declares them
+        // when the consumer starts, and which this library declared on the settle path
+        // instead — the first time a message was actually dead-lettered or parked. The
+        // end state on a broker was identical; the window in between was not, and
+        // anything alerting on the queues' existence stayed blind through it. ADR-032
+        // moved them into RetryLadder.DeclareAsync, which runs before the consumer
+        // subscribes, so both halves now declare all five and the fixture agrees with
+        // both.
         //
-        // The end state on a broker is identical. The window in between is not: a
-        // Java consumer leaves the two queues visible in the management UI from the
-        // moment it connects, and a .NET one leaves them absent until something first
-        // fails. Worth knowing before somebody writes an alert on their existence.
-        Assert.Equal(
-            new[]
-            {
-                "exchange acemq.dlx: fixture says both, here topology",
-                "queue orders.new.dlq: fixture says both, here topology",
-                "queue orders.new.parked: fixture says both, here topology",
-                "binding orders.new.dlq|acemq.dlx|orders.new.dlq: fixture says both, here topology",
-                "binding orders.new.parked|acemq.dlx|orders.new.parked: fixture says both, here topology",
-            },
-            disagreements);
+        // Written as Assert.Empty rather than deleted, because the useful thing about
+        // this test was never the list. A disagreement that opens — this library
+        // dropping one of the five, or the fixture recording a sixth entry the two
+        // halves disagree about — shows up here as a failure naming exactly which
+        // entry moved.
+        Assert.Empty(disagreements);
     }
 
     private static void Compare(List<string> into, string what, string fixtureSays, string here)
@@ -761,8 +756,22 @@ public sealed class ContractConformanceTests
         if (fixtureSays != here) into.Add($"{what}: fixture says {fixtureSays}, here {here}");
     }
 
+    /// <summary>
+    /// ADR-032, from the consumer's side rather than the recorder's: the queues exist
+    /// before the first failure, not because of it.
+    /// </summary>
+    /// <remarks>
+    /// The inverse of the test that used to be here, which asserted
+    /// <c>{queue}.parked</c> was <em>absent</em> after subscribing and appeared on the
+    /// first park. Both halves of that are now wrong on purpose, and the reason is the
+    /// one Go's library gave: a consumer that gives up republishes to
+    /// <c>{queue}.dlq</c>, and a broker asked to route to a queue nobody declared
+    /// discards the message without saying so. Lazy declaration closed that for this
+    /// library's own settle path and for nothing else — not for the broker's
+    /// dead-lettering, and not for anybody watching the queue in order to be told.
+    /// </remarks>
     [Fact]
-    public async Task TheConsumerDeclaresTheDeadLetterQueuesWhenItFirstNeedsThemRatherThanAtStartUp()
+    public async Task TheConsumerDeclaresTheDeadLetterQueuesWhenItStartsRatherThanWhenItFirstNeedsThem()
     {
         var url = "memory://" + Guid.NewGuid().ToString("N");
         using var mq = await AceMqConnection.ConnectAsync(url);
@@ -774,25 +783,144 @@ public sealed class ContractConformanceTests
             ConsumerOptions.Defaults().WithRetry(RetryPolicy.Fixed(2, TimeSpan.FromSeconds(30))),
             _ => Task.FromResult(Ack.Park("nothing can be done with this")));
 
-        // The rung is there from the moment the consumer started, because a rung that
-        // does not exist drops the retry silently.
+        // The rung, as before: a rung that does not exist drops the retry silently.
         Assert.True(await mq.QueueExistsAsync(Naming.RetryQueue(queue, TimeSpan.FromSeconds(30))));
 
-        // The parking queue is not, which is where this library and Java differ.
-        Assert.False(await mq.QueueExistsAsync(Naming.ParkedQueue(queue)));
+        // And now the other two, at the same moment and for the same reason. Nothing
+        // has been published yet, so nothing has failed yet — which is the whole
+        // claim.
+        Assert.True(await mq.QueueExistsAsync(Naming.DeadLetterQueue(queue)));
+        Assert.True(await mq.QueueExistsAsync(Naming.ParkedQueue(queue)));
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.ParkedQueue(queue)));
 
         await mq.Publisher<string>("", queue).SendAsync("park me");
 
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (DateTime.UtcNow < deadline && !await mq.QueueExistsAsync(Naming.ParkedQueue(queue)))
+        while (DateTime.UtcNow < deadline && await mq.MessageCountAsync(Naming.ParkedQueue(queue)) == 0)
         {
             await Task.Delay(10);
         }
 
-        // And it is there once it is needed, with the message in it, so nothing is
-        // lost by the wait — only the ability to see the queue before anything failed.
-        Assert.True(await mq.QueueExistsAsync(Naming.ParkedQueue(queue)));
+        // The message still arrives where it always did. Only the moment the queue
+        // came into existence has moved.
         Assert.Equal(1, await mq.MessageCountAsync(Naming.ParkedQueue(queue)));
+    }
+
+    /// <summary>
+    /// The half of ADR-032 this library decided for itself: a consumer with no retry
+    /// policy declares the dead-letter queues and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Java does not reach this case at all — <c>DefaultConsumer</c> only builds a
+    /// <c>RetryTopology</c> when a policy is configured, so a Java consumer without one
+    /// declares nothing. That is the wrong way round. Giving up is not something a
+    /// retry policy switches on: <c>Ack.DeadLetter</c> from a handler, and a body that
+    /// will not decode, both republish out of the consumer whether or not there is a
+    /// schedule, so the queues they need have to exist whether or not there is one.
+    /// </para>
+    /// <para>
+    /// The retry exchange is the opposite case and is deliberately left out. Nothing
+    /// routes through <c>acemq.retry</c> except a rung expiring, so a consumer with no
+    /// rungs would be declaring an exchange and binding a queue to it that no message
+    /// can ever traverse — a permanent object on somebody's broker in exchange for
+    /// nothing.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AConsumerWithNoRetryPolicyStillDeclaresTheDeadLetterHalfAndNothingElse()
+    {
+        var recorder = new Recorder { By = "consumer" };
+        await RetryLadder.For(Queue, RetryPolicy.None())
+            .DeclareAsync(recorder, CancellationToken.None);
+
+        Assert.Equal(
+            new[] { Naming.DeadLetterExchange },
+            recorder.Exchanges.Keys.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(
+            new[] { Queue + ".dlq", Queue + ".parked" },
+            recorder.Queues.Keys.OrderBy(n => n, StringComparer.Ordinal));
+        Assert.Equal(
+            new[]
+            {
+                Key(Queue + ".dlq", Naming.DeadLetterExchange, Queue + ".dlq"),
+                Key(Queue + ".parked", Naming.DeadLetterExchange, Queue + ".parked"),
+            },
+            recorder.Bindings.Keys.OrderBy(k => k, StringComparer.Ordinal));
+
+        // Classic and durable with no arguments, which is what Topology declares them
+        // as. The two have to agree exactly: a queue declared one way by a topology and
+        // another by a consumer is a PRECONDITION_FAILED, not two queues.
+        foreach (var name in recorder.Queues.Keys)
+        {
+            var declared = recorder.Queues[name];
+            Assert.Equal(QueueType.Classic, declared.Type);
+            Assert.True(declared.Durable);
+            Assert.Empty(declared.Arguments);
+        }
+    }
+
+    /// <summary>
+    /// The consumer's declaration and the topology's are the same declaration.
+    /// </summary>
+    /// <remarks>
+    /// Declaring at start-up is only safe if it cannot contradict a topology that was
+    /// applied first, so this compares the two tables rather than trusting that they
+    /// were written to match. Verified against a real broker as well, both orders
+    /// round; this is the version that fails in CI, on the machine of whoever changes
+    /// one of them and not the other.
+    /// </remarks>
+    [Fact]
+    public async Task TheConsumerDeclaresTheDeadLetterQueuesExactlyAsTheTopologyDoes()
+    {
+        var fromConsumer = new Recorder { By = "consumer" };
+        await RetryLadder.For(Queue, RetryPolicy.None())
+            .DeclareAsync(fromConsumer, CancellationToken.None);
+
+        var fromTopology = new Recorder();
+        var declared = Topology.Define().QueueWithDeadLetter(Queue).Build();
+        foreach (var exchange in declared.Exchanges)
+        {
+            fromTopology.Exchange(exchange.Name, exchange.Type, exchange.Durable, "topology");
+        }
+        foreach (var queue in declared.Queues)
+        {
+            fromTopology.Queue(queue.Name, queue.Type, queue.Durable, queue.Arguments, "topology");
+        }
+        foreach (var binding in declared.Bindings)
+        {
+            fromTopology.Binding(binding.Queue, binding.Exchange, binding.RoutingKey, "topology");
+        }
+
+        // The source queue is the topology's alone. The consumer never declares it: it
+        // belongs to whoever set the service up, who chose its type and its arguments,
+        // and a consumer guessing either is the PRECONDITION_FAILED that stops it
+        // starting.
+        Assert.True(fromTopology.Queues.Remove(Queue));
+        Assert.False(fromConsumer.Queues.ContainsKey(Queue));
+
+        foreach (var name in fromConsumer.Exchanges.Keys)
+        {
+            Assert.Equal(
+                (fromTopology.Exchanges[name].Type, fromTopology.Exchanges[name].Durable),
+                (fromConsumer.Exchanges[name].Type, fromConsumer.Exchanges[name].Durable));
+        }
+        Assert.Equal(
+            fromTopology.Queues.Keys.OrderBy(n => n, StringComparer.Ordinal),
+            fromConsumer.Queues.Keys.OrderBy(n => n, StringComparer.Ordinal));
+        foreach (var name in fromConsumer.Queues.Keys)
+        {
+            var mine = fromConsumer.Queues[name];
+            var theirs = fromTopology.Queues[name];
+            Assert.Equal(theirs.Type, mine.Type);
+            Assert.Equal(theirs.Durable, mine.Durable);
+            Assert.Equal(
+                theirs.Arguments.OrderBy(p => p.Key, StringComparer.Ordinal),
+                mine.Arguments.OrderBy(p => p.Key, StringComparer.Ordinal));
+        }
+        Assert.Equal(
+            fromTopology.Bindings.Keys.OrderBy(k => k, StringComparer.Ordinal),
+            fromConsumer.Bindings.Keys.OrderBy(k => k, StringComparer.Ordinal));
     }
 
     // ---- queueTypeDefaults -----------------------------------------------

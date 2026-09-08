@@ -280,15 +280,23 @@ one does too:
   of 365 days, so it refuses to retry a message that has reached exactly that age.
   Here — and, per its own comment, in Python and Ruby — zero means never, and such a
   message is still retried.
-- **When the dead-letter queues are declared.** Java's consumer declares `acemq.dlx`,
-  `{queue}.dlq` and `{queue}.parked` at start-up. This library declares the same three
-  things, with the same types, durability and bindings, on the settle path — the first
-  time a message is actually dead-lettered or parked. The end state on a broker is
-  identical; the window in between is not.
 - **The jitter floor.** Java's `applyJitter` ends in `Math.max(1, …)`, so its smallest
   jittered wait is 1ms. This library multiplies a `TimeSpan` and floors at zero, so
   `Fixed(2, 1ms).WithJitter(1.0)` can produce a sub-millisecond wait. Latent rather
   than live: no policy in this repository has a consumer wait of a millisecond.
+
+One that used to be on this list and no longer is, since it is the shape of the thing
+these fixtures are for. **When the dead-letter queues are declared** was a difference
+about *when* rather than *what*: Java's consumer declared `acemq.dlx`, `{queue}.dlq` and
+`{queue}.parked` at start-up, and this library declared the same three things — same
+types, same durability, same bindings — on the settle path, the first time a message was
+actually dead-lettered or parked. The end state on a broker was identical, which is why
+it looked like a preference. It was not. A consumer that gives up republishes to
+`{queue}.dlq`, and until something first failed there was nothing on the broker for an
+operator to see, to alert on, or for the broker's own dead-lettering to reach. ADR-032
+settled it Java's way, and this library now declares all three when a consumer starts —
+whether or not it has a retry policy, since giving up is not something a retry policy
+switches on.
 
 Things the fixtures pinned that no document stated plainly:
 

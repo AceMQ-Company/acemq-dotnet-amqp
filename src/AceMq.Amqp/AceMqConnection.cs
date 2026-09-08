@@ -212,7 +212,7 @@ public sealed class AceMqConnection : IDisposable
 
     public Task<IMessageConsumer> ConsumeAsync<T>(
         string queue, ConsumerOptions options, Func<IMessage<T>, Task<Ack>> handler) =>
-        ConsumeCoreAsync(queue, options, null, handler);
+        ConsumeCoreAsync(queue, options, null, handler, ownedByCaller: true);
 
     /// <summary>Consumes a stream queue from a chosen offset.</summary>
     internal Task<IMessageConsumer> ConsumeStreamAsync<T>(
@@ -224,25 +224,65 @@ public sealed class AceMqConnection : IDisposable
         ConsumeCoreAsync(
             queue, options,
             new Dictionary<string, object> { ["x-stream-offset"] = offset.Value },
-            handler);
+            handler, ownedByCaller: true);
+
+    /// <summary>
+    /// Consumes a queue this library invented, rather than one a caller named.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One caller: the reply queue a <see cref="Requester"/> reads its answers on. The
+    /// difference that matters is the name. Every other queue consumed here is one an
+    /// application chose and will keep choosing — <c>orders.new</c> is <c>orders.new</c>
+    /// on every restart, so the <c>{queue}.dlq</c> and <c>{queue}.parked</c> declared
+    /// beside it are the same two queues every time. A reply queue is
+    /// <c>acemq.reply.{a fresh guid}</c>, a name that exists once and is never used
+    /// again, so declaring a durable pair beside it would leave two queues on the
+    /// broker per requester ever constructed and no name by which anything could find
+    /// them later.
+    /// </para>
+    /// <para>
+    /// It is also the one consumer here with no failure path to serve. It decodes to
+    /// <c>byte[]</c>, which cannot fail, and its handler returns
+    /// <see cref="Ack.Accept"/> unconditionally — so it can reach neither
+    /// <c>{queue}.dlq</c> nor <c>{queue}.parked</c>, and queues nothing can reach are
+    /// not worth the litter. Give this consumer a handler that can give up and it needs
+    /// the argument turned back on.
+    /// </para>
+    /// </remarks>
+    internal Task<IMessageConsumer> ConsumePrivateQueueAsync<T>(
+        string queue, ConsumerOptions options, Func<IMessage<T>, Task<Ack>> handler) =>
+        ConsumeCoreAsync(queue, options, null, handler, ownedByCaller: false);
 
     private async Task<IMessageConsumer> ConsumeCoreAsync<T>(
         string queue, ConsumerOptions options,
         IReadOnlyDictionary<string, object>? consumerArguments,
-        Func<IMessage<T>, Task<Ack>> handler)
+        Func<IMessage<T>, Task<Ack>> handler,
+        bool ownedByCaller)
     {
         EnsureOpen();
         if (handler == null) throw new ArgumentNullException(nameof(handler));
         var codec = options.Codec ?? _codec;
         var policy = options.RetryPolicy;
 
-        // The rungs a long wait is spent in, worked out before anything is subscribed
-        // and declared here rather than on the failure path. A rung that does not
-        // exist loses the message rather than reporting anything — an unroutable
+        // Every queue this consumer can send a message to that is not the one it is
+        // reading: the rungs a long wait is spent in, and the two a message ends up in
+        // when it is not coming back. Worked out and declared before anything is
+        // subscribed, rather than at the moment one is first needed. A queue that does
+        // not exist loses the message rather than reporting anything — an unroutable
         // publish is dropped — so the moment to find out is the one where nothing has
-        // failed yet.
+        // failed yet, and a queue an operator can see from start-up is one they can
+        // alert on before the first failure rather than after it.
+        //
+        // With no policy this declares {queue}.dlq and {queue}.parked and nothing else.
+        // A consumer without a retry schedule still dead-letters — Ack.DeadLetter, a
+        // body that will not decode — so it needs those two; it has no rungs, so it
+        // needs no retry exchange and no binding to one.
         var ladder = RetryLadder.For(queue, policy ?? RetryPolicy.None());
-        await ladder.DeclareAsync(_connection, CancellationToken.None).ConfigureAwait(false);
+        if (ownedByCaller)
+        {
+            await ladder.DeclareAsync(_connection, CancellationToken.None).ConfigureAwait(false);
+        }
 
         var subscription = await _connection.SubscribeAsync(
             queue, options.PrefetchCount, consumerArguments,
@@ -416,8 +456,7 @@ public sealed class AceMqConnection : IDisposable
                     queue, ladder.ParkedQueue, envelope.Id, envelope.Attempt, null);
                 return await MoveAsync(
                         ladder.ParkedQueue, delivery,
-                        envelope.WithError(ack.Reason ?? "parked with no reason given"),
-                        declareFirst: true)
+                        envelope.WithError(ack.Reason ?? "parked with no reason given"))
                     .ConfigureAwait(false);
 
             case AckKind.DeadLetter:
@@ -427,8 +466,7 @@ public sealed class AceMqConnection : IDisposable
                     queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
                 return await MoveAsync(
                         ladder.DeadLetterQueue, delivery,
-                        envelope.WithError(ack.Reason ?? "no reason given"),
-                        declareFirst: true)
+                        envelope.WithError(ack.Reason ?? "no reason given"))
                     .ConfigureAwait(false);
 
             default:
@@ -462,7 +500,7 @@ public sealed class AceMqConnection : IDisposable
             // why one is worth configuring.
             var asked = ack.Delay ?? TimeSpan.Zero;
             if (asked > TimeSpan.Zero) await Task.Delay(asked).ConfigureAwait(false);
-            return await MoveAsync(queue, delivery, advanced, declareFirst: false)
+            return await MoveAsync(queue, delivery, advanced)
                 .ConfigureAwait(false);
         }
 
@@ -475,8 +513,7 @@ public sealed class AceMqConnection : IDisposable
                 queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
             return await MoveAsync(
                     ladder.DeadLetterQueue, delivery,
-                    envelope.WithError($"{GaveUp(policy, envelope)}: {reason}"),
-                    declareFirst: true)
+                    envelope.WithError($"{GaveUp(policy, envelope)}: {reason}"))
                 .ConfigureAwait(false);
         }
 
@@ -489,7 +526,7 @@ public sealed class AceMqConnection : IDisposable
                 // like the flexible answer and is a trap: RabbitMQ expires messages
                 // only from the head of a queue, so one long wait at the front holds
                 // back every shorter one behind it.
-                return await MoveAsync(rung, delivery, advanced, declareFirst: false)
+                return await MoveAsync(rung, delivery, advanced)
                     .ConfigureAwait(false);
             }
 
@@ -507,7 +544,7 @@ public sealed class AceMqConnection : IDisposable
         }
 
         if (next.Delay > TimeSpan.Zero) await Task.Delay(next.Delay).ConfigureAwait(false);
-        return await MoveAsync(queue, delivery, advanced, declareFirst: false)
+        return await MoveAsync(queue, delivery, advanced)
             .ConfigureAwait(false);
     }
 
@@ -516,45 +553,27 @@ public sealed class AceMqConnection : IDisposable
     /// accepts the original.
     /// </summary>
     /// <remarks>
-    /// <paramref name="declareFirst"/> is on for the dead-letter and parking queues
-    /// and off for everything else. Those two are wanted only when something has
-    /// already gone wrong, so declaring them then costs a round trip nobody notices
-    /// and saves a message that would otherwise be published at a queue that does not
-    /// exist and quietly dropped. The source queue and the rungs are never declared
-    /// here: the source was declared by whoever owns it, possibly with arguments this
-    /// call does not know, and re-declaring it with different ones is a channel error
-    /// rather than a no-op.
+    /// Nothing is declared here, and that is the whole of the change ADR-032 made.
+    /// Every destination this method is given — the source queue, a rung,
+    /// <c>{queue}.dlq</c>, <c>{queue}.parked</c> — was declared before the consumer
+    /// subscribed: the source by whoever owns it, the other three by
+    /// <see cref="RetryLadder.DeclareAsync"/>. The dead-letter and parking queues used
+    /// to be declared right here instead, the first time one was needed, which reached
+    /// the same end state one failure later and left a second place that could declare
+    /// a queue this library also declares elsewhere. Two declarations of one queue
+    /// that do not agree, argument for argument, is a <c>PRECONDITION_FAILED</c> that
+    /// stops a consumer starting, so there is now one of them.
     /// <para>
-    /// The binding to <see cref="Naming.DeadLetterExchange"/> goes on at the same
-    /// time. This library publishes to the queue directly and does not need it, but a
-    /// dead-letter queue that exists without it is one an operator can only find by
-    /// name — and one the broker's own dead-lettering, from a rejected message or a
-    /// queue length limit, cannot reach. Declared here rather than only in
-    /// <see cref="Topology"/> so that a queue this path created and a queue a
-    /// topology declared are the same shape.
+    /// What it costs is a queue somebody deletes while a consumer is running: the move
+    /// then fails to route, and the message is released back to the broker rather than
+    /// acknowledged. Reported and recoverable, which a lost message would not be.
     /// </para>
     /// </remarks>
     private async Task<Ack> MoveAsync(
-        string destination, InboundDelivery delivery, Envelope envelope, bool declareFirst)
+        string destination, InboundDelivery delivery, Envelope envelope)
     {
         try
         {
-            if (declareFirst)
-            {
-                await _connection
-                    .DeclareExchangeAsync(
-                        Naming.DeadLetterExchange, Naming.DeadLetterExchangeType, true,
-                        CancellationToken.None)
-                    .ConfigureAwait(false);
-                await _connection
-                    .DeclareQueueAsync(destination, QueueType.Classic, true, null, CancellationToken.None)
-                    .ConfigureAwait(false);
-                await _connection
-                    .BindQueueAsync(
-                        destination, Naming.DeadLetterExchange, destination, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-
             // Started from what arrived rather than from the envelope alone, so a
             // header this version does not materialise — a routing slip, a claim
             // check, anything a newer library added — survives the move. The envelope

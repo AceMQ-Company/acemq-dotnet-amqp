@@ -6,6 +6,52 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 While the version is `0.x` the public API may change in any release.
 
+## [Unreleased]
+
+### Changed
+
+- **A consumer declares the dead-letter half of its topology when it starts**,
+  not the first time it needs it. `acemq.dlx`, `{queue}.dlq`, `{queue}.parked`
+  and the two bindings are declared before the consumer subscribes, alongside
+  the retry rungs, which is what Java's `RetryTopology.declare` has always done
+  and what the shared contract fixture records as `declaredBy: both`
+  (ADR-032). They were declared on the settle path until now — the first time a
+  message was actually dead-lettered or parked. The end state on a broker was
+  identical either way; the window before it was not. A consumer that gives up
+  republishes to `{queue}.dlq`, and until something first failed there was
+  nothing on the broker for an operator to see, to alert on, or for the
+  broker's own dead-lettering to reach.
+
+  The declarations are idempotent and identical to `Topology.Builder`'s, so a
+  service may apply a topology and start a consumer in either order.
+
+  **This declares two queues per consumed queue that were not there before.**
+  A service consuming `orders.new` now has `orders.new.dlq` and
+  `orders.new.parked` on the broker from start-up whether or not anything has
+  ever failed on it.
+
+- **The dead-letter half is declared with or without a retry policy.** Giving
+  up is not something a retry policy switches on: `Ack.DeadLetter` from a
+  handler and a body that will not decode both republish out of the consumer
+  either way. The retry exchange is the opposite case and is still only
+  declared when there are rungs to expire through it — a consumer with no
+  broker waits leaves no `acemq.retry` and no binding behind. Java does not
+  reach this case at all, since it builds no retry topology without a policy.
+
+- The lazy declaration on the settle path is **gone** rather than kept beside
+  the new one. Two places that can declare one queue is two places that can
+  declare it differently, and a second declaration that disagrees is the
+  `PRECONDITION_FAILED` this whole line of work exists to prevent. A queue
+  deleted while a consumer is running now fails the move and releases the
+  message back to the broker, which is reported and recoverable, rather than
+  being silently redeclared underneath it.
+
+- `Requester` consumes its reply queue as a private queue and so declares no
+  dead-letter queues beside it. Its name is `acemq.reply.{a fresh guid}`, used
+  once and never again, so a durable pair per requester would be litter under a
+  name nothing could look up later — and that consumer decodes to `byte[]` and
+  always accepts, so it can reach neither queue.
+
 ## [0.2.0] — 2026-09-07
 
 > ### ⚠ Migrating: one dead-letter convention instead of three
