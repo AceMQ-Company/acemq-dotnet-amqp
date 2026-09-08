@@ -75,28 +75,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-
-  notify:
-    needs: deploy
-    # Failures only, matching acemq-java-amqp. A message for every push to main
-    # would be noise nobody reads, and a channel people mute is worse than no
-    # channel.
-    #
-    # The formatting lives in the core repository's reusable workflow rather than
-    # being copied here, which is what stops four repositories drifting into four
-    # different message shapes. With SLACK_DELIVERY_WEBHOOK absent it does
-    # nothing and succeeds, so this is inert until the secret is added.
-    if: always() && needs.deploy.result == 'failure'
-    uses: AceMQ-Company/acemq-java-amqp/.github/workflows/slack-notify.yml@main
-    with:
-      status: ${{ needs.deploy.result }}
-      title: "AceMQ for .NET documentation build FAILED"
-      message: "The site was not updated, so it still shows the previous version."
-      url: https://acemq-company.github.io/acemq-dotnet-amqp/
-    secrets:
-      # Explicit, not `inherit`. A reusable workflow in another repository
-      # does not receive inherited secrets, so `inherit` here produced a
-      # notify job that went green while sending nothing at all -- the
-      # shared workflow treats a missing webhook as "nothing to notify"
-      # and succeeds, by design, so the silence looked like health.
-      SLACK_DELIVERY_WEBHOOK: ${{ secrets.SLACK_DELIVERY_WEBHOOK }}
