@@ -99,13 +99,29 @@ which is what Java declares and what Go, Python and Ruby are converging on:
 
 ```
 acemq.dlx  (direct, durable)
-    orders.placed.dlq     bound on 'orders.placed.dlq'
-    orders.placed.parked  bound on 'orders.placed.parked'
+    orders.placed.dlq     (classic)  bound on 'orders.placed.dlq'
+    orders.placed.parked  (classic)  bound on 'orders.placed.parked'
 
-orders.placed
+orders.placed  (quorum)
     x-dead-letter-exchange    = "acemq.dlx"
     x-dead-letter-routing-key = "orders.placed.dlq"
 ```
+
+**A source queue is a durable quorum queue, and the queues around it are classic.**
+`Topology.Builder.Queue`, `QueueWithDeadLetter`, `QueueWithRetry` and
+`DeclareQueueAsync(name)` all declare quorum, because Java, Go, Python and Ruby do.
+This is interoperability before it is durability: a queue's type is fixed when it is
+created, so a Java service declaring `orders` as quorum and a .NET service declaring
+the same name as classic do not get one queue each — the second is refused with
+`PRECONDITION_FAILED` and cannot consume at all. Pass `QueueType.Classic` where a
+single node is what you want.
+
+The retry rungs, `{queue}.dlq` and `{queue}.parked` stay classic, because that is what
+the other four libraries declare them as and a disagreement in either direction is the
+same refusal. So does anything **exclusive or auto-delete**: RabbitMQ does not allow a
+quorum queue to be either, so a reply queue or a per-connection temporary queue has to
+be classic, and `Requester` asks for classic explicitly rather than inheriting the
+default.
 
 `Topology.QueueWithDeadLetter` produced `{queue}.dlx` and `{queue}.dead` until 0.1.9,
 which meant one repository held three conventions and which one you got depended on

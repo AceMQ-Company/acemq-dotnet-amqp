@@ -39,6 +39,12 @@ requester.Unmatched   // replies with nobody left waiting for them
 Handing a late answer to whoever happens to ask next is worse than no answer, and it
 is exactly what a shared reply queue read in arrival order would do.
 
+The reply queue is a **classic** queue, asked for explicitly rather than taking the
+library's quorum default. It belongs to one process and holds answers nobody will
+read once that process is gone, so there is nothing in it worth replicating — and
+RabbitMQ does not allow a quorum queue to be exclusive or auto-delete, so a queue
+shaped like this one could not be quorum even if it were worth it.
+
 ## Timeouts
 
 Thirty seconds by default. A request that is not answered in time throws

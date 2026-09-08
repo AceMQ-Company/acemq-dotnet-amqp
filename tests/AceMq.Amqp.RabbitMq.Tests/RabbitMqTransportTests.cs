@@ -221,6 +221,20 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         var envelope = Envelope.FromWire(returned!.Headers, returned.RoutingKey, returned.MessageId);
         Assert.Equal(2, envelope.Attempt);
         _output.WriteLine($"returned: attempt {envelope.Attempt} on {Queue}");
+
+        // And the round trip just made was a quorum source queue dead-lettering into a
+        // classic rung and back. Asked of the broker rather than of the builder,
+        // because quorum queues do not dead-letter by the same machinery classic ones
+        // do and "it compiled" would prove nothing about that. A dry run reports drift
+        // whenever the broker's answer differs from the declaration, so no drift here
+        // is the broker confirming every type in the ladder.
+        var declared = await _mq.ApplyAsync(
+            Topology.Define().QueueWithRetry(Queue, policy).Build(), ApplyMode.DryRun);
+
+        _output.WriteLine(declared.Render());
+        Assert.False(declared.HasDrift);
+        Assert.Contains($"queue {Queue} (quorum)", declared.Render());
+        Assert.Contains($"queue {rung} (classic)", declared.Render());
     }
 
     private static async Task Eventually(Func<Task<bool>> probe, string what)
@@ -390,6 +404,124 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         Assert.DoesNotContain(".dead", plan.Render());
     }
 
+    /// <summary>
+    /// A queue this library declares is a queue the Java library can consume.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The claim being tested is not "we send <c>x-queue-type=quorum</c>" — that is
+    /// visible in the source. It is that a second service, declaring the same queue
+    /// the way Java declares it, is accepted by the broker; and that the classic
+    /// declaration this library used to send is refused. Only a real broker can
+    /// answer either question, because both answers are the broker's.
+    /// </para>
+    /// <para>
+    /// The arguments are written out as literals rather than built from
+    /// <see cref="AceMq.Amqp.Naming"/>. Reusing the constants would test that this
+    /// library agrees with itself; the strings below are the ones Java's
+    /// <c>Topology.queueWithDeadLetter</c> puts on the wire, and copying them here is
+    /// the whole point.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task LetsAJavaServiceDeclareTheSameQueueAndRefusesTheClassicOne()
+    {
+        var queue = Name("shared");
+        await _mq.ApplyAsync(Topology.Define().QueueWithDeadLetter(queue).Build());
+        _declared.Add(queue);
+        _declared.Add(AceMq.Amqp.Naming.DeadLetterQueue(queue));
+        _declared.Add(AceMq.Amqp.Naming.ParkedQueue(queue));
+
+        var asJavaWritesIt = new Dictionary<string, object>
+        {
+            ["x-dead-letter-exchange"] = "acemq.dlx",
+            ["x-dead-letter-routing-key"] = queue + ".dlq",
+        };
+
+        // A second service, on its own connection, declaring what Java declares. This
+        // is the declare that used to fail.
+        using (var java = await AceMqConnection.ConnectAsync(_url))
+        {
+            await java.DeclareQueueAsync(queue, QueueType.Quorum, asJavaWritesIt);
+            _output.WriteLine(
+                $"accepted: {queue} redeclared as quorum with " +
+                "x-dead-letter-exchange=acemq.dlx and " +
+                $"x-dead-letter-routing-key={queue}.dlq");
+        }
+
+        // And the same declaration as a classic queue, which is what this library sent
+        // before today. The broker's refusal is the other half of the claim: these two
+        // declarations cannot both work, which is why the five libraries had to pick
+        // one.
+        using (var stale = await AceMqConnection.ConnectAsync(_url))
+        {
+            var refused = await Assert.ThrowsAnyAsync<Exception>(
+                () => stale.DeclareQueueAsync(queue, QueueType.Classic, asJavaWritesIt));
+
+            Assert.Contains("PRECONDITION_FAILED", refused.Message);
+            Assert.Contains("x-queue-type", refused.Message);
+            _output.WriteLine("refused:  " + refused.Message);
+        }
+    }
+
+    /// <summary>
+    /// Every queue, exchange and binding the library declares, printed.
+    /// </summary>
+    /// <remarks>
+    /// Five libraries declare this topology and no test any one of them writes can
+    /// catch a difference with the other four. What catches it is a person reading
+    /// five outputs side by side, so this prints one in a shape that can be read that
+    /// way: the queue, its type, and its arguments in a stable order.
+    /// </remarks>
+    [Fact]
+    public async Task PrintsTheWholeTopologyForComparisonWithTheOtherLibraries()
+    {
+        var queue = Name("orders.new");
+        var policy = RetryPolicy.Fixed(3, TimeSpan.FromSeconds(40))
+            .WaitInBrokerFrom(TimeSpan.FromSeconds(30));
+        var topology = Topology.Define().QueueWithRetry(queue, policy).Build();
+
+        await _mq.ApplyAsync(topology);
+        foreach (var declared in topology.Queues) _declared.Add(declared.Name);
+
+        _output.WriteLine("queues");
+        foreach (var spec in topology.Queues)
+        {
+            var arguments = spec.Arguments.Count == 0
+                ? "-"
+                : string.Join(", ", spec.Arguments
+                    .OrderBy(a => a.Key, StringComparer.Ordinal)
+                    .Select(a => $"{a.Key}={a.Value}"));
+            _output.WriteLine(
+                $"  {spec.Name}  [{spec.Type.ToString().ToLowerInvariant()}, " +
+                $"durable={spec.Durable}]  {arguments}");
+        }
+
+        _output.WriteLine("exchanges");
+        foreach (var exchange in topology.Exchanges)
+        {
+            _output.WriteLine(
+                $"  {exchange.Name}  [{exchange.Type}, durable={exchange.Durable}]");
+        }
+
+        _output.WriteLine("bindings");
+        foreach (var binding in topology.Bindings)
+        {
+            _output.WriteLine(
+                $"  {binding.Queue}  <- {binding.Exchange}  on '{binding.RoutingKey}'");
+        }
+
+        // The shape itself, so that a rung or a dead-letter queue changing type is a
+        // failure rather than a line somebody did not read.
+        Assert.Equal(QueueType.Quorum, topology.Queues.Single(q => q.Name == queue).Type);
+        Assert.All(
+            topology.Queues.Where(q => q.Name != queue),
+            q => Assert.Equal(QueueType.Classic, q.Type));
+        Assert.Equal(
+            new[] { "acemq.dlx", "acemq.retry" },
+            topology.Exchanges.Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray());
+    }
+
     [Fact]
     public async Task DeadLettersByRepublishingWithTheReasonAttached()
     {
@@ -399,8 +531,13 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         // below asks for its depth: a passive declare of a queue that does not exist
         // yet is a 404 that closes the channel it ran on, and the race is this test's
         // rather than the library's.
+        //
+        // Classic, explicitly, because that is what the failure path declares a
+        // dead-letter queue as. Declaring it here on the library default — quorum
+        // since source queues became quorum — makes the consumer's own declare a
+        // PRECONDITION_FAILED, and the message never arrives.
         var dead = AceMq.Amqp.Naming.DeadLetterQueue(queue);
-        await _mq.DeclareQueueAsync(dead);
+        await _mq.DeclareQueueAsync(dead, QueueType.Classic, null);
         _declared.Add(dead);
 
         using (var consumer = await _mq.ConsumeAsync<string>(

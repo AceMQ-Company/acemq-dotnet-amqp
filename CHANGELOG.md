@@ -26,6 +26,34 @@ While the version is `0.x` the public API may change in any release.
 > queue's arguments in place and the declare is refused with
 > `PRECONDITION_FAILED`.
 
+> ### ⚠ Migrating: a source queue is now a quorum queue
+>
+> `Topology.Builder.Queue(name)`, `QueueWithDeadLetter(name)`,
+> `QueueWithRetry(name, policy)` and `AceMqConnection.DeclareQueueAsync(name)`
+> declared a classic queue. They now declare a durable **quorum** queue, which is
+> what the Java, Go, Python and Ruby libraries declare.
+>
+> This is about two services sharing a queue rather than about replication. A
+> queue's type is fixed when it is created, so a Java service declaring `orders`
+> as quorum and a .NET service declaring the same name as classic do not get one
+> queue each: the second declare is refused and that service cannot consume at
+> all.
+>
+> **A queue that already exists as classic cannot be redeclared as quorum.** The
+> broker refuses the declare with `PRECONDITION_FAILED` and the application does
+> not start. Such a queue has to be drained and recreated — there is no in-place
+> conversion, and this library will not delete a queue that has messages in it on
+> a declaration's behalf. Where that is not acceptable, ask for the old type
+> explicitly: `Queue(name, QueueType.Classic)`,
+> `QueueWithRetry(name, policy, QueueType.Classic, null)` and
+> `DeclareQueueAsync(name, QueueType.Classic, null)` all still do exactly what
+> they did.
+>
+> The retry rungs, `{name}.dlq` and `{name}.parked` are **unchanged and still
+> classic**, as they are in every other AceMQ library, so nothing already on a
+> broker has to move. Reply queues are classic too, and asked for explicitly:
+> RabbitMQ does not allow a quorum queue to be exclusive or auto-delete.
+
 ### Added
 
 - **A retry ladder.** Delays at or above 30 seconds wait in the broker, in a
@@ -60,6 +88,13 @@ While the version is `0.x` the public API may change in any release.
   TimeSpan.Zero` means never give up on age, matching the other libraries.
 - The in-memory transport honours `x-message-ttl`, so it stops certifying code
   that a real broker breaks.
+- **A source queue is declared as a durable quorum queue**, matching the other
+  four libraries, and the retry rungs, `{name}.dlq` and `{name}.parked` stay
+  classic for the same reason. See the migration note above.
+- `Requester` declares its reply queue as `QueueType.Classic` explicitly instead
+  of taking the library default, because a quorum queue cannot be exclusive or
+  auto-delete and a reply queue holds answers nobody will read once the process
+  asking is gone.
 
 ### Fixed
 

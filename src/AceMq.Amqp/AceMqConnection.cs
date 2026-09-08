@@ -113,8 +113,19 @@ public sealed class AceMqConnection : IDisposable
         return this;
     }
 
+    /// <summary>Declares a durable quorum queue.</summary>
+    /// <remarks>
+    /// Quorum is the default for the same two reasons it is the default in
+    /// <see cref="Topology.Builder.Queue(string)"/> and in Java's
+    /// <c>AceMq.declareQueue(String)</c>: a queue that survives losing its node is
+    /// what almost everyone wants and almost nobody remembers to ask for, and the
+    /// type is part of what two services sharing a queue have to agree on. Pass
+    /// <see cref="QueueType.Classic"/> to the overload where classic is wanted —
+    /// which it is for anything exclusive or auto-delete, since RabbitMQ refuses a
+    /// quorum queue declared either way.
+    /// </remarks>
     public Task<AceMqConnection> DeclareQueueAsync(string name) =>
-        DeclareQueueAsync(name, QueueType.Classic, null);
+        DeclareQueueAsync(name, QueueType.Quorum, null);
 
     public async Task<AceMqConnection> DeclareQueueAsync(
         string name, QueueType type, IReadOnlyDictionary<string, object>? arguments)

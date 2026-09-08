@@ -82,6 +82,11 @@ public sealed class Pipeline<T> : IDisposable
 
     internal async Task StartAsync()
     {
+        // Quorum, from the library default. A pipeline queue holds work that has
+        // already passed earlier steps, so losing the node holding it loses
+        // partly-finished runs — and the steps that already succeeded would have to be
+        // repeated, which is exactly what a non-idempotent first step cannot survive.
+        // Java's Pipeline declares these queues quorum for the same reason.
         foreach (var step in _steps)
         {
             await _mq.DeclareQueueAsync(QueueFor(step.Name)).ConfigureAwait(false);

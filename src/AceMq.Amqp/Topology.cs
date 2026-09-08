@@ -133,8 +133,28 @@ public sealed class Topology
             return Exchange(name, type);
         }
 
+        /// <summary>A durable quorum queue, which is the default everywhere in this library.</summary>
+        /// <remarks>
+        /// <para>
+        /// Quorum because a queue that survives losing its node is what almost everyone
+        /// wants and almost nobody remembers to ask for — and because the type is part
+        /// of what two services have to agree on. A queue's type is fixed at
+        /// declaration, so a Java service declaring <c>orders</c> as quorum and a .NET
+        /// service declaring the same name as classic do not both get a queue: the
+        /// second is refused with <c>PRECONDITION_FAILED</c> and cannot consume at all.
+        /// Java has the deployments and an existing quorum queue cannot be redeclared
+        /// as classic, so this is the side that moved.
+        /// </para>
+        /// <para>
+        /// Ask for <see cref="QueueType.Classic"/> explicitly where it is wanted. It
+        /// still is, in three places this builder produces on its own — the retry
+        /// rungs, <c>{name}.dlq</c> and <c>{name}.parked</c> — and in anything that has
+        /// to be exclusive or auto-delete, which RabbitMQ does not allow a quorum queue
+        /// to be.
+        /// </para>
+        /// </remarks>
         public Builder Queue(string name) =>
-            Queue(name, QueueType.Classic, null);
+            Queue(name, QueueType.Quorum, null);
 
         public Builder Queue(string name, QueueType type) =>
             Queue(name, type, null);
@@ -175,9 +195,15 @@ public sealed class Topology
         /// places to look for one message, decided by which part of the library
         /// happened to create the queue.
         /// </para>
+        /// <para>
+        /// The queue itself is a durable quorum queue, the same default
+        /// <see cref="Queue(string)"/> uses and the same one Java's
+        /// <c>queueWithDeadLetter</c> uses. The two queues it dead-letters into are
+        /// classic, deliberately — see <c>WithDeadLetterQueues</c>.
+        /// </para>
         /// </remarks>
         public Builder QueueWithDeadLetter(string name) =>
-            QueueWithDeadLetter(name, QueueType.Classic, null);
+            QueueWithDeadLetter(name, QueueType.Quorum, null);
 
         public Builder QueueWithDeadLetter(
             string name, QueueType type, IReadOnlyDictionary<string, object>? arguments)
@@ -206,9 +232,23 @@ public sealed class Topology
         /// exchange they are reached through.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// Neither of them gets dead-lettering of its own. A dead-letter queue that
         /// dead-letters is a loop, and a loop is how a poison message becomes an
         /// outage.
+        /// </para>
+        /// <para>
+        /// Both are classic where the source queue is quorum, and that is a decision
+        /// rather than an oversight. Java's <c>RetryTopology</c> declares
+        /// <c>{name}.dlq</c> and <c>{name}.parked</c> as <c>QueueType.CLASSIC</c>, so
+        /// a queue of either name already exists as classic on any broker a Java
+        /// service has touched; declaring it quorum here would be refused with
+        /// <c>PRECONDITION_FAILED</c>, which is the exact failure this alignment
+        /// exists to remove. It is also the right shape on its own terms: these hold
+        /// what nobody could process, they are read by a person rather than by a
+        /// service, and replicating them buys availability for traffic that has
+        /// already stopped flowing.
+        /// </para>
         /// </remarks>
         private Builder WithDeadLetterQueues(string name)
         {
@@ -245,11 +285,16 @@ public sealed class Topology
         /// deployment plan, and that one is the version that runs when nobody
         /// reviewed anything.
         /// </para>
+        /// <para>
+        /// The queue being consumed is a durable quorum queue, as everywhere else
+        /// here. The rungs are not: each is classic, for the same reason the
+        /// dead-letter queues are.
+        /// </para>
         /// </remarks>
         /// <param name="name">The queue being consumed.</param>
         /// <param name="policy">Whose schedule the rungs are.</param>
         public Builder QueueWithRetry(string name, RetryPolicy policy) =>
-            QueueWithRetry(name, policy, QueueType.Classic, null);
+            QueueWithRetry(name, policy, QueueType.Quorum, null);
 
         public Builder QueueWithRetry(
             string name, RetryPolicy policy, QueueType type,
@@ -273,6 +318,14 @@ public sealed class Topology
                 Bind(name, RetryLadder.RetryExchange, RetryLadder.RoutingKeyFor(name));
             }
 
+            // Classic, and pinned rather than inherited from the source queue's type.
+            // Java's RetryTopology declares every rung QueueType.CLASSIC, and a rung is
+            // the queue two services are most likely to declare independently — the
+            // consumer declares its own ladder at start-up — so a disagreement about
+            // its type is a PRECONDITION_FAILED at the moment a service starts. A rung
+            // also holds nothing worth replicating: a message sits in it doing nothing
+            // until a time-to-live sends it home, and losing the node means losing a
+            // wait rather than losing the work.
             foreach (var rung in ladder.Rungs)
             {
                 Queue(rung.Queue, QueueType.Classic, rung.Arguments);

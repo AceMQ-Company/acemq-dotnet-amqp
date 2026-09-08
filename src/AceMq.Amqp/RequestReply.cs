@@ -58,7 +58,16 @@ public sealed class Requester : IDisposable
         // One queue per requester, named uniquely so two processes never read each
         // other's replies.
         var replyQueue = "acemq.reply." + Guid.NewGuid().ToString("N");
-        await mq.DeclareQueueAsync(replyQueue).ConfigureAwait(false);
+
+        // Classic, asked for rather than inherited. A reply queue belongs to one
+        // process and holds answers nobody will read once that process is gone, so
+        // there is nothing here worth replicating across a cluster — and the moment
+        // this queue grows the exclusive or auto-delete flag it deserves, quorum stops
+        // being an option at all: RabbitMQ refuses a quorum queue declared either way.
+        // Java's Requester declares the same queue QueueType.CLASSIC for the same
+        // reason. Leaving it on the library default would have made this queue quorum
+        // the day that default changed, which is the failure worth naming here.
+        await mq.DeclareQueueAsync(replyQueue, QueueType.Classic, null).ConfigureAwait(false);
 
         var requester = new Requester(mq, codec, replyQueue);
 

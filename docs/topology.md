@@ -47,11 +47,11 @@ Console.WriteLine(plan.Render());
 ```
 
 ```
-? exchange orders (topic)
-  queue orders.placed (classic)
-+ queue orders.placed.dead (classic)
-! queue orders.parked (classic) -- PRECONDITION_FAILED - inequivalent arg 'x-message-ttl'
-? bind orders.placed.dead to orders.placed.dlx on ''
+? exchange acemq.dlx (direct)
+  queue orders.placed (quorum)
++ queue orders.placed.dlq (classic)
+! queue orders.placed.parked (classic) -- PRECONDITION_FAILED - inequivalent arg 'x-message-ttl'
+? bind orders.placed.dlq to acemq.dlx on 'orders.placed.dlq'
 ```
 
 `+` would be created, a blank is already there and matches, `!` exists but differs,
@@ -124,19 +124,33 @@ test, because it passes and then the deployment does not.
 ## Queue types
 
 ```csharp
-await mq.DeclareQueueAsync("orders.placed", QueueType.Quorum, null);
+await mq.DeclareQueueAsync("orders.placed", QueueType.Classic, null);
 ```
 
 | | |
 |---|---|
-| `Classic` | the default |
-| `Quorum` | replicated, and the right choice when losing messages is not acceptable |
+| `Quorum` | the default: replicated, and what every AceMQ library declares a source queue as |
+| `Classic` | one node, and what the library's own retry and dead-letter queues are |
 | `Stream` | append-only, re-readable from an offset |
 
 **A queue's type is fixed when it is created.** Declaring an existing queue with a
 different type fails rather than converting it. That is the broker protecting the
 messages already in it, not an error to work around — moving a queue between types
 means draining it and declaring a new one.
+
+Which is why the default is not a matter of taste. `Topology.Builder.Queue`,
+`QueueWithDeadLetter`, `QueueWithRetry` and `DeclareQueueAsync(name)` all declare a
+durable quorum queue, because the Java, Go, Python and Ruby libraries do, and a
+queue two services disagree about is a queue the second one cannot consume: it is
+refused with `PRECONDITION_FAILED` at declaration and the consumer does not start.
+
+Three kinds of queue stay classic, deliberately:
+
+- the retry rungs, `{queue}.dlq` and `{queue}.parked`, which the library declares
+  itself and every other AceMQ library declares as classic;
+- anything **exclusive or auto-delete** — RabbitMQ does not allow a quorum queue to
+  be either, so a reply queue or a per-connection temporary queue must be classic.
+  `Requester` asks for it explicitly rather than taking the default.
 
 ## Arguments
 

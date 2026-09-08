@@ -113,6 +113,10 @@ public sealed class OrderedQueue<T> : IDisposable, IHealthContributor
 
     internal async Task DeclareAsync()
     {
+        // Quorum, from the library default, because a partition is a sequence: losing
+        // the node holding it loses the middle of somebody's order history, and the
+        // messages that follow arrive against a gap nobody can reconstruct. Java's
+        // OrderedQueue declares its partitions quorum for the same reason.
         for (var i = 0; i < Partitions; i++)
         {
             await _mq.DeclareQueueAsync(QueueFor(i)).ConfigureAwait(false);

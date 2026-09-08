@@ -268,6 +268,106 @@ public sealed class RoutingAndDriftTests : IDisposable
         Assert.Contains("declared as classic, asked for quorum", plan.Render());
     }
 
+    // ---- queue types, which five libraries have to agree on ---------------
+
+    /// <summary>
+    /// A source queue is quorum, everywhere it can be named.
+    /// </summary>
+    /// <remarks>
+    /// The point of this test is interoperability rather than durability. A queue's
+    /// type is fixed when it is created, so a Java service declaring <c>orders</c> as
+    /// quorum and a .NET service declaring the same name as classic do not both get a
+    /// queue: the second is refused with <c>PRECONDITION_FAILED</c> and cannot consume
+    /// at all. Java's <c>Topology.Builder.queue</c> has said quorum since before it
+    /// had deployments, and an existing quorum queue cannot be redeclared as classic,
+    /// so this is the side that moved.
+    /// </remarks>
+    [Fact]
+    public void DeclaresEverySourceQueueAsQuorum()
+    {
+        var plain = Topology.Define().Queue("orders").Build();
+        Assert.Equal(QueueType.Quorum, plain.Queues.Single().Type);
+
+        var dead = Topology.Define().QueueWithDeadLetter("orders").Build();
+        Assert.Equal(QueueType.Quorum, dead.Queues.Single(q => q.Name == "orders").Type);
+
+        var retry = Topology.Define()
+            .QueueWithRetry("orders", RetryPolicy.Fixed(3, TimeSpan.FromMinutes(1)))
+            .Build();
+        Assert.Equal(QueueType.Quorum, retry.Queues.Single(q => q.Name == "orders").Type);
+    }
+
+    /// <summary>
+    /// Everything the library creates around a source queue stays classic.
+    /// </summary>
+    /// <remarks>
+    /// Java's <c>RetryTopology</c> declares the rungs, <c>{q}.dlq</c> and
+    /// <c>{q}.parked</c> as <c>QueueType.CLASSIC</c>, so any broker a Java service has
+    /// touched already has them as classic queues. Declaring them quorum here would be
+    /// the same <c>PRECONDITION_FAILED</c> this change exists to remove, pointed the
+    /// other way.
+    /// </remarks>
+    [Fact]
+    public void KeepsTheRungsAndTheDeadLetterQueuesClassic()
+    {
+        var topology = Topology.Define()
+            .QueueWithRetry("orders", RetryPolicy.Fixed(3, TimeSpan.FromMinutes(1)))
+            .Build();
+
+        foreach (var queue in topology.Queues.Where(q => q.Name != "orders"))
+        {
+            Assert.Equal(QueueType.Classic, queue.Type);
+        }
+
+        // Named rather than only counted, so that a rung quietly disappearing from the
+        // ladder cannot pass this.
+        Assert.Contains(topology.Queues, q => q.Name == "orders.dlq");
+        Assert.Contains(topology.Queues, q => q.Name == "orders.parked");
+        Assert.Contains(topology.Queues, q => q.Name == "orders.retry.1m");
+    }
+
+    [Fact]
+    public void StillDeclaresClassicWhenClassicIsAskedFor()
+    {
+        var plain = Topology.Define().Queue("orders", QueueType.Classic).Build();
+        Assert.Equal(QueueType.Classic, plain.Queues.Single().Type);
+
+        var retry = Topology.Define()
+            .QueueWithRetry(
+                "orders", RetryPolicy.Fixed(3, TimeSpan.FromMinutes(1)), QueueType.Classic, null)
+            .Build();
+        Assert.Equal(QueueType.Classic, retry.Queues.Single(q => q.Name == "orders").Type);
+
+        // And a stream is still a stream. The type argument is not a two-valued flag.
+        var stream = Topology.Define().Queue("events", QueueType.Stream).Build();
+        Assert.Equal(QueueType.Stream, stream.Queues.Single().Type);
+    }
+
+    /// <summary>
+    /// A reply queue is classic, and asked for rather than inherited.
+    /// </summary>
+    /// <remarks>
+    /// This is the one the change could have broken silently. RabbitMQ refuses a
+    /// quorum queue that is exclusive or auto-delete, so a per-process queue that
+    /// picked up the new default — here, or the day somebody adds the auto-delete flag
+    /// a reply queue deserves — would stop being declarable at all. Java's
+    /// <c>Requester</c> pins the same queue to classic for the same reason.
+    /// </remarks>
+    [Fact]
+    public async Task DeclaresAReplyQueueAsClassic()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        using var requester = await mq.RequesterAsync();
+
+        // Asked of the broker rather than of the builder: this queue is declared on
+        // the way past, by the requester itself, and never appears in a Topology.
+        var plan = await mq.ApplyAsync(
+            Topology.Define().Queue(requester.ReplyQueue).Build(), ApplyMode.DryRun);
+
+        Assert.True(plan.HasDrift);
+        Assert.Contains("declared as classic, asked for quorum", plan.Render());
+    }
+
     // ---- shared schema registry ------------------------------------------
 
     [Fact]
