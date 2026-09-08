@@ -105,19 +105,6 @@ public sealed class ContractConformanceTests
         throw new InvalidOperationException($"no fixture schedule named '{name}'");
     }
 
-    /// <summary>
-    /// Java's default age ceiling, which this library does not have.
-    /// </summary>
-    /// <remarks>
-    /// Java's <c>RetryPolicy</c> constructs every policy with
-    /// <c>Duration.ofDays(365)</c> as its maximum message age, so the fixture records
-    /// a real limit of 31,536,000,000ms on every policy that was never asked to give
-    /// up on age at all. This library — and, per its own comment, the Python and Ruby
-    /// ones — use zero as "never", so a message that is exactly a year old is still
-    /// retried here and dead-lettered there. See
-    /// <see cref="EveryRetryDecisionMatchesExceptTheAgeCeilingOnlyJavaApplies"/>.
-    /// </remarks>
-    private const long JavaDefaultMaxMessageAgeMillis = 31_536_000_000L;
 
     // ---- retrySchedules --------------------------------------------------
 
@@ -198,7 +185,6 @@ public sealed class ContractConformanceTests
     {
         var fixture = ScheduleNamed(name);
         var policy = PolicyNamed(name);
-        var fixtureLimit = fixture.GetProperty("maxMessageAgeMillis").GetInt64();
 
         // Every row where this library and the fixture answer differently, collected
         // rather than asserted one at a time, so that the set of disagreements can be
@@ -224,41 +210,52 @@ public sealed class ContractConformanceTests
 
         Assert.True(rows > 0, "the fixture recorded no decisions for " + name);
 
-        // The only disagreement, and only for the policies that were never given an
-        // age limit at all: Java gives every policy a default ceiling of 365 days, so
-        // it stops retrying a message that has reached exactly that age. This library
-        // treats "no limit" as no limit, and keeps going. The two rows are the ones
-        // the fixture generator produced by walking to the limit it believed in.
-        var expected = new List<string>();
-        if (fixtureLimit == JavaDefaultMaxMessageAgeMillis && policy.MaxAttempts > 1)
-        {
-            expected.Add(
-                $"attempt=1 age={JavaDefaultMaxMessageAgeMillis}ms fixture=False dotnet=True");
-            expected.Add(
-                $"attempt={policy.MaxAttempts - 1} age={JavaDefaultMaxMessageAgeMillis}ms "
-                + "fixture=False dotnet=True");
-        }
-
-        Assert.Equal(expected, disagreements);
+        // No row is exempt any more. Two used to be, for every policy that was never
+        // given an age limit: Java gave each one a default ceiling of 365 days and
+        // stopped retrying a message that reached exactly that age, while this library
+        // read "no limit" as no limit and carried on. Java now agrees, so the
+        // exemption went with the divergence and every row has to match.
+        Assert.Empty(disagreements);
     }
 
     [Fact]
-    public void ThisLibraryHasNoDefaultAgeCeilingWhereJavaHasOneOfAYear()
+    public void NoPolicyCarriesAnAgeCeilingNobodyAskedFor()
     {
-        // The disagreement above, stated once as the property it is rather than as a
-        // list of rows. Zero means never here, in Python and in Ruby; Java has no way
-        // to say never and uses 365 days for it, which then leaves the Java library as
-        // the only one of the five that will refuse to retry a very old message.
+        // This used to assert the opposite. Java had no way to say "never" and used
+        // 365 days for it, so it was the only one of the five that refused to retry a
+        // very old message, and the fixture recorded that. Java now defaults to zero
+        // and reads zero as no limit, like this library, Go, Python and Ruby.
         Assert.Equal(TimeSpan.Zero, RetryPolicy.Exponential(5, TimeSpan.FromSeconds(1)).MaxMessageAge);
         Assert.Equal(TimeSpan.Zero, RetryPolicy.Fixed(4, TimeSpan.FromSeconds(30)).MaxMessageAge);
         Assert.Equal(TimeSpan.Zero, RetryPolicy.None().MaxMessageAge);
 
+        // hasMaxMessageAge is how the file distinguishes "no limit" from a limit of
+        // zero, which read the wrong way round would abandon everything rather than
+        // nothing. A year is the age that used to be the disagreement, so it is the
+        // one worth asserting still retries.
+        var aYear = TimeSpan.FromDays(365);
+        var checkedAny = false;
+
         foreach (var schedule in Section("retrySchedules").EnumerateArray())
         {
             var recorded = schedule.GetProperty("maxMessageAgeMillis").GetInt64();
-            var asked = schedule.GetProperty("name").GetString() == "exponential-give-up-on-age";
-            Assert.Equal(asked ? 120_000L : JavaDefaultMaxMessageAgeMillis, recorded);
+            if (schedule.GetProperty("hasMaxMessageAge").GetBoolean())
+            {
+                Assert.True(recorded > 0);
+                continue;
+            }
+
+            Assert.Equal(0L, recorded);
+
+            var policy = PolicyNamed(schedule.GetProperty("name").GetString()!);
+            Assert.Equal(TimeSpan.Zero, policy.MaxMessageAge);
+            if (policy.MaxAttempts < 2) continue; // None() stops on attempts first
+
+            Assert.NotNull(policy.NextWait(1, aYear));
+            checkedAny = true;
         }
+
+        Assert.True(checkedAny, "no unlimited policy was exercised, so this proved nothing");
 
         // Where an age limit was actually asked for, the two agree exactly.
         var giveUp = PolicyNamed("exponential-give-up-on-age");
