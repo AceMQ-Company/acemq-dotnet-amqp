@@ -14,6 +14,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using AceMq.Amqp;
 
 namespace AceMq.Amqp.Tests;
@@ -432,6 +433,96 @@ public sealed class TelemetryTests : IDisposable
     }
 
     [Fact]
+    public async Task SeparatesAParkedMessageFromADeadLetteredOneByItsOutcomeAndNotItsCounter()
+    {
+        // A park is a message nothing could read; a dead-letter is a handler that failed
+        // as many times as the policy allows. The first is somebody's deploy and the
+        // second is usually a dependency coming back on its own, so a dashboard has to
+        // be able to tell them apart -- and this library reported both as
+        // `dead_lettered`, alone among the five, until it reported `parked` here.
+        //
+        // What it must not do is split them into two counters. Both are a message set
+        // aside, and an operator asking "how much is this queue giving up on" wants one
+        // number; acemq.messages.dead.lettered.total stays that number and the outcome
+        // tag splits it.
+        var spans = new List<Activity>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a => { lock (spans) spans.Add(a); },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q, _ => Task.FromResult(Ack.Park("nothing can read this")));
+        await mq.Publisher<string>("", _q).SendAsync("hello");
+
+        await Eventually(
+            () => Taken().Any(m => m.Name == MetricNames.ConsumeTotal
+                                   && m.Tags[MetricNames.TagQueue] == _q),
+            "the park to be counted");
+
+        // The word on acemq.consume.total.
+        var consumed = Taken().First(
+            m => m.Name == MetricNames.ConsumeTotal && m.Tags[MetricNames.TagQueue] == _q);
+        Assert.Equal(MetricNames.OutcomeParked, consumed.Tags[MetricNames.TagOutcome]);
+
+        // The same counter as a dead-lettering, under the tag that tells them apart.
+        var setAside = Taken().Single(
+            m => m.Name == MetricNames.DeadLetteredTotal && m.Tags[MetricNames.TagQueue] == _q);
+        Assert.Equal(MetricNames.OutcomeParked, setAside.Tags[MetricNames.TagOutcome]);
+
+        // And the span agrees with the counter, which is the invariant this file exists
+        // for. `parked` is not an error status, for the same reason `rejected` is not:
+        // the handler meant it.
+        Activity span;
+        lock (spans)
+        {
+            span = spans.Single(a => a.DisplayName == _q + MetricNames.SpanProcessSuffix);
+        }
+
+        Assert.Equal(MetricNames.OutcomeParked, span.GetTagItem(AceMqTelemetry.AttrOutcome));
+
+        // The message still reached the parking lot, and the trace search for messages
+        // this consumer gave up on still finds it.
+        Assert.Contains(span.Events, e => e.Name == AceMqTelemetry.EventDeadLettered);
+        Assert.Equal(1, await mq.MessageCountAsync(Naming.ParkedQueue(_q)));
+    }
+
+    [Fact]
+    public void CountsARetryThatHadToWaitInTheConsumerBecauseItsRungIsMissing()
+    {
+        // acemq.retry.rung.missing was a name in MetricNames with no metric behind it:
+        // the engine raised the diagnostic and counted nothing, so the one sign of a
+        // half-declared topology reached an application that had subscribed a callback
+        // and no dashboard at all. Java, Go, Python and Ruby all count it.
+        //
+        // Driven through the emitter rather than through a consumer, because the engine
+        // path is defensive and not reachable from the public API: the ladder and the
+        // delay come from the same policy, so a wait the policy sends to the broker
+        // always has a rung. It is counted anyway for the case the comment on it names
+        // -- a ladder built from a different policy than the one deciding the delay --
+        // which is exactly the kind of thing that must not fail silently.
+        var rung = Naming.RetryQueue(_q, TimeSpan.FromSeconds(40));
+        AceMqTelemetry.RetryRungMissing(_q, rung);
+
+        var counted = Taken().Single(
+            m => m.Name == MetricNames.RungMissing && m.Tags[MetricNames.TagQueue] == _q);
+
+        // Tagged with the rung as well as the queue, because a counter saying a rung is
+        // not there is only actionable if it also says which one to declare. The delay
+        // is deliberately not a tag: a policy names a fixed handful of rungs, where a
+        // duration has no bound on its values at all.
+        Assert.Equal(rung, counted.Tags[MetricNames.TagRung]);
+        Assert.Equal(1, counted.Value);
+        Assert.DoesNotContain("40s", string.Join(",", counted.Tags.Keys));
+    }
+
+    [Fact]
     public async Task NamesEverySpanAttributeTheWayTheOtherFourLibrariesDo()
     {
         // OpenTelemetry's messaging semantic conventions, plus messaging.acemq.* for
@@ -607,6 +698,7 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("transport", MetricNames.TagTransport);
         Assert.Equal("message.type", MetricNames.TagMessageType);
         Assert.Equal("target", MetricNames.TagTarget);
+        Assert.Equal("rung", MetricNames.TagRung);
         Assert.Equal("outcome", MetricNames.TagOutcome);
         Assert.Equal("pipeline", MetricNames.TagPipeline);
         Assert.Equal("step", MetricNames.TagStep);
@@ -628,6 +720,50 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal(" publish", MetricNames.SpanPublishSuffix);
         Assert.Equal(" process", MetricNames.SpanProcessSuffix);
         Assert.Equal(" request", MetricNames.SpanRequestSuffix);
+
+        // The assertions above pin each name this library declares to its value. On
+        // their own they cannot catch the drift that actually happens, which is Java
+        // growing a constant this file never mirrors: TAG_RUNG was added there, was
+        // missing here, and every assertion above still passed. So the check below is
+        // the one that fails in that case -- a literal set difference in both
+        // directions between the values Java declares and the values this class does,
+        // rather than a sample of them.
+        //
+        // `java` is transcribed from org.acemq.amqp.api.MetricNames. Mirroring a new
+        // Java constant means adding it in both places, and adding it in only one is
+        // exactly what this fails on.
+        var java = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "acemq.publish.duration", "acemq.publish.total",
+            "acemq.consume.duration", "acemq.consume.total",
+            "acemq.consume.attempts", "acemq.consume.in.flight",
+            "acemq.messages.retried.total", "acemq.messages.dead.lettered.total",
+            "acemq.messages.set.aside.failed", "acemq.retry.rung.missing",
+            "acemq.request.duration", "acemq.request.total",
+            "acemq.outbox.lag", "acemq.outbox.total",
+            "acemq.pipeline.run.duration", "acemq.pipeline.run.total",
+            "exchange", "routing.key", "queue", "transport", "message.type",
+            "target", "rung", "outcome", "pipeline", "step",
+            "confirmed", "unroutable", "failed", "acked", "retried",
+            "dead_lettered", "parked", "rejected", "answered", "timed_out",
+            "published", "completed", "ended_early",
+            " publish", " process", " request",
+        };
+
+        // Meter and ActivitySource are the two members with no Java counterpart -- they
+        // name .NET plumbing where Java names a Micrometer registry the application owns
+        // -- so they are excluded rather than allowed to fail the difference.
+        var mine = new HashSet<string>(
+            typeof(MetricNames)
+                .GetFields(BindingFlags.Public | BindingFlags.Static)
+                .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+                .Where(f => f.Name != nameof(MetricNames.Meter)
+                            && f.Name != nameof(MetricNames.ActivitySource))
+                .Select(f => (string)f.GetRawConstantValue()!),
+            StringComparer.Ordinal);
+
+        Assert.Empty(java.Except(mine, StringComparer.Ordinal));
+        Assert.Empty(mine.Except(java, StringComparer.Ordinal));
     }
 
     [Fact]

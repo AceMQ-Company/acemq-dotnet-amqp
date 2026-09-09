@@ -155,7 +155,11 @@ public static class AceMqTelemetry
         MetricNames.RetriedTotal, "messages", "Messages sent back for another attempt");
 
     internal static readonly Counter<long> DeadLetteredTotal = Meter.CreateCounter<long>(
-        MetricNames.DeadLetteredTotal, "messages", "Messages given up on");
+        MetricNames.DeadLetteredTotal, "messages", "Messages sent to a dead-letter or parking queue");
+
+    internal static readonly Counter<long> RungMissing = Meter.CreateCounter<long>(
+        MetricNames.RungMissing, "retries",
+        "Retries that waited in the consumer because their rung queue is missing");
 
     internal static readonly Histogram<double> RequestDuration = Meter.CreateHistogram<double>(
         MetricNames.RequestDuration, "s", "Round trip of a request, as the caller experienced it");
@@ -423,8 +427,9 @@ public static class AceMqTelemetry
     /// <summary>Records that the engine gave up on a message, and why.</summary>
     /// <remarks>
     /// The outcome tag is set here as well as counted afterwards, so the span of a
-    /// message dead-lettered on a path that records no metrics — a body that would
-    /// not decode, parked before a handler ever ran — still says what happened to it.
+    /// message dead-lettered on a path that records no metrics still says what happened
+    /// to it. A park is <see cref="MessageParked"/> rather than this: both reach a
+    /// set-aside queue, and the outcome is what tells an operator which.
     /// </remarks>
     internal static void MessageDeadLettered(
         Activity? span, string destination, string reason)
@@ -437,6 +442,57 @@ public static class AceMqTelemetry
             { EventTagDestination, destination },
             { EventTagReason, reason },
         }));
+    }
+
+    /// <summary>Records that a message was put in the parking lot, and why.</summary>
+    /// <remarks>
+    /// <para>
+    /// Separate from <see cref="MessageDeadLettered"/> because the two are different
+    /// operational events however similar the mechanics look. Dead-lettered says a
+    /// handler failed as many times as the policy allows, which is usually a dependency
+    /// that will come back. Parked says the payload could not be read at all, which no
+    /// number of retries will change and which is somebody's deploy. The span therefore
+    /// reads <c>parked</c>, and — like <see cref="MessageRejected"/> and for the same
+    /// reason — that is not an error status: the message was set aside on purpose.
+    /// </para>
+    /// <para>
+    /// The same <c>message.dead_lettered</c> event as the other two set-aside paths, so
+    /// one trace query still finds every message this consumer gave up on; the outcome
+    /// tag is what splits them. Java, Go, Python and Ruby all report a park this way.
+    /// </para>
+    /// </remarks>
+    internal static void MessageParked(
+        Activity? span, string destination, string reason)
+    {
+        if (span == null) return;
+
+        Outcome(span, MetricNames.OutcomeParked);
+        span.AddEvent(new ActivityEvent(EventDeadLettered, tags: new ActivityTagsCollection
+        {
+            { EventTagDestination, destination },
+            { EventTagReason, reason },
+        }));
+    }
+
+    /// <summary>
+    /// Records a retry that had to wait in the consumer because its rung queue is not
+    /// on the broker.
+    /// </summary>
+    /// <remarks>
+    /// The rung is a tag and the delay is not, which is the same division Java makes. A
+    /// policy names a fixed handful of rungs, so the rung is bounded and is the one an
+    /// operator acts on — it is the queue to declare. The delay is whatever arithmetic
+    /// produced, and a tag whose values are durations has no bound on it at all; it goes
+    /// in the diagnostic event's message instead, which tolerates unbounded text.
+    /// </remarks>
+    internal static void RetryRungMissing(string queue, string rung)
+    {
+        var tags = new TagList
+        {
+            { MetricNames.TagQueue, queue },
+            { MetricNames.TagRung, rung },
+        };
+        RungMissing.Add(1, tags);
     }
 
     /// <summary>Records that a handler gave up on a message by name, and why.</summary>

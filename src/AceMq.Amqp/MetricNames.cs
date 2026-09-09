@@ -163,6 +163,16 @@ public static class MetricNames
     /// </summary>
     public const string TagTarget = "target";
 
+    /// <summary>
+    /// The retry rung a wait belonged in, such as <c>orders.new.retry.40s</c>.
+    /// </summary>
+    /// <remarks>
+    /// Bounded by the retry policy, which names a fixed handful of rungs, so it is safe
+    /// as a tag. It is what makes <see cref="RungMissing"/> actionable: the counter says
+    /// a rung is not there and this says which one to declare.
+    /// </remarks>
+    public const string TagRung = "rung";
+
     /// <summary>What happened. One of the <c>Outcome*</c> constants below.</summary>
     public const string TagOutcome = "outcome";
 

@@ -73,6 +73,17 @@ While the version is `0.x` the public API may change in any release.
   that exists, is owed to somebody, and appears in no queue depth anywhere.
 - **`Envelope.Age`**, the elapsed time since `FirstSeen`, matching Java's
   `Envelope.age()`.
+- **`acemq.retry.rung.missing` is now a metric and not just a name.** The constant
+  was in `MetricNames` and the engine raised the `AceMqDiagnostics.RungMissing`
+  event, but nothing incremented a counter — so the one sign of a half-declared
+  retry topology reached an application that had subscribed a diagnostics callback
+  and no dashboard at all. Java, Go, Python and Ruby all count it. It is tagged
+  `queue` and `rung`, and the `rung` tag is the queue to declare, which is what
+  makes the count actionable rather than merely alarming. The delay is deliberately
+  not a tag: a policy names a fixed handful of rungs, where a duration has no bound
+  on its values.
+- **`MetricNames.TagRung`**, the `rung` tag key, mirroring Java's `TAG_RUNG`. It was
+  the one constant Java had that this library did not.
 
 ### Changed
 
@@ -96,12 +107,17 @@ While the version is `0.x` the public API may change in any release.
   missing fourteen of its members — the request, outbox and pipeline names, the
   `pipeline` and `step` tag keys, five outcome values and the request span suffix.
   All of them are there, and `TelemetryTests` asserts every single one rather than
-  a sample, which is what the old claim needed in order not to rot again.
+  a sample, which is what the old claim needed in order not to rot again. Asserting
+  each name was still not enough on its own — `TAG_RUNG` was added to Java, was
+  missing here, and every one of those assertions passed — so the test now also does
+  a literal set difference in **both** directions between the values Java declares
+  and the values this class does. A constant added on either side and not the other
+  fails it.
 
 - **A handler's own give-up is reported as `rejected`, not `dead_lettered`.**
   `Ack.DeadLetter` now tags `acemq.consume.total` and its span `rejected`, and
   `dead_lettered` is left to mean what it means in Go, Python and Ruby: the engine
-  giving up, when a `RetryPolicy` runs out of attempts or a message is parked. This
+  giving up, when a `RetryPolicy` runs out of attempts. This
   library and Java reported both as `dead_lettered` — three libraries against two,
   and the three were right, because a decision somebody took about a message and an
   exhaustion the engine reached are different events with different answers. Java is
@@ -114,6 +130,30 @@ While the version is `0.x` the public API may change in any release.
   `outcome = rejected`. A panel or an alert built on the old numbers will show
   dead-letters falling and rejections appearing without anything changing in your
   service; add the two together to get the old figure.
+
+- **A parked message is reported as `parked`, not `dead_lettered`.** `Ack.Park` and
+  a body the codec cannot decode now tag `acemq.consume.total` and their span
+  `parked`. `MetricNames.OutcomeParked` existed and was used nowhere, which left
+  this library the last of the five to put a payload nothing can read and a
+  dependency that stayed down on the same series — and those are different problems
+  for different people: a park is a schema or a deploy and will not fix itself,
+  where an exhausted policy usually comes back on its own. Sharing one outcome value
+  made neither actionable.
+
+  What did **not** change is the total. A park still increments
+  `acemq.messages.dead.lettered.total`, now tagged `outcome = parked` alongside the
+  engine's give-ups tagged `outcome = dead_lettered`, which is the rule Java states
+  in `MicrometerTelemetry.messageParked` and Go, Python and Ruby follow: both are a
+  message set aside, and an operator asking "how much is this queue giving up on"
+  wants one number that can then be split. `parked` is not an error status on the
+  span, for the same reason `rejected` is not — the message was set aside on
+  purpose — and a park still records the `message.dead_lettered` span event, so one
+  trace query still finds every message a consumer gave up on.
+
+  **This is visible on a dashboard.** `acemq.consume.total` moves parked deliveries
+  from `outcome = dead_lettered` to `outcome = parked`; sum the two for the old
+  figure. `acemq.messages.dead.lettered.total` keeps the same total and gains an
+  `outcome` tag, so anything reading it unfiltered is unaffected.
 
 - **Diagnostic codes are dotted, not hyphenated.** `acemq.message.dead-lettered`,
   `acemq.retry.rung-missing` and `acemq.schedule.foreign-message` are now

@@ -25,7 +25,8 @@ service rewritten from Java to C# keeps its observability.
 | `acemq.consume.attempts` | histogram, attempts | queue, message.type, outcome |
 | `acemq.consume.in.flight` | gauge | — |
 | `acemq.messages.retried.total` | counter | queue, message.type |
-| `acemq.messages.dead.lettered.total` | counter | queue, message.type |
+| `acemq.messages.dead.lettered.total` | counter | queue, message.type, outcome |
+| `acemq.retry.rung.missing` | counter | queue, rung |
 | `acemq.request.duration` | histogram, seconds | routing.key, message.type, outcome |
 | `acemq.request.total` | counter | routing.key, message.type, outcome |
 | `acemq.outbox.lag` | histogram, seconds | exchange, routing.key |
@@ -40,14 +41,23 @@ and an outage. Up to 0.3.0 a broker's nack was tagged `rejected` here — a valu
 other library writes, and one that belongs to a delivery — so a panel filtering
 publishes by outcome dropped every refusal.
 
-Consume outcomes are `acked`, `retried`, `rejected` and `dead_lettered`. **`rejected`
-is a handler's own decision — `Ack.DeadLetter`, or a release — and `dead_lettered` is
-the engine giving up when a `RetryPolicy` runs out of attempts.** Both messages end in
-the same dead-letter queue; only the word keeps them apart, and the difference is the
-only question the two counts are ever asked: an unprocessable message is a producer
-problem, an exhausted policy is usually a dependency that is down. Request
-outcomes are `answered`, `timed_out` and `failed`. An outbox record is `published` or
-`failed`. A pipeline run is `completed` or `ended_early`.
+Consume outcomes are `acked`, `retried`, `rejected`, `dead_lettered` and `parked`.
+**`rejected` is a handler's own decision — `Ack.DeadLetter`, or a release — and
+`dead_lettered` is the engine giving up when a `RetryPolicy` runs out of attempts.**
+Both messages end in the same dead-letter queue; only the word keeps them apart, and
+the difference is the only question the two counts are ever asked: an unprocessable
+message is a producer problem, an exhausted policy is usually a dependency that is
+down. **`parked` is a message nothing could read** — `Ack.Park`, or a body that will
+not decode — which goes to `{queue}.parked` instead, because no number of retries
+will change it and it is somebody's deploy rather than an outage. Request outcomes
+are `answered`, `timed_out` and `failed`. An outbox record is `published` or `failed`.
+A pipeline run is `completed` or `ended_early`.
+
+`acemq.retry.rung.missing` counts retries that had to wait in the consumer because
+the rung queue they belonged in is not on the broker. Nothing breaks — the message is
+still retried and the wait still happens — but the reason the rung exists is lost: a
+consumer restarted mid-wait turns a five-minute backoff into no backoff at all. The
+`rung` tag is the queue to declare, which is what makes the count actionable.
 
 `acemq.outbox.lag` is the one number that reveals a stopped relay. A committed,
 unpublished row is a message that exists, is owed to somebody, and **appears in no
@@ -81,6 +91,25 @@ give-ups and parked messages only. **A dashboard or an alert filtering
 `acemq.messages.dead.lettered.total`, will show a drop that is not a change in your
 service** — the same deliveries are now under `outcome = rejected`. Add the two
 together to get the old number.
+
+**A parked message is `parked`, not `dead_lettered`.** This library was the last of
+the five to report a park as `dead_lettered`; Java, Go, Python and Ruby all separate
+them. A park and an exhausted retry policy are different problems for different
+people — a payload nothing can read is a schema or a deploy and will not fix itself,
+an exhausted policy is usually a dependency that comes back — and sharing one outcome
+value put both on the same graph and made neither actionable.
+
+What did **not** change is the total: a park still increments
+`acemq.messages.dead.lettered.total`, tagged `outcome = parked`, alongside the
+engine's give-ups tagged `outcome = dead_lettered`. Both are a message set aside, and
+an operator asking "how much is this queue giving up on" wants one number that can
+then be split. So that counter's total is unchanged, and it now carries an `outcome`
+tag it did not have before.
+
+**Dashboards and alerts filtering `acemq.consume.total` by `outcome = dead_lettered`
+will show a drop**, and the same deliveries appear under `outcome = parked`. Sum the
+two for the old number. Anything reading `acemq.messages.dead.lettered.total` without
+filtering on `outcome` is unaffected.
 
 Names are dotted here and underscored when scraped: `acemq.publish.duration` becomes
 `acemq_publish_duration_seconds`, and `routing.key` becomes `routing_key`. That

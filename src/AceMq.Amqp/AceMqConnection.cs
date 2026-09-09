@@ -480,16 +480,19 @@ public sealed class AceMqConnection : IDisposable
                     AceMqDiagnostics.Parked, DiagnosticLevel.Warning,
                     reason, queue, ladder.ParkedQueue, envelope.Id, envelope.Attempt, null);
 
-                // Parked counts and traces as dead-lettered, for the same reason the
-                // metric does: the number anyone alerts on is "messages this consumer
-                // could not handle", and the destination on the event says which of
-                // the two queues it went to.
-                AceMqTelemetry.MessageDeadLettered(span, ladder.ParkedQueue, reason);
+                // Parked reports `parked`, not `dead_lettered`. It still counts in
+                // acemq.messages.dead.lettered.total, because the number anyone alerts
+                // on is "how much is this queue giving up on" and that wants to be one
+                // number; the outcome tag is what splits it back apart when the answer
+                // matters. Reporting it as `dead_lettered` put an undecodable payload
+                // and a dependency outage on the same series, which is the one question
+                // the count is ever asked.
+                AceMqTelemetry.MessageParked(span, ladder.ParkedQueue, reason);
 
                 var moved = await MoveAsync(
                         ladder.ParkedQueue, delivery, envelope.WithError(reason))
                     .ConfigureAwait(false);
-                return new Settled(moved, MetricNames.OutcomeDeadLettered);
+                return new Settled(moved, MetricNames.OutcomeParked);
             }
 
             case AckKind.DeadLetter:
@@ -612,11 +615,25 @@ public sealed class AceMqConnection : IDisposable
             // be reachable: the rungs come from the same policy. If it is, the ladder
             // was built from a different policy than the one deciding the delay, and
             // that is worth saying out loud rather than absorbing silently.
+
+            // The name the rung would have had, derived from the wait rather than looked
+            // up, because the queue is precisely the thing that is not there. A counter
+            // saying a rung is missing is only actionable if it also says which one to
+            // declare, which is what the `rung` tag carries.
+            var missing = Naming.RetryQueue(queue, next.Delay);
+
             AceMqDiagnostics.Report(
                 AceMqDiagnostics.RungMissing, DiagnosticLevel.Warning,
-                $"no rung for a broker wait of {Naming.Describe(next.Delay)}; " +
-                "waiting in the consumer instead, where a restart loses the wait",
-                queue, null, envelope.Id, envelope.Attempt, null);
+                $"{missing} is not on the broker, so a wait of " +
+                $"{Naming.Describe(next.Delay)} happens in the consumer instead, " +
+                "where a restart loses it",
+                queue, missing, envelope.Id, envelope.Attempt, null);
+
+            // Counted as well as reported. The diagnostic is a callback an application
+            // has to subscribe to; this is the number that reaches a dashboard on its
+            // own, and the reason acemq.retry.rung.missing existed as a name with
+            // nothing behind it was that this line was missing.
+            AceMqTelemetry.RetryRungMissing(queue, missing);
         }
 
         AceMqTelemetry.MessageRetried(span, next.Delay, queue, reason);
@@ -1214,10 +1231,10 @@ public sealed class AceMqConnection : IDisposable
     /// message that used up its last attempt was counted as retried and its span
     /// tagged <c>retried</c>, so <c>acemq.messages.dead.lettered.total</c> only ever
     /// saw the dead-letters a handler asked for by name, and a trace backend queried
-    /// for dead-lettered messages found none. Parking still reports as dead-lettered:
-    /// the queues differ because the two need different people, but the number an
-    /// operator alerts on is "messages this consumer could not handle", and splitting
-    /// it would mean every dashboard had to add the two back together.
+    /// for dead-lettered messages found none. Parking reports <c>parked</c> and still
+    /// counts in <c>acemq.messages.dead.lettered.total</c>: the total stays one number,
+    /// so no dashboard has to add two series back together, and the outcome tag splits
+    /// it for the times the difference is the whole question.
     /// </remarks>
     private static void RecordConsume(
         string queue, Envelope envelope, int attempt, Ack ack, string outcome,
@@ -1235,7 +1252,14 @@ public sealed class AceMqConnection : IDisposable
         AceMqTelemetry.ConsumeAttempts.Record(attempt, tags);
 
         if (outcome == MetricNames.OutcomeRetried) AceMqTelemetry.RetriedTotal.Add(1, tags);
-        if (outcome == MetricNames.OutcomeDeadLettered) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
+
+        // Both a dead-lettering and a park, separated by the outcome tag rather than by
+        // a counter of their own: both are a message set aside, and an operator asking
+        // "how much is this queue giving up on" wants one number that can then be split.
+        if (outcome == MetricNames.OutcomeDeadLettered || outcome == MetricNames.OutcomeParked)
+        {
+            AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
+        }
 
         // Set last, and deliberately: MessageRetried tagged this span `retried` while
         // the settle was still deciding, and on the last permitted attempt the settle

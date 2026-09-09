@@ -86,6 +86,12 @@ failed five times wants the person who owns the dependency, and a message nothin
 read wants the person who owns the publisher. Whoever drains the dead letters should not
 have to sort them by hand.
 
+**A park is reported as `parked`**, on the span and on `acemq.consume.total` — both
+for a body that will not decode and for a handler calling `Ack.Park`. It still counts
+in `acemq.messages.dead.lettered.total` under `outcome = parked`, so the "how much is
+this queue giving up on" total stays one number and the tag splits it. See
+[Observability](observability.md#what-it-records), which has the dashboard note.
+
 ## Prefetch
 
 ```csharp

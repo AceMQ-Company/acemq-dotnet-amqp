@@ -121,7 +121,9 @@ builder.Services.AddOpenTelemetry()
 |---|---|
 | `publish_total{outcome="unroutable"}` climbing | a binding was never declared, or a routing key has a typo |
 | `consume_attempts` bucket above `le="1"` filling | a dependency is flapping; look at the retry reasons |
-| `dead_lettered_total` climbing | messages are being given up on — check the dead-letter queue |
+| `dead_lettered_total{outcome="dead_lettered"}` climbing | a retry policy is running out — usually a dependency that is down |
+| `dead_lettered_total{outcome="parked"}` climbing | messages nothing can read — a schema or a deploy; check `{queue}.parked` |
+| `retry_rung_missing` above zero | a rung queue was never declared; the `rung` label is the one to declare |
 | `consume_in_flight` at the prefetch and flat | handlers are stuck, not slow |
 | `/acemq-health` DEGRADED | an ordered partition halted; something needs a `Resume` |
 

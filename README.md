@@ -110,6 +110,15 @@ dependency being down. Go, Python and Ruby have always drawn the line here, and 
 `acemq.consume.total` now tags those deliveries `outcome = rejected`, and
 `acemq.messages.dead.lettered.total` no longer counts them.
 
+**A park is reported as `parked`, not `dead_lettered`.** This library was the last of
+the five to conflate them. A payload nothing can read is a schema or a deploy and will
+not fix itself; an exhausted retry policy is usually a dependency that comes back. **It
+is visible on a dashboard**: `acemq.consume.total` moves those deliveries from
+`outcome = dead_lettered` to `outcome = parked`. The total is unchanged —
+`acemq.messages.dead.lettered.total` still counts a park, now tagged
+`outcome = parked`, because "how much is this queue giving up on" wants one number
+that can then be split.
+
 Both queues are bound by their own names to one durable direct exchange, `acemq.dlx`,
 which is what Java declares and what Go, Python and Ruby are converging on:
 
