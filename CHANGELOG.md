@@ -46,7 +46,56 @@ While the version is `0.x` the public API may change in any release.
   All of them are there, and `TelemetryTests` asserts every single one rather than
   a sample, which is what the old claim needed in order not to rot again.
 
+- **A handler's own give-up is reported as `rejected`, not `dead_lettered`.**
+  `Ack.DeadLetter` now tags `acemq.consume.total` and its span `rejected`, and
+  `dead_lettered` is left to mean what it means in Go, Python and Ruby: the engine
+  giving up, when a `RetryPolicy` runs out of attempts or a message is parked. This
+  library and Java reported both as `dead_lettered` — three libraries against two,
+  and the three were right, because a decision somebody took about a message and an
+  exhaustion the engine reached are different events with different answers. Java is
+  moving in step. The message still goes to `{queue}.dlq` either way and still
+  records a `message.dead_lettered` span event, so a trace search for dead letters
+  finds it; what changed is the word.
+
+  **This is visible on a dashboard.** `acemq.messages.dead.lettered.total` no longer
+  counts handler rejections, and `acemq.consume.total` moves them to
+  `outcome = rejected`. A panel or an alert built on the old numbers will show
+  dead-letters falling and rejections appearing without anything changing in your
+  service; add the two together to get the old figure.
+
+- **Diagnostic codes are dotted, not hyphenated.** `acemq.message.dead-lettered`,
+  `acemq.retry.rung-missing` and `acemq.schedule.foreign-message` are now
+  `acemq.message.dead.lettered`, `acemq.retry.rung.missing` and
+  `acemq.schedule.foreign.message`. Go, Python and Ruby use dots throughout and Java
+  has no diagnostics channel to appeal to, so this library was alone in three of its
+  seven codes.
+
+  **This is a breaking change to public constants.** Code referring to them through
+  `AceMqDiagnostics.DeadLettered`, `AceMqDiagnostics.RungMissing` and
+  `AceMqDiagnostics.ScheduleForeign` needs a recompile and nothing more; anything
+  matching the strings — a log filter, an alert rule, a log-based metric — has to be
+  updated by hand.
+
+- **`JsonCodec` accepts `text/json`.** A legacy alias that predates the registration
+  of `application/json` and is still what some older producers and a few gateways
+  stamp on a body that is plainly JSON. Go, Python and Ruby have always accepted it
+  and Java is adding it in parallel; refusing it here made a message four other
+  libraries could read unreadable in this one. The write side does not change —
+  `JsonCodec.ContentType` is still `application/json`, because writing an alias only
+  moves the problem to whoever reads next.
+
 ### Fixed
+
+- **A .NET requester and a Go, Python or Ruby responder could not talk.** The reply
+  address was carried on AMQP's native `reply-to` property here and in Java, and on
+  an `acemq-reply-to` application header in Go, Python and Ruby — so neither side
+  could see where the other wanted its answer sent, in either direction, and no
+  fixture covered it. Every library now **writes both and reads either**:
+  `Requester` sets the native property and `Requester.ReplyToHeader` to the same
+  value, and `Responder` reads the header first and falls back to the property. The
+  order is identical in all five. `PatternTests` pins a request carrying only the
+  property, a request carrying only the header, a request carrying both, and one
+  carrying neither.
 
 - **A pipeline encoded every payload twice, so every step after the first read
   nonsense.** A step encodes its own output; the publisher carrying that output to

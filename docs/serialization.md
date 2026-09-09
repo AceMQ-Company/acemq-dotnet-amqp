@@ -19,7 +19,7 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 
 | Codec | Content type | |
 |---|---|---|
-| `JsonCodec` | `application/json` | the default |
+| `JsonCodec` | `application/json` | the default; also **reads** `text/json` |
 | `XmlCodec` | `application/xml` | `XmlSerializer`, for .NET talking to .NET only — see [XML](#xml) |
 | `StringCodec` | `text/plain` | text, as UTF-8 |
 | `BytesCodec` | `application/octet-stream` | bytes, untouched |
@@ -27,6 +27,15 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 
 Those five need nothing but the framework — the core's whole dependency list is two
 Microsoft packages.
+
+**`JsonCodec` accepts `text/json` as well as `application/json`, and a message with
+no content type at all.** `text/json` is a legacy alias predating the registration of
+`application/json`, and it is still what some older producers and a few gateways stamp
+on a body that is plainly JSON. Go, Python and Ruby have always accepted it and Java
+now does too; refusing it here made a message four other libraries could read
+unreadable in this one. Only the accept set widens — `JsonCodec.ContentType` is still
+`application/json`, because writing an alias pushes the problem onto whoever reads
+next.
 
 Formats that need an outside library get their own package, so an application that
 wants one does not acquire the rest:

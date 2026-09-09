@@ -98,6 +98,15 @@ instead would hand it to whatever dead-lettering the queue happens to be declare
 which is usually nothing, and neither the broker nor the queue can write down what the
 handler was unable to do.
 
+**A handler's give-up is reported as `rejected`; only the engine's is
+`dead_lettered`.** Both end in `{queue}.dlq` — this is about the word, not the
+destination. `Ack.DeadLetter` is a decision somebody took about this message;
+`dead_lettered` is a `RetryPolicy` running out of attempts, which is usually a
+dependency being down. Go, Python and Ruby have always drawn the line here, and from
+0.6.0 so do this library and Java. **It is visible on a dashboard**:
+`acemq.consume.total` now tags those deliveries `outcome = rejected`, and
+`acemq.messages.dead.lettered.total` no longer counts them.
+
 Both queues are bound by their own names to one durable direct exchange, `acemq.dlx`,
 which is what Java declares and what Go, Python and Ruby are converging on:
 
@@ -211,9 +220,17 @@ events, each with the queue, the destination, the message id and the attempt:
 | | |
 |---|---|
 | `acemq.move.failed` | a republish failed, so the message was handed back to the broker with the attempt **not** advanced — a redelivery loop with nothing to explain it |
-| `acemq.message.dead-lettered` | attempts exhausted, or a handler gave up |
+| `acemq.message.dead.lettered` | attempts exhausted, or a handler gave up |
 | `acemq.message.parked` | the body could not be read |
-| `acemq.retry.rung-missing` | a broker wait was asked for with no rung to spend it in, so the wait fell back to this process where a restart loses it |
+| `acemq.retry.rung.missing` | a broker wait was asked for with no rung to spend it in, so the wait fell back to this process where a restart loses it |
+
+**The codes are dotted throughout.** Up to 0.5.x three of them were hyphenated —
+`acemq.message.dead-lettered`, `acemq.retry.rung-missing` and
+`acemq.schedule.foreign-message` — which no other library writes: Go, Python and Ruby
+use dots, and Java has no diagnostics channel to appeal to. **These are public
+constants and the change is breaking**: refer to them through `AceMqDiagnostics` and a
+recompile is all it costs, but anything matching the strings — a log filter, an alert
+rule — has to be updated.
 
 ```csharp
 // AceMq.Amqp.Diagnostics, which is where the Microsoft.Extensions.Logging

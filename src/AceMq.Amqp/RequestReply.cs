@@ -48,6 +48,27 @@ public sealed class Requester : IDisposable
     /// </remarks>
     internal const long ReplyQueueExpiryMillis = 10 * 60 * 1000L;
 
+    /// <summary>
+    /// The application header naming the queue a responder should reply to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Written alongside AMQP's own <c>reply-to</c> property, never instead of it.
+    /// The two halves of the family had drifted: this library and Java carried the
+    /// address in the native property, while Go, Python and Ruby carried it in this
+    /// header — so a .NET requester and a Go responder could not talk at all. Every
+    /// library now writes both and reads either, header first.
+    /// </para>
+    /// <para>
+    /// A header rather than only the property, because it travels through the same
+    /// envelope machinery as everything else and survives a hop through a service
+    /// that rebuilds the message. It deliberately does not carry the
+    /// <c>x-acemq-</c> prefix: that namespace is stripped before a handler sees it,
+    /// so a responder could never read this one.
+    /// </para>
+    /// </remarks>
+    public const string ReplyToHeader = "acemq-reply-to";
+
     private readonly AceMqConnection _mq;
     private readonly ICodec _codec;
     private IMessageConsumer? _consumer;
@@ -149,7 +170,11 @@ public sealed class Requester : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Requester));
 
-        var envelope = Envelope.Of(routingKey).Build();
+        // Both addresses, the same value. The publisher below sets AMQP's native
+        // reply-to; this sets the header the Go, Python and Ruby responders read.
+        var envelope = Envelope.Of(routingKey)
+            .Header(ReplyToHeader, ReplyQueue)
+            .Build();
         var pending = new PendingRequest();
         _pending[envelope.Id] = pending;
 
@@ -235,9 +260,16 @@ public sealed class RequestTimedOutException : AceMqException
 /// Answers requests on a queue.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A request whose sender named no reply queue is counted as unanswerable and
 /// accepted rather than retried. Nothing about redelivering it makes a reply
 /// address appear, so retrying only moves the same message round the same loop.
+/// </para>
+/// <para>
+/// The reply address is read from <see cref="Requester.ReplyToHeader"/> first and
+/// from AMQP's own <c>reply-to</c> property second, which is what lets this
+/// responder answer a Go, Python or Ruby requester as well as a .NET or Java one.
+/// </para>
 /// </remarks>
 public sealed class Responder : IDisposable
 {
@@ -256,7 +288,7 @@ public sealed class Responder : IDisposable
 
         var consumer = await mq.ConsumeAsync<TRequest>(queue, options, async message =>
         {
-            var replyTo = message.ReplyTo;
+            var replyTo = ReplyAddressOf(message);
             if (string.IsNullOrEmpty(replyTo))
             {
                 self?.CountUnanswerable();
@@ -281,6 +313,28 @@ public sealed class Responder : IDisposable
 
         self = new Responder(consumer);
         return self;
+    }
+
+    /// <summary>
+    /// Works out where to send the answer: the header first, the native property second.
+    /// </summary>
+    /// <remarks>
+    /// The order is the same in all five libraries and it is the order that matters.
+    /// Go, Python and Ruby requesters send only <see cref="Requester.ReplyToHeader"/>;
+    /// an older Java or .NET requester sends only AMQP's <c>reply-to</c>. Reading the
+    /// header first and falling back to the property answers both, and answers a
+    /// current requester — which sets the two to the same value — identically either
+    /// way.
+    /// </remarks>
+    private static string? ReplyAddressOf<TRequest>(IMessage<TRequest> message)
+    {
+        if (message.Headers.TryGetValue(Requester.ReplyToHeader, out var header) && header != null)
+        {
+            var named = header as string ?? header.ToString();
+            if (!string.IsNullOrEmpty(named)) return named;
+        }
+
+        return message.ReplyTo;
     }
 
     private void CountAnswered() => Interlocked.Increment(ref _answered);

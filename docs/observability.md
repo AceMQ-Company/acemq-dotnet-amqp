@@ -40,7 +40,12 @@ and an outage. Up to 0.3.0 a broker's nack was tagged `rejected` here — a valu
 other library writes, and one that belongs to a delivery — so a panel filtering
 publishes by outcome dropped every refusal.
 
-Consume outcomes are `acked`, `retried`, `dead_lettered` and `rejected`. Request
+Consume outcomes are `acked`, `retried`, `rejected` and `dead_lettered`. **`rejected`
+is a handler's own decision — `Ack.DeadLetter`, or a release — and `dead_lettered` is
+the engine giving up when a `RetryPolicy` runs out of attempts.** Both messages end in
+the same dead-letter queue; only the word keeps them apart, and the difference is the
+only question the two counts are ever asked: an unprocessable message is a producer
+problem, an exhausted policy is usually a dependency that is down. Request
 outcomes are `answered`, `timed_out` and `failed`. An outbox record is `published` or
 `failed`. A pipeline run is `completed` or `ended_early`.
 
@@ -64,6 +69,18 @@ ever saw the dead-letters a handler asked for by name. Since 0.4.0 both the coun
 and the span carry `dead_lettered`, which means a dashboard built on 0.3.0 numbers
 will show retries falling and dead-letters rising without anything changing in your
 service.
+
+**A handler's own give-up is `rejected`, not `dead_lettered`.** Up to 0.5.x this
+library and Java reported `Ack.DeadLetter` as `dead_lettered`, while Go, Python and
+Ruby reported it as `rejected` and kept `dead_lettered` for the engine exhausting a
+policy. Three against two, and the three were right: a decision and an exhaustion are
+different events. From 0.6.0 the counter and the span both read `rejected` for a
+handler's decision, and `acemq.messages.dead.lettered.total` counts the engine's
+give-ups and parked messages only. **A dashboard or an alert filtering
+`acemq.consume.total` by `outcome = dead_lettered`, or reading
+`acemq.messages.dead.lettered.total`, will show a drop that is not a change in your
+service** — the same deliveries are now under `outcome = rejected`. Add the two
+together to get the old number.
 
 Names are dotted here and underscored when scraped: `acemq.publish.duration` becomes
 `acemq_publish_duration_seconds`, and `routing.key` becomes `routing_key`. That
@@ -124,7 +141,7 @@ that a message which exhausts its attempts has them agreeing.
 
 Java records these four under exactly these names, and Go, Python and Ruby copy them.
 Up to 0.3.0 the first two were `acemq.message.retried` and
-`acemq.message.dead-lettered` here, which matched nothing anywhere else.
+`acemq.message.dead.lettered` here, which matched nothing anywhere else.
 
 The three keys on `pipeline.run_finished` are bare rather than namespaced, and that
 is deliberate on all five libraries: `outcome` there is the *run's* outcome, a

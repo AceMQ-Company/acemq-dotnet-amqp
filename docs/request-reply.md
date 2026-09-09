@@ -20,6 +20,30 @@ using var responder = await mq.RespondAsync<QuoteRequest, Quote>(
 The responder replies to whatever queue the request named, with the request's id as
 the reply's correlation id.
 
+## Where the reply address lives
+
+A request carries the address **twice**: on AMQP's own `reply-to` property, and on an
+`acemq-reply-to` application header. They always hold the same value.
+
+The duplication is the fix for a real split. Up to 0.5.x this library and Java wrote
+and read only the native property, while Go, Python and Ruby wrote and read only the
+header — so a .NET requester and a Go responder could not talk at all, in either
+direction, and nothing in the fixtures noticed. From 0.6.0 every library **writes both
+and reads either**, and the read order is the same everywhere: **the header first, the
+native property second.**
+
+```csharp
+Requester.ReplyToHeader   // "acemq-reply-to"
+```
+
+The header deliberately does not carry the `x-acemq-` prefix. That namespace belongs
+to the engine and is stripped before a handler ever sees it, so a responder could
+never read a reply address hidden in it.
+
+Nothing about this is visible in the API above — a `Requester` sets both without being
+asked, and a `Responder` finds whichever one arrived. It matters when the requester or
+the responder on the other side of the queue is not this library.
+
 ## One reply queue per requester
 
 Not one per request. A queue per request costs a declare and a delete on the broker
@@ -71,8 +95,8 @@ for that.
 
 ## Requests that cannot be answered
 
-A request published without a reply queue is counted and accepted rather than
-retried:
+A request that names **neither** reply address — no `acemq-reply-to` header and no
+native `reply-to` property — is counted and accepted rather than retried:
 
 ```csharp
 responder.Unanswerable

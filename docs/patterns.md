@@ -423,7 +423,7 @@ the broker of every service that ever constructed a scheduler. It consumes as a
 private queue instead, and earns that by never giving up — it reads raw bytes, which
 cannot fail to decode, and accepts on every path. A message that reaches
 `acemq.schedule.due` without the headers a scheduled message carries is dropped and
-reported as `acemq.schedule.foreign-message`, because nothing else should be
+reported as `acemq.schedule.foreign.message`, because nothing else should be
 publishing into these queues at all.
 
 `Dispose` stops the consumer and leaves the queues: they are shared, and may be

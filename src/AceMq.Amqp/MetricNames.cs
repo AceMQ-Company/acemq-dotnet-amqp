@@ -69,7 +69,14 @@ public static class MetricNames
     /// <summary>Messages sent to a retry queue.</summary>
     public const string RetriedTotal = "acemq.messages.retried.total";
 
-    /// <summary>Messages sent to a dead-letter or parking queue.</summary>
+    /// <summary>Messages the engine gave up on, or parked.</summary>
+    /// <remarks>
+    /// A message a handler rejected by name is not counted here — it is counted on
+    /// <see cref="ConsumeTotal"/> under <see cref="OutcomeRejected"/>, the same
+    /// division Go, Python and Ruby make. Both still reach the dead-letter queue;
+    /// this counter is the engine's give-ups, so an alert on it is an alert on a
+    /// retry policy running out rather than on a handler doing its job.
+    /// </remarks>
     public const string DeadLetteredTotal = "acemq.messages.dead.lettered.total";
 
     /// <summary>Round trip of a request/reply call, as the caller experienced it.</summary>
@@ -133,7 +140,21 @@ public static class MetricNames
     public const string OutcomeFailed = "failed";
     public const string OutcomeAcked = "acked";
     public const string OutcomeRetried = "retried";
+
+    /// <summary>
+    /// The engine gave up: the attempts ran out or the message aged past the policy.
+    /// </summary>
+    /// <remarks>
+    /// Not a handler's own decision — that is <see cref="OutcomeRejected"/>. Both end
+    /// in the dead-letter queue and only the word keeps them apart.
+    /// </remarks>
     public const string OutcomeDeadLettered = "dead_lettered";
+
+    /// <summary>A handler gave up on the message by name, or released it unhandled.</summary>
+    /// <remarks>
+    /// <c>Ack.DeadLetter</c> reports this rather than <see cref="OutcomeDeadLettered"/>,
+    /// which is what Go, Python and Ruby have always reported for the same decision.
+    /// </remarks>
     public const string OutcomeRejected = "rejected";
     public const string OutcomeAnswered = "answered";
     public const string OutcomeTimedOut = "timed_out";

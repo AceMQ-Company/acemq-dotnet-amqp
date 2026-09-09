@@ -144,13 +144,13 @@ public static class AceMqDiagnostics
     public const string MoveFailed = "acemq.move.failed";
 
     /// <summary>A message ran out of attempts, or a handler gave up on it.</summary>
-    public const string DeadLettered = "acemq.message.dead-lettered";
+    public const string DeadLettered = "acemq.message.dead.lettered";
 
     /// <summary>A message could not be read and needs a person.</summary>
     public const string Parked = "acemq.message.parked";
 
     /// <summary>A broker wait was asked for and no rung existed to spend it in.</summary>
-    public const string RungMissing = "acemq.retry.rung-missing";
+    public const string RungMissing = "acemq.retry.rung.missing";
 
     /// <summary>A saga step failed and the steps before it are being undone.</summary>
     public const string SagaCompensating = "acemq.saga.compensating";
@@ -176,7 +176,7 @@ public static class AceMqDiagnostics
     /// dead-letter queue by design — see <c>Scheduler.OnAsync</c> — so this event is
     /// the only record that it existed.
     /// </remarks>
-    public const string ScheduleForeign = "acemq.schedule.foreign-message";
+    public const string ScheduleForeign = "acemq.schedule.foreign.message";
 
     private static readonly List<IDiagnosticSink> Sinks = new List<IDiagnosticSink>();
 

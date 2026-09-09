@@ -499,12 +499,17 @@ public sealed class AceMqConnection : IDisposable
                     AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
                     reason, queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
 
-                AceMqTelemetry.MessageDeadLettered(span, ladder.DeadLetterQueue, reason);
+                // Dead-lettered, but reported as rejected. Both end in the dead-letter
+                // queue and only the word keeps them apart: this is a decision somebody
+                // took about this message, where dead_lettered is the engine running out
+                // of room to try again. Go, Python and Ruby have always drawn the line
+                // here; this library and Java drew it in the wrong place until 0.6.0.
+                AceMqTelemetry.MessageRejected(span, ladder.DeadLetterQueue, reason);
 
                 var moved = await MoveAsync(
                         ladder.DeadLetterQueue, delivery, envelope.WithError(reason))
                     .ConfigureAwait(false);
-                return new Settled(moved, MetricNames.OutcomeDeadLettered);
+                return new Settled(moved, MetricNames.OutcomeRejected);
             }
 
             default:

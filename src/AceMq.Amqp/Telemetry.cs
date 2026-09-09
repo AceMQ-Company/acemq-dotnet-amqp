@@ -438,4 +438,26 @@ public static class AceMqTelemetry
             { EventTagReason, reason },
         }));
     }
+
+    /// <summary>Records that a handler gave up on a message by name, and why.</summary>
+    /// <remarks>
+    /// The same <c>message.dead_lettered</c> event as
+    /// <see cref="MessageDeadLettered"/> — the message did reach the dead-letter
+    /// queue, and a trace search for dead letters should still find it — but the
+    /// outcome reads <c>rejected</c>, because a handler's decision and the engine
+    /// exhausting a retry policy are different events. The Ruby and Go adapters draw
+    /// the line the same way and for the same reason.
+    /// </remarks>
+    internal static void MessageRejected(
+        Activity? span, string destination, string reason)
+    {
+        if (span == null) return;
+
+        Outcome(span, MetricNames.OutcomeRejected);
+        span.AddEvent(new ActivityEvent(EventDeadLettered, tags: new ActivityTagsCollection
+        {
+            { EventTagDestination, destination },
+            { EventTagReason, reason },
+        }));
+    }
 }

@@ -90,6 +90,30 @@ public sealed class ExtensibilityTests : IDisposable
     }
 
     [Fact]
+    public void AcceptsTextJsonAsWellAsApplicationJson()
+    {
+        // text/json is a legacy alias that predates the registration of
+        // application/json and is still what some older producers stamp on a body
+        // that is plainly JSON. Go, Python and Ruby have always accepted it; this
+        // codec refused it, so a message four libraries could read was unreadable
+        // here. Only the accept set widens -- the write side is unchanged.
+        var codec = new JsonCodec();
+
+        Assert.True(codec.CanDecode("application/json"));
+        Assert.True(codec.CanDecode("text/json"));
+        Assert.True(codec.CanDecode("text/json; charset=utf-8"));
+        Assert.True(codec.CanDecode("TEXT/JSON"));
+        Assert.True(codec.CanDecode(null));
+        Assert.False(codec.CanDecode("application/xml"));
+
+        Assert.Equal("application/json", codec.ContentType);
+
+        var order = new Order { Id = "A-3", Total = 7m };
+        var back = (Order)codec.Decode(codec.Encode(order), typeof(Order));
+        Assert.Equal("A-3", back.Id);
+    }
+
+    [Fact]
     public void RefusesXmlThatPullsInAnExternalEntity()
     {
         // The XXE class of attack: a document that makes the parser read a local

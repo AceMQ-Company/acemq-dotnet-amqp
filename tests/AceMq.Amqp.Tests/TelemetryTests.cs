@@ -121,13 +121,18 @@ public sealed class TelemetryTests : IDisposable
         await mq.Publisher<string>("", _q).SendAsync("hello");
 
         await Eventually(
-            () => Taken().Any(m => m.Name == MetricNames.DeadLetteredTotal
+            () => Taken().Any(m => m.Name == MetricNames.ConsumeTotal
                                    && m.Tags[MetricNames.TagQueue] == _q),
-            "the dead-letter to be counted");
+            "the delivery to be counted");
 
+        // The handler gave up by name, so the outcome is `rejected`. The message
+        // still went to the dead-letter queue; what changed in 0.6.0 is the word,
+        // and `dead_lettered` is now the engine's give-ups only.
         var consumed = Taken().First(
             m => m.Name == MetricNames.ConsumeTotal && m.Tags[MetricNames.TagQueue] == _q);
-        Assert.Equal(MetricNames.OutcomeDeadLettered, consumed.Tags[MetricNames.TagOutcome]);
+        Assert.Equal(MetricNames.OutcomeRejected, consumed.Tags[MetricNames.TagOutcome]);
+        Assert.DoesNotContain(Taken(), m =>
+            m.Name == MetricNames.DeadLetteredTotal && m.Tags[MetricNames.TagQueue] == _q);
         Assert.Contains(Taken(), m =>
             m.Name == MetricNames.ConsumeAttempts && m.Tags[MetricNames.TagQueue] == _q);
         Assert.Contains(Taken(), m =>
@@ -338,6 +343,92 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal(
             new[] { MetricNames.OutcomeRetried, MetricNames.OutcomeDeadLettered },
             onSpans);
+    }
+
+    [Fact]
+    public async Task SeparatesAHandlersOwnGiveUpFromTheEngineRunningOutOfAttempts()
+    {
+        // Both end in the dead-letter queue and only the word keeps them apart. A
+        // handler calling Ack.DeadLetter is a decision somebody took about this
+        // message and reports `rejected`; a retry policy running out is the engine
+        // giving up and reports `dead_lettered`. This library and Java called both
+        // `dead_lettered` until 0.6.0, so a dashboard could not tell an unprocessable
+        // message from a dependency that was down -- which is the only question the
+        // two counts are ever asked.
+        var spans = new List<Activity>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a => { lock (spans) spans.Add(a); },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        var refused = _q + ".refused";
+        var exhausted = _q + ".exhausted";
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(refused);
+        await mq.DeclareQueueAsync(exhausted);
+
+        using var rejecting = await mq.ConsumeAsync<string>(
+            refused,
+            ConsumerOptions.Defaults().WithRetry(RetryPolicy.Fixed(5, TimeSpan.FromMilliseconds(5))),
+            _ => Task.FromResult(Ack.DeadLetter("this order has no customer")));
+
+        // One attempt permitted, and the handler asks for another: the engine decides
+        // over the handler's head, which is the case that must stay `dead_lettered`.
+        using var giving = await mq.ConsumeAsync<string>(
+            exhausted,
+            ConsumerOptions.Defaults().WithRetry(RetryPolicy.Fixed(1, TimeSpan.FromMilliseconds(5))),
+            _ => throw new InvalidOperationException("the pricing service is down"));
+
+        await mq.Publisher<string>("", refused).SendAsync("hello");
+        await mq.Publisher<string>("", exhausted).SendAsync("hello");
+
+        await Eventually(
+            () => Outcomes(refused).Count == 1 && Outcomes(exhausted).Count == 1,
+            "both deliveries to be counted");
+
+        Assert.Equal(new[] { MetricNames.OutcomeRejected }, Outcomes(refused));
+        Assert.Equal(new[] { MetricNames.OutcomeDeadLettered }, Outcomes(exhausted));
+
+        // And the span says the same word as the counter, for each of them. The two
+        // disagreeing is the failure this whole file exists to catch.
+        Assert.Equal(MetricNames.OutcomeRejected, OutcomeOfSpan(spans, refused));
+        Assert.Equal(MetricNames.OutcomeDeadLettered, OutcomeOfSpan(spans, exhausted));
+
+        // Both still reach the dead-letter queue -- the reporting changed, not where
+        // the message went -- and both still carry the event a trace search for dead
+        // letters finds, which is why a rejection is not invisible to a trace backend.
+        Assert.Contains(
+            SpansFor(spans, refused).SelectMany(a => a.Events),
+            e => e.Name == AceMqTelemetry.EventDeadLettered);
+
+        var buried = new List<string>();
+        using var drain = await mq.ConsumeAsync<string>(
+            refused + Naming.DeadLetterSuffix,
+            message => { lock (buried) buried.Add(message.Payload); return Task.FromResult(Ack.Accept()); });
+        await Eventually(() => { lock (buried) return buried.Count == 1; },
+            "the rejected message to be in the dead-letter queue");
+
+        List<string> Outcomes(string queue) => Taken()
+            .Where(m => m.Name == MetricNames.ConsumeTotal && m.Tags[MetricNames.TagQueue] == queue)
+            .Select(m => m.Tags[MetricNames.TagOutcome])
+            .ToList();
+
+        static Activity[] SpansFor(List<Activity> recorded, string queue)
+        {
+            lock (recorded)
+            {
+                return recorded
+                    .Where(a => a.DisplayName == queue + MetricNames.SpanProcessSuffix)
+                    .ToArray();
+            }
+        }
+
+        static string? OutcomeOfSpan(List<Activity> recorded, string queue) =>
+            SpansFor(recorded, queue).Single().GetTagItem(AceMqTelemetry.AttrOutcome) as string;
     }
 
     [Fact]

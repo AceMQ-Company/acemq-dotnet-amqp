@@ -43,6 +43,13 @@ return await _payments.ChargeAsync(order) switch
 Throwing `AceFatalException` from a handler dead-letters the message, which is the
 shorthand for the same decision when you are deep in a call stack.
 
+**Both are reported as `rejected`, not `dead_lettered`.** The message goes to
+`{queue}.dlq` either way; the word says who decided. `dead_lettered` is kept for the
+engine giving up — a `RetryPolicy` running out of attempts — because a decision
+somebody took about this message and a dependency that stayed down for six attempts
+want different people looking at them. See
+[Observability](observability.md#what-it-records) for what that means on a dashboard.
+
 ## What arrives with the message
 
 ```csharp

@@ -110,9 +110,23 @@ public sealed class JsonCodec : ICodec
                ?? throw new AceFatalException($"the message body decoded to null as {target.Name}");
     }
 
+    /// <summary>
+    /// Accepts <c>application/json</c>, <c>text/json</c>, and a message with no
+    /// content type at all.
+    /// </summary>
+    /// <remarks>
+    /// <c>text/json</c> is a legacy alias that predates the registration of
+    /// <c>application/json</c>, and it is still what some older producers and a few
+    /// gateways stamp on a body that is plainly JSON. Go, Python and Ruby have always
+    /// accepted it and Java now does too; refusing it here made a message five
+    /// libraries could read unreadable in one of them. Only the read side widens —
+    /// <see cref="ContentType"/> is still <c>application/json</c>, because writing an
+    /// alias would push the problem onto whoever reads next.
+    /// </remarks>
     public bool CanDecode(string? contentType) =>
         contentType == null
-        || contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase);
+        || contentType.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)
+        || contentType.StartsWith("text/json", StringComparison.OrdinalIgnoreCase);
 
     public override string ToString() => "JsonCodec";
 }

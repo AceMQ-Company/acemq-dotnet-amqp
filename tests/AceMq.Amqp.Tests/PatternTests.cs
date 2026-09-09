@@ -257,6 +257,106 @@ public sealed class PatternTests : IDisposable
         Assert.Equal("reply:slow", await slow);
     }
 
+    [Fact]
+    public async Task WritesBothReplyAddressesOnEveryRequest()
+    {
+        // The requester sets AMQP's native reply-to and the acemq-reply-to header to
+        // the same value, so a Go, Python or Ruby responder -- which reads only the
+        // header -- can answer a .NET requester at all. Asserted on the wire rather
+        // than through a .NET responder, which would pass on either half alone.
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("addresses");
+
+        var seen = new BlockingCollection<(string? Native, string? Header)>();
+        using var spy = await mq.ConsumeAsync<string>("addresses", message =>
+        {
+            message.Headers.TryGetValue(Requester.ReplyToHeader, out var header);
+            seen.Add((message.ReplyTo, header as string));
+            return Task.FromResult(Ack.Accept());
+        });
+
+        using var requester = await mq.RequesterAsync();
+        var pending = requester.RequestAsync<string, string>(
+            "", "addresses", "quote me", TimeSpan.FromSeconds(2), CancellationToken.None);
+
+        Assert.True(seen.TryTake(out var addresses, TimeSpan.FromSeconds(5)));
+        Assert.Equal(requester.ReplyQueue, addresses.Native);
+        Assert.Equal(requester.ReplyQueue, addresses.Header);
+
+        await Assert.ThrowsAsync<RequestTimedOutException>(() => pending);
+    }
+
+    [Fact]
+    public async Task AnswersARequestCarryingOnlyTheNativeReplyToProperty()
+    {
+        // A Java requester, or a .NET one from before the header existed. The
+        // responder falls back to the property when the header is absent.
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("pricing.native");
+        await mq.DeclareQueueAsync("replies.native");
+
+        using var responder = await mq.RespondAsync<string, string>(
+            "pricing.native", request => Task.FromResult(request.ToUpperInvariant()));
+
+        var replies = new BlockingCollection<string>();
+        using var reader = await mq.ConsumeAsync<string>("replies.native", message =>
+        {
+            replies.Add(message.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        await mq.Publisher<string>("", "pricing.native", PublishOptions.Defaults(), "replies.native")
+            .SendAsync("quote me");
+
+        Assert.True(replies.TryTake(out var answer, TimeSpan.FromSeconds(5)));
+        Assert.Equal("QUOTE ME", answer);
+        Assert.Equal(0, responder.Unanswerable);
+    }
+
+    [Fact]
+    public async Task AnswersARequestCarryingOnlyTheAcemqReplyToHeader()
+    {
+        // A Go, Python or Ruby requester: the header and nothing in the native
+        // property. This is the direction that did not work at all before 0.6.0.
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("pricing.header");
+        await mq.DeclareQueueAsync("replies.header");
+
+        using var responder = await mq.RespondAsync<string, string>(
+            "pricing.header", request => Task.FromResult(request.ToUpperInvariant()));
+
+        var replies = new BlockingCollection<string>();
+        using var reader = await mq.ConsumeAsync<string>("replies.header", message =>
+        {
+            replies.Add(message.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var envelope = Envelope.Of("pricing.header")
+            .Header(Requester.ReplyToHeader, "replies.header")
+            .Build();
+        await mq.Publisher<string>("", "pricing.header").SendAsync("quote me", envelope);
+
+        Assert.True(replies.TryTake(out var answer, TimeSpan.FromSeconds(5)));
+        Assert.Equal("QUOTE ME", answer);
+        Assert.Equal(0, responder.Unanswerable);
+    }
+
+    [Fact]
+    public async Task CountsARequestWithNeitherReplyAddressAsUnanswerable()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("pricing.nowhere");
+
+        using var responder = await mq.RespondAsync<string, string>(
+            "pricing.nowhere", request => Task.FromResult(request.ToUpperInvariant()));
+
+        await mq.Publisher<string>("", "pricing.nowhere").SendAsync("quote me");
+
+        await Eventually(() => responder.Unanswerable == 1, "the request to be counted unanswerable");
+        Assert.Equal(0, responder.Answered);
+    }
+
     // ---- replay ----------------------------------------------------------
 
     [Fact]
