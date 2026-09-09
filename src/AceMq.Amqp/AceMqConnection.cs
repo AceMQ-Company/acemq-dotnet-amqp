@@ -1020,7 +1020,30 @@ public sealed class AceMqConnection : IDisposable
     /// disk is full.
     /// </remarks>
     public Task<AceMqConnection> DeclareStreamAsync(
-        string name, TimeSpan? maxAge, long? maxLengthBytes)
+        string name, TimeSpan? maxAge, long? maxLengthBytes) =>
+        DeclareStreamAsync(name, maxAge, maxLengthBytes, null);
+
+    /// <summary>
+    /// Declares a stream queue, optionally bounded by age or size, and optionally
+    /// with a segment size.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <paramref name="segmentBytes"/> is how large each file on disk gets. Retention
+    /// happens a whole segment at a time, so a very large segment makes retention
+    /// coarse: nothing is discarded until an entire segment can be, and a stream
+    /// bounded at 1 GB with 500 MB segments keeps rather more than 1 GB.
+    /// </para>
+    /// <para>
+    /// <strong>Absent unless asked for.</strong> There is no default here on purpose.
+    /// The broker has one, it is the right one nearly always, and a library that
+    /// picked its own would make a stream declared from C# subtly different from the
+    /// same stream declared from Go, Python or Ruby — where this option is opt-in too
+    /// — and a mismatched argument fails a redeclaration rather than being ignored.
+    /// </para>
+    /// </remarks>
+    public Task<AceMqConnection> DeclareStreamAsync(
+        string name, TimeSpan? maxAge, long? maxLengthBytes, long? segmentBytes)
     {
         var arguments = new Dictionary<string, object>();
         if (maxAge.HasValue)
@@ -1030,6 +1053,10 @@ public sealed class AceMqConnection : IDisposable
                     .ToString(System.Globalization.CultureInfo.InvariantCulture) + "s";
         }
         if (maxLengthBytes.HasValue) arguments["x-max-length-bytes"] = maxLengthBytes.Value;
+        if (segmentBytes.HasValue)
+        {
+            arguments[StreamArguments.SegmentBytes] = segmentBytes.Value;
+        }
         return DeclareQueueAsync(name, QueueType.Stream, arguments);
     }
 

@@ -202,6 +202,68 @@ public sealed class RoutingAndDriftTests : IDisposable
         Assert.Equal(_q, RoutingSlip.Of(received)!.Current);
     }
 
+    // ---- stream retention ------------------------------------------------
+
+    [Fact]
+    public async Task DeclaresAStreamWithASegmentSizeWhenOneIsAskedFor()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+
+        await mq.DeclareStreamAsync(_q, TimeSpan.FromHours(1), 1024, 512);
+
+        // Redeclaring with the same arguments is not drift, which is the whole use of
+        // this: a stream declared with a segment size from Go, Python or Ruby can be
+        // declared identically from here.
+        var same = await mq.ApplyAsync(
+            Topology.Define()
+                .Queue(_q, QueueType.Stream, new Dictionary<string, object>
+                {
+                    [StreamArguments.MaxAge] = "3600s",
+                    [StreamArguments.MaxLengthBytes] = 1024L,
+                    [StreamArguments.SegmentBytes] = 512L,
+                })
+                .Build(),
+            ApplyMode.DryRun);
+        Assert.False(same.HasDrift);
+
+        var different = await mq.ApplyAsync(
+            Topology.Define()
+                .Queue(_q, QueueType.Stream, new Dictionary<string, object>
+                {
+                    [StreamArguments.SegmentBytes] = 4096L,
+                })
+                .Build(),
+            ApplyMode.DryRun);
+        Assert.True(different.HasDrift);
+        Assert.Contains(
+            "x-stream-max-segment-size-bytes is '512', asked for '4096'", different.Render());
+    }
+
+    [Fact]
+    public async Task LeavesTheSegmentSizeOffAStreamThatDidNotAskForOne()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+
+        // No default, on purpose. The broker has one, it is the right one nearly
+        // always, and a library that picked its own would make a stream declared from
+        // C# quietly different from the same stream declared from the other four --
+        // where this option is opt-in too. A mismatched argument fails a redeclaration
+        // rather than being ignored, so the difference would surface as an outage.
+        await mq.DeclareStreamAsync(_q, TimeSpan.FromHours(1), 1024);
+
+        var plan = await mq.ApplyAsync(
+            Topology.Define()
+                .Queue(_q, QueueType.Stream, new Dictionary<string, object>
+                {
+                    [StreamArguments.SegmentBytes] = 512L,
+                })
+                .Build(),
+            ApplyMode.DryRun);
+
+        Assert.True(plan.HasDrift);
+        Assert.Contains("missing argument x-stream-max-segment-size-bytes", plan.Render());
+    }
+
     // ---- topology drift --------------------------------------------------
 
     [Fact]

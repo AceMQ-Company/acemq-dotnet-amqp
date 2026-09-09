@@ -25,6 +25,30 @@ without a limit is declaring a queue that grows until the disk is full**, and a 
 disk stops the whole broker, not just this stream. Both arguments accept null, and
 both being null is almost always a mistake.
 
+### Segment size
+
+```csharp
+await mq.DeclareStreamAsync(name,
+    maxAge: TimeSpan.FromDays(7), maxLengthBytes: 10_000_000_000, segmentBytes: 500_000_000);
+```
+
+`segmentBytes` is how large each of the stream's files on disk gets, and it sets
+`x-stream-max-segment-size-bytes`. Retention happens a whole segment at a time, so a
+very large segment makes retention coarse: nothing is discarded until an entire
+segment can be, and a stream bounded at 1 GB with 500 MB segments keeps rather more
+than 1 GB.
+
+**There is no default, on purpose.** The broker has one, it is the right one nearly
+always, and a library that picked its own would make a stream declared from C#
+quietly different from the same stream declared from Go, Python or Ruby — where the
+option is opt-in too. The difference would not be quiet for long: a queue redeclared
+with a different argument is refused rather than adjusted, so a stream this library
+had silently stamped a segment size onto could not be redeclared from anywhere else.
+
+The three argument names are on `StreamArguments` (`MaxAge`, `MaxLengthBytes`,
+`SegmentBytes`) for a caller declaring through `Topology` rather than through
+`DeclareStreamAsync`.
+
 ## Where to start reading
 
 ```csharp

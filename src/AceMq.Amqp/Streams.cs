@@ -19,6 +19,31 @@ using System.Threading.Tasks;
 
 namespace AceMq.Amqp;
 
+/// <summary>The queue arguments that bound a stream.</summary>
+/// <remarks>
+/// Named here because a stream is what a reader of this file came for, and spelled
+/// exactly as Go, Python and Ruby spell them: these strings reach the broker, and a
+/// stream declared from one language has to be redeclarable from another. A queue
+/// redeclared with different arguments is refused rather than adjusted.
+/// </remarks>
+public static class StreamArguments
+{
+    /// <summary>Discards messages older than this. A duration with a unit suffix.</summary>
+    public const string MaxAge = "x-max-age";
+
+    /// <summary>Discards the oldest messages once the stream exceeds this.</summary>
+    public const string MaxLengthBytes = "x-max-length-bytes";
+
+    /// <summary>
+    /// How large each of the stream's files on disk gets.
+    /// </summary>
+    /// <remarks>
+    /// Opt-in, and never defaulted — see
+    /// <see cref="AceMqConnection.DeclareStreamAsync(string, System.TimeSpan?, long?, long?)"/>.
+    /// </remarks>
+    public const string SegmentBytes = "x-stream-max-segment-size-bytes";
+}
+
 /// <summary>Where in a stream to start reading.</summary>
 /// <remarks>
 /// A stream keeps its messages after they are read, so a reader has to say where to
