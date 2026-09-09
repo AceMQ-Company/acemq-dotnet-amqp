@@ -297,10 +297,20 @@ public sealed class OutboxRelay : IDisposable
                 await _store.MarkPublishedAsync(record.Id).ConfigureAwait(false);
                 Interlocked.Increment(ref _published);
                 moved++;
+
+                // Measured from when the row was committed, not from when this batch was
+                // claimed. The question a lag answers is "how long has somebody been owed
+                // this message", and the claim is part of the answer rather than the start
+                // of it. acemq.outbox.lag is the one number that reveals a stopped relay:
+                // a committed, unpublished row is a message that exists, is owed to
+                // somebody, and appears in no queue depth anywhere.
+                AceMqTelemetry.OutboxPublished(
+                    record.Exchange, record.RoutingKey, DateTimeOffset.UtcNow - record.CreatedAt);
             }
             catch (Exception e)
             {
                 Interlocked.Increment(ref _failed);
+                AceMqTelemetry.OutboxFailed(record.Exchange, record.RoutingKey, e.Message);
                 await _store.MarkFailedAsync(record.Id, e.Message).ConfigureAwait(false);
             }
         }

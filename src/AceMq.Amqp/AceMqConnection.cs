@@ -360,7 +360,7 @@ public sealed class AceMqConnection : IDisposable
                     interceptor.BeforeHandle(interceptorContext);
                 }
 
-                using var span = AceMqTelemetry.StartConsume(queue, delivery.Headers);
+                using var span = AceMqTelemetry.StartConsume(queue, envelope, delivery.Headers);
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 AceMqTelemetry.EnteredHandler();
                 Interlocked.Increment(ref _inFlightHandlers);
@@ -1196,8 +1196,12 @@ public sealed class AceMqConnection : IDisposable
         if (outcome == MetricNames.OutcomeRetried) AceMqTelemetry.RetriedTotal.Add(1, tags);
         if (outcome == MetricNames.OutcomeDeadLettered) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
 
-        span?.SetTag(MetricNames.TagOutcome, outcome);
-        span?.SetTag("acemq.attempt", attempt);
+        // Set last, and deliberately: MessageRetried tagged this span `retried` while
+        // the settle was still deciding, and on the last permitted attempt the settle
+        // decides dead_lettered. The counter above and the span below therefore always
+        // carry the same value, which is the invariant the test asserts.
+        AceMqTelemetry.Outcome(span, outcome);
+        span?.SetTag(AceMqTelemetry.AttrAttempt, (long)attempt);
         if (!ack.IsAccept)
         {
             span?.SetStatus(

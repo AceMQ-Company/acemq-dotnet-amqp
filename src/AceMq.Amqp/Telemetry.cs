@@ -45,28 +45,91 @@ namespace AceMq.Amqp;
 public static class AceMqTelemetry
 {
     /// <summary>
-    /// The span event recorded when the engine schedules another attempt.
+    /// What <c>messaging.system</c> says on every span this library starts.
     /// </summary>
     /// <remarks>
-    /// Not in <see cref="MetricNames"/>, which is kept character for character
-    /// identical to Java's. Java carries the same two moments as methods on its
-    /// <c>Telemetry</c> interface — <c>messageRetried</c> and
-    /// <c>messageDeadLettered</c> — rather than as named constants, so these two
-    /// strings live here instead of pretending to a contract Java does not have.
+    /// The same value the Java, Go, Python and Ruby libraries write. It names the
+    /// broker protocol a trace backend groups by, not this library — a span tagged
+    /// <c>acemq</c>, which is what this used to write, sorts into a messaging system
+    /// of one and away from every other AMQP span in the same trace.
     /// </remarks>
-    public const string EventRetried = "acemq.message.retried";
+    public const string DefaultSystem = "rabbitmq";
 
-    /// <summary>The span event recorded when the engine gives up on a message.</summary>
-    public const string EventDeadLettered = "acemq.message.dead-lettered";
+    // ---------- span attribute names ----------
+    //
+    // OpenTelemetry's messaging semantic conventions, plus messaging.acemq.* for the
+    // three things those conventions have no name for. Identical to the keys Java's
+    // OpenTelemetryTelemetry sets, and to Go's, Python's and Ruby's.
+    //
+    // These are not the metric tag keys, and the difference is deliberate on all five
+    // libraries: a metric tag is short because it is repeated on every series
+    // (`outcome`), a span attribute is namespaced because it shares a flat key space
+    // with every other instrumentation in the process (`messaging.acemq.outcome`).
+    // This library used to put the metric keys on its spans, so a trace query written
+    // against any of the other four found nothing here.
+
+    /// <summary>The messaging system a span belongs to.</summary>
+    public const string AttrSystem = "messaging.system";
+
+    /// <summary>Exchange published to, or queue consumed from.</summary>
+    public const string AttrDestination = "messaging.destination.name";
+
+    /// <summary>One of <c>publish</c>, <c>process</c>, <c>request</c>.</summary>
+    public const string AttrOperation = "messaging.operation";
+
+    /// <summary>The envelope id.</summary>
+    public const string AttrMessageId = "messaging.message.id";
+
+    /// <summary>The envelope's correlation id.</summary>
+    public const string AttrConversationId = "messaging.message.conversation_id";
+
+    /// <summary>The routing key a publish used.</summary>
+    public const string AttrRoutingKey = "messaging.rabbitmq.destination.routing_key";
+
+    /// <summary>The envelope's logical message type.</summary>
+    public const string AttrMessageType = "messaging.acemq.message_type";
+
+    /// <summary>Which attempt this delivery was.</summary>
+    public const string AttrAttempt = "messaging.acemq.attempt";
+
+    /// <summary>What became of the operation; one of the <c>MetricNames.Outcome*</c> values.</summary>
+    public const string AttrOutcome = "messaging.acemq.outcome";
+
+    /// <summary>Why, as the handler or the policy put it. Unbounded text a metric would not tolerate.</summary>
+    public const string AttrReason = "messaging.acemq.reason";
 
     /// <summary>How long the retry the engine just scheduled will wait, in milliseconds.</summary>
-    public const string EventTagDelayMs = "acemq.retry.delay.ms";
+    public const string AttrRetryDelayMs = "messaging.acemq.retry_delay_ms";
+
+    /// <summary>How long an outbox record waited to be published, in milliseconds.</summary>
+    public const string AttrOutboxLagMs = "messaging.acemq.outbox_lag_ms";
+
+    /// <summary>How old the message was when it left a pipeline, in milliseconds.</summary>
+    public const string AttrRunAgeMs = "messaging.acemq.run_age_ms";
+
+    // ---------- span event names ----------
+
+    /// <summary>The span event recorded when the engine schedules another attempt.</summary>
+    public const string EventRetried = "message.retried";
+
+    /// <summary>The span event recorded when the engine gives up on a message.</summary>
+    public const string EventDeadLettered = "message.dead_lettered";
+
+    /// <summary>The span event recorded when the outbox relay could not publish a record.</summary>
+    public const string EventOutboxPublishFailed = "outbox.publish_failed";
+
+    /// <summary>The span event recorded when a pipeline run ends.</summary>
+    public const string EventPipelineRunFinished = "pipeline.run_finished";
 
     /// <summary>The queue the message was moved to.</summary>
-    public const string EventTagDestination = "acemq.destination";
+    /// <remarks>The same key as <see cref="AttrDestination"/>, named for its use on an event.</remarks>
+    public const string EventTagDestination = AttrDestination;
+
+    /// <summary>How long the retry the engine just scheduled will wait, in milliseconds.</summary>
+    public const string EventTagDelayMs = AttrRetryDelayMs;
 
     /// <summary>Why, as the handler or the policy put it.</summary>
-    public const string EventTagReason = "acemq.reason";
+    public const string EventTagReason = AttrReason;
 
     internal static readonly Meter Meter = new Meter(MetricNames.Meter, ThisVersion());
 
@@ -93,6 +156,25 @@ public static class AceMqTelemetry
 
     internal static readonly Counter<long> DeadLetteredTotal = Meter.CreateCounter<long>(
         MetricNames.DeadLetteredTotal, "messages", "Messages given up on");
+
+    internal static readonly Histogram<double> RequestDuration = Meter.CreateHistogram<double>(
+        MetricNames.RequestDuration, "s", "Round trip of a request, as the caller experienced it");
+
+    internal static readonly Counter<long> RequestTotal = Meter.CreateCounter<long>(
+        MetricNames.RequestTotal, "requests", "Request/reply calls, by outcome");
+
+    internal static readonly Histogram<double> OutboxLag = Meter.CreateHistogram<double>(
+        MetricNames.OutboxLag, "s",
+        "How long an outbox record waited between being committed and published");
+
+    internal static readonly Counter<long> OutboxTotal = Meter.CreateCounter<long>(
+        MetricNames.OutboxTotal, "records", "Outbox records the relay has handled, by outcome");
+
+    internal static readonly Histogram<double> PipelineRunDuration = Meter.CreateHistogram<double>(
+        MetricNames.PipelineRunDuration, "s", "How long a message had existed when it left a pipeline");
+
+    internal static readonly Counter<long> PipelineRunTotal = Meter.CreateCounter<long>(
+        MetricNames.PipelineRunTotal, "runs", "Pipeline runs that finished, by outcome");
 
     private static long _inFlight;
 
@@ -126,16 +208,20 @@ public static class AceMqTelemetry
     /// Java consumer, which reads the same two headers.
     /// </remarks>
     internal static Activity? StartPublish(
-        string exchange, string routingKey, IDictionary<string, object> headers)
+        string exchange, string routingKey, Envelope envelope, IDictionary<string, object> headers)
     {
         var destination = exchange.Length == 0 ? routingKey : exchange;
         var activity = Activity.StartActivity(
             destination + MetricNames.SpanPublishSuffix, ActivityKind.Producer);
         if (activity == null) return null;
 
-        activity.SetTag("messaging.system", "acemq");
-        activity.SetTag("messaging.destination.name", destination);
-        activity.SetTag(MetricNames.TagRoutingKey, routingKey);
+        activity.SetTag(AttrSystem, DefaultSystem);
+        activity.SetTag(AttrDestination, destination);
+        activity.SetTag(AttrOperation, "publish");
+        activity.SetTag(AttrMessageId, envelope.Id);
+        activity.SetTag(AttrConversationId, envelope.CorrelationId);
+        activity.SetTag(AttrRoutingKey, routingKey);
+        activity.SetTag(AttrMessageType, envelope.Type);
 
         headers[AceHeaders.TraceParent] = activity.Id ?? string.Empty;
         if (!string.IsNullOrEmpty(activity.TraceStateString))
@@ -146,7 +232,8 @@ public static class AceMqTelemetry
     }
 
     /// <summary>Starts a processing span, continuing the publisher's trace if there is one.</summary>
-    internal static Activity? StartConsume(string queue, IReadOnlyDictionary<string, object> headers)
+    internal static Activity? StartConsume(
+        string queue, Envelope envelope, IReadOnlyDictionary<string, object> headers)
     {
         ActivityContext parent = default;
         if (headers.TryGetValue(AceHeaders.TraceParent, out var raw) && raw != null)
@@ -162,9 +249,142 @@ public static class AceMqTelemetry
 
         var activity = Activity.StartActivity(
             queue + MetricNames.SpanProcessSuffix, ActivityKind.Consumer, parent);
-        activity?.SetTag("messaging.system", "acemq");
-        activity?.SetTag(MetricNames.TagQueue, queue);
+        if (activity == null) return null;
+
+        activity.SetTag(AttrSystem, DefaultSystem);
+        activity.SetTag(AttrDestination, queue);
+        activity.SetTag(AttrOperation, "process");
+        activity.SetTag(AttrMessageId, envelope.Id);
+        activity.SetTag(AttrConversationId, envelope.CorrelationId);
+        activity.SetTag(AttrMessageType, envelope.Type);
+        activity.SetTag(AttrAttempt, (long)envelope.Attempt);
         return activity;
+    }
+
+    /// <summary>
+    /// Starts a span covering a whole request/reply round trip.
+    /// </summary>
+    /// <remarks>
+    /// A <see cref="ActivityKind.Client"/> span with the publish and the reply's
+    /// delivery as its children, because neither of those two was the thing the caller
+    /// waited for: "how long did asking take" was the gap between them, and a gap is
+    /// not a measurement. Java's <c>Requester</c> opens the same span.
+    /// </remarks>
+    internal static Activity? StartRequest(string destination, Envelope envelope)
+    {
+        var activity = Activity.StartActivity(
+            destination + MetricNames.SpanRequestSuffix, ActivityKind.Client);
+        if (activity == null) return null;
+
+        activity.SetTag(AttrSystem, DefaultSystem);
+        activity.SetTag(AttrDestination, destination);
+        activity.SetTag(AttrOperation, "request");
+        activity.SetTag(AttrMessageId, envelope.Id);
+        activity.SetTag(AttrConversationId, envelope.CorrelationId);
+        activity.SetTag(AttrMessageType, envelope.Type);
+        return activity;
+    }
+
+    /// <summary>
+    /// Records how an operation ended, on the span and in the counter that pairs with it.
+    /// </summary>
+    /// <remarks>
+    /// One call sets both, because the two disagreeing is the failure this library keeps
+    /// finding: a span with no outcome where the counter said <c>failed</c> means a
+    /// dashboard shows failures a trace search cannot find.
+    /// </remarks>
+    internal static void Outcome(Activity? span, string outcome)
+    {
+        if (span == null) return;
+        span.SetTag(AttrOutcome, outcome);
+        if (outcome == MetricNames.OutcomeUnroutable
+            || outcome == MetricNames.OutcomeFailed
+            || outcome == MetricNames.OutcomeDeadLettered
+            || outcome == MetricNames.OutcomeTimedOut)
+        {
+            span.SetStatus(ActivityStatusCode.Error, outcome);
+        }
+    }
+
+    /// <summary>Records an outbox record that reached the broker, and how far behind it was.</summary>
+    internal static void OutboxPublished(string exchange, string routingKey, TimeSpan lag)
+    {
+        var tags = new TagList
+        {
+            { MetricNames.TagExchange, exchange ?? string.Empty },
+            { MetricNames.TagRoutingKey, routingKey ?? string.Empty },
+        };
+
+        // A histogram rather than a counter, because the question is never "how many"
+        // but "how far behind", and a percentile answers that where a total does not.
+        OutboxLag.Record(lag.TotalSeconds, tags);
+
+        var counted = tags;
+        counted.Add(MetricNames.TagOutcome, MetricNames.OutcomePublished);
+        OutboxTotal.Add(1, counted);
+
+        var current = System.Diagnostics.Activity.Current;
+        if (current != null)
+        {
+            current.SetTag(AttrOutboxLagMs, (long)lag.TotalMilliseconds);
+        }
+    }
+
+    /// <summary>Records an outbox record the relay could not publish.</summary>
+    internal static void OutboxFailed(string exchange, string routingKey, string reason)
+    {
+        // The reason is not a tag, for the same cardinality reason a dead-letter reason
+        // is not one. It belongs on the event, which tolerates unbounded text.
+        var tags = new TagList
+        {
+            { MetricNames.TagExchange, exchange ?? string.Empty },
+            { MetricNames.TagRoutingKey, routingKey ?? string.Empty },
+            { MetricNames.TagOutcome, MetricNames.OutcomeFailed },
+        };
+        OutboxTotal.Add(1, tags);
+
+        var current = System.Diagnostics.Activity.Current;
+        if (current == null) return;
+        current.AddEvent(new ActivityEvent(EventOutboxPublishFailed, tags: new ActivityTagsCollection
+        {
+            { AttrDestination, exchange ?? string.Empty },
+            { AttrReason, reason ?? string.Empty },
+        }));
+    }
+
+    /// <summary>Records a pipeline run that ended, at the step it ended on.</summary>
+    /// <remarks>
+    /// The age is the envelope's, so this is the whole run rather than this step: the
+    /// envelope was created when the message entered and carried through every hop.
+    /// </remarks>
+    internal static void PipelineRunFinished(
+        string pipeline, string step, string outcome, TimeSpan age)
+    {
+        var tags = new TagList
+        {
+            { MetricNames.TagPipeline, pipeline },
+            { MetricNames.TagStep, step },
+            { MetricNames.TagOutcome, outcome },
+        };
+        PipelineRunDuration.Record(age.TotalSeconds, tags);
+        PipelineRunTotal.Add(1, tags);
+
+        var current = System.Diagnostics.Activity.Current;
+        if (current == null) return;
+
+        // An event on whatever span is current rather than a span of its own: the run
+        // is already covered by the step's processing span, and a zero-length span at
+        // the end of a trace adds a row and no information. The three keys here are
+        // bare, not namespaced, and match Java's -- `outcome` on this event is the
+        // pipeline's outcome, a different thing from the span's own
+        // messaging.acemq.outcome, which is still `acked`.
+        current.AddEvent(new ActivityEvent(EventPipelineRunFinished, tags: new ActivityTagsCollection
+        {
+            { MetricNames.TagPipeline, pipeline },
+            { MetricNames.TagStep, step },
+            { MetricNames.TagOutcome, outcome },
+            { AttrRunAgeMs, (long)age.TotalMilliseconds },
+        }));
     }
 
     /// <summary>
@@ -191,11 +411,11 @@ public static class AceMqTelemetry
         // allocated for a span something is going to read.
         if (span == null) return;
 
-        span.SetTag(MetricNames.TagOutcome, MetricNames.OutcomeRetried);
+        Outcome(span, MetricNames.OutcomeRetried);
         span.AddEvent(new ActivityEvent(EventRetried, tags: new ActivityTagsCollection
         {
-            { EventTagDelayMs, (long)delay.TotalMilliseconds },
             { EventTagDestination, destination },
+            { EventTagDelayMs, (long)delay.TotalMilliseconds },
             { EventTagReason, reason },
         }));
     }
@@ -211,7 +431,7 @@ public static class AceMqTelemetry
     {
         if (span == null) return;
 
-        span.SetTag(MetricNames.TagOutcome, MetricNames.OutcomeDeadLettered);
+        Outcome(span, MetricNames.OutcomeDeadLettered);
         span.AddEvent(new ActivityEvent(EventDeadLettered, tags: new ActivityTagsCollection
         {
             { EventTagDestination, destination },

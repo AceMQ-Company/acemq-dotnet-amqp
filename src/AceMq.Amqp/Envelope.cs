@@ -77,6 +77,18 @@ public sealed class Envelope
     /// <summary>Application headers. Never contains anything in the reserved namespace.</summary>
     public IReadOnlyDictionary<string, object> Headers { get; }
 
+    /// <summary>
+    /// How long ago this message was first published.
+    /// </summary>
+    /// <remarks>
+    /// Measured from <see cref="FirstSeen"/>, which travels on the wire and survives
+    /// every retry and every pipeline hop, so this is the age of the message rather
+    /// than of this delivery. An age-bounded <see cref="RetryPolicy"/> reads it, and so
+    /// does the pipeline run duration. The Java library exposes the same thing as
+    /// <c>Envelope.age()</c>.
+    /// </remarks>
+    public TimeSpan Age => DateTimeOffset.UtcNow - FirstSeen;
+
     /// <summary>Starts building an envelope for a message type.</summary>
     public static Builder Of(string type) => new Builder(type);
 

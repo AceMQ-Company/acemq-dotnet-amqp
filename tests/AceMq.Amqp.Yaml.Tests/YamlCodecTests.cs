@@ -98,6 +98,12 @@ public sealed class YamlCodecTests
         Assert.True(_codec.CanDecode("application/yaml"));
         Assert.True(_codec.CanDecode("application/x-yaml"));
         Assert.True(_codec.CanDecode("text/yaml"));
+
+        // The fourth of the four names YAML has gone by, and the one this codec used
+        // to refuse. Java, Python and Ruby all take it, so a body labelled text/x-yaml
+        // by any of them was decodable everywhere except here.
+        Assert.True(_codec.CanDecode("text/x-yaml"));
+
         Assert.True(_codec.CanDecode("application/vnd.acme.deploy+yaml"));
     }
 

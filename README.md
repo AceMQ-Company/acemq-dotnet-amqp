@@ -51,7 +51,7 @@ native API rather than a transliterated Java one.
 | `TlsOptions` / `ICredentialsProvider` | TLS verified by default, private CAs trusted properly, secrets out of the URL |
 | `AceMq.Amqp.DevCerts` | a tool that generates development certificates the library then refuses by default |
 | `RetryPolicy` / `IIdempotencyStore` | bounded backoff with two-sided jitter, waited here or in the broker, and at-least-once made safe |
-| `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names, no OTel dependency |
+| `AceMqTelemetry` | Meter and ActivitySource instrumentation, Java's metric names and span attributes, no OTel dependency |
 | `AceMqDiagnostics` | the events an operator needs said out loud, bridged to `ILogger` |
 | `AceMqActuator` | `/acemq-metrics`, `/acemq-health`, `/acemq-info` over HTTP, no ASP.NET Core |
 | `RabbitMqTransport` | RabbitMQ, over `amqp://` and `amqps://` |

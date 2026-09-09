@@ -213,7 +213,9 @@ right value from the wrong codec — and the mistake surfaces much later, as tra
 recorded under a format nobody sent.
 
 So `CanDecode(null)` is **false**, and it claims only `application/yaml`,
-`application/x-yaml`, `text/yaml` and anything ending `+yaml`. In a
+`application/x-yaml`, `text/yaml`, `text/x-yaml` and anything ending `+yaml` — the
+four names YAML has gone by, which is the same set the Java, Python and Ruby codecs
+take. In a
 `CompositeCodec`, put JSON first and let YAML take only what is labelled.
 
 ### Hostile input

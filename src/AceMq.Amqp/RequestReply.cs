@@ -14,6 +14,7 @@
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -37,6 +38,16 @@ namespace AceMq.Amqp;
 /// </remarks>
 public sealed class Requester : IDisposable
 {
+    /// <summary>
+    /// How long an idle reply queue survives before the broker deletes it.
+    /// </summary>
+    /// <remarks>
+    /// The same ten minutes Java's <c>Requester</c> uses. Long enough that a paused
+    /// debugger does not lose the queue underneath a waiting caller, short enough that
+    /// a process killed without disposing leaves nothing behind for an afternoon.
+    /// </remarks>
+    internal const long ReplyQueueExpiryMillis = 10 * 60 * 1000L;
+
     private readonly AceMqConnection _mq;
     private readonly ICodec _codec;
     private IMessageConsumer? _consumer;
@@ -67,7 +78,17 @@ public sealed class Requester : IDisposable
         // Java's Requester declares the same queue QueueType.CLASSIC for the same
         // reason. Leaving it on the library default would have made this queue quorum
         // the day that default changed, which is the failure worth naming here.
-        await mq.DeclareQueueAsync(replyQueue, QueueType.Classic, null).ConfigureAwait(false);
+        //
+        // x-expires is the same ten minutes Java's Requester sets, and it is what
+        // stops this queue outliving the process. A reply queue holds answers nobody
+        // will read once the asking process is gone; without the argument, every
+        // requester that died left a durable queue behind a guid nothing can look up
+        // again, and a long-lived service accumulated one per restart for ever.
+        await mq.DeclareQueueAsync(
+                replyQueue,
+                QueueType.Classic,
+                new Dictionary<string, object> { ["x-expires"] = ReplyQueueExpiryMillis })
+            .ConfigureAwait(false);
 
         var requester = new Requester(mq, codec, replyQueue);
 
@@ -132,6 +153,15 @@ public sealed class Requester : IDisposable
         var pending = new PendingRequest();
         _pending[envelope.Id] = pending;
 
+        // Neither of the two spans that already covered this call was the thing the
+        // caller waited for: the publish is timed and the reply's delivery is timed,
+        // and "how long did asking take" was the gap between them. A gap is not a
+        // measurement, which is why acemq.request.duration exists on every library.
+        var destination = string.IsNullOrEmpty(routingKey) ? exchange : routingKey;
+        using var span = AceMqTelemetry.StartRequest(destination, envelope);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = MetricNames.OutcomeFailed;
+
         try
         {
             var publisher = _mq.Publisher<TRequest>(
@@ -144,12 +174,15 @@ public sealed class Requester : IDisposable
             using (linked.Token.Register(() => pending.Completion.TrySetCanceled()))
             {
                 var body = await pending.Completion.Task.ConfigureAwait(false);
-                return (TResponse)_codec.Decode(body, typeof(TResponse));
+                var answer = (TResponse)_codec.Decode(body, typeof(TResponse));
+                outcome = MetricNames.OutcomeAnswered;
+                return answer;
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             Interlocked.Increment(ref _timedOut);
+            outcome = MetricNames.OutcomeTimedOut;
             throw new RequestTimedOutException(
                 $"no reply to {envelope.Id} on {exchange}/{routingKey} within " +
                 $"{timeout.TotalSeconds:F0}s");
@@ -157,6 +190,20 @@ public sealed class Requester : IDisposable
         finally
         {
             _pending.TryRemove(envelope.Id, out _);
+
+            // Recorded whatever happened, including the paths that threw: a request
+            // that never got an answer is the one an operator most wants counted, and
+            // an outcome nobody named reads as failed -- the same default the Java
+            // library's meter scope has always applied to the same silence.
+            var tags = new System.Diagnostics.TagList
+            {
+                { MetricNames.TagRoutingKey, destination },
+                { MetricNames.TagMessageType, envelope.Type },
+                { MetricNames.TagOutcome, outcome },
+            };
+            AceMqTelemetry.RequestDuration.Record(clock.Elapsed.TotalSeconds, tags);
+            AceMqTelemetry.RequestTotal.Add(1, tags);
+            AceMqTelemetry.Outcome(span, outcome);
         }
     }
 

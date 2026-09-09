@@ -26,13 +26,34 @@ service rewritten from Java to C# keeps its observability.
 | `acemq.consume.in.flight` | gauge | — |
 | `acemq.messages.retried.total` | counter | queue, message.type |
 | `acemq.messages.dead.lettered.total` | counter | queue, message.type |
+| `acemq.request.duration` | histogram, seconds | routing.key, message.type, outcome |
+| `acemq.request.total` | counter | routing.key, message.type, outcome |
+| `acemq.outbox.lag` | histogram, seconds | exchange, routing.key |
+| `acemq.outbox.total` | counter | exchange, routing.key, outcome |
+| `acemq.pipeline.run.duration` | histogram, seconds | pipeline, step, outcome |
+| `acemq.pipeline.run.total` | counter | pipeline, step, outcome |
 
-Publish outcomes are `confirmed`, `unroutable`, `rejected` and `failed`. The
-distinction is worth alerting on separately: **unroutable is a topology mistake**,
-`failed` is the broker or the network, and treating them as one hides the difference
-between a bad binding and an outage.
+Publish outcomes are `confirmed`, `unroutable` and `failed`. The distinction is worth
+alerting on separately: **unroutable is a topology mistake**, `failed` is the broker
+or the network, and treating them as one hides the difference between a bad binding
+and an outage. Up to 0.3.0 a broker's nack was tagged `rejected` here — a value no
+other library writes, and one that belongs to a delivery — so a panel filtering
+publishes by outcome dropped every refusal.
 
-Consume outcomes are `acked`, `retried`, `dead_lettered` and `rejected`.
+Consume outcomes are `acked`, `retried`, `dead_lettered` and `rejected`. Request
+outcomes are `answered`, `timed_out` and `failed`. An outbox record is `published` or
+`failed`. A pipeline run is `completed` or `ended_early`.
+
+`acemq.outbox.lag` is the one number that reveals a stopped relay. A committed,
+unpublished row is a message that exists, is owed to somebody, and **appears in no
+queue depth anywhere** — nothing else in this list can see it. It is measured from
+when the row was committed, not from when the relay claimed it: the claim is part of
+the answer to "how long has somebody been owed this", not the start of it.
+
+`acemq.request.duration` exists because neither of the spans that already covered a
+request/reply call was the thing the caller waited for. The publish is timed and the
+reply's delivery is timed; the round trip was the gap between them, and a gap is not
+a measurement.
 
 **The outcome is the engine's, not the handler's.** A handler that throws is asking
 for a retry, but on the last attempt a `RetryPolicy` allows, the engine dead-letters
@@ -52,7 +73,8 @@ translation is the exporter's, and Java's exporters do the same.
 
 A publish starts a span named `<destination> publish` and writes the W3C trace
 context into `traceparent`, which the envelope already reserves. A consumer continues
-it as `<queue> process`.
+it as `<queue> process`. A blocking request opens `<destination> request` around the
+whole round trip, with the publish and the reply as its children.
 
 That means a trace crosses the broker — and crosses languages, because the Java
 library reads and writes the same two headers. A C# service consuming a message a
@@ -64,27 +86,56 @@ builder.Services.AddOpenTelemetry()
     .WithMetrics(m => m.AddMeter(MetricNames.Meter));
 ```
 
-### Span events on a message that failed
+### Span attributes
 
-A `<queue> process` span carries an event at each of the two moments a failing
-message can reach:
+OpenTelemetry's messaging semantic conventions, plus `messaging.acemq.*` for the
+things those conventions have no name for. These are the **exact keys the Java, Go,
+Python and Ruby libraries write**, so one trace query works across a polyglot estate.
 
-| Event | Tags |
+| Attribute | On | Meaning |
+|---|---|---|
+| `messaging.system` | every span | `rabbitmq` |
+| `messaging.destination.name` | every span | exchange published to, or queue consumed from |
+| `messaging.operation` | every span | `publish`, `process` or `request` |
+| `messaging.message.id` | every span | the envelope id |
+| `messaging.message.conversation_id` | every span | the correlation id |
+| `messaging.rabbitmq.destination.routing_key` | publish | the routing key used |
+| `messaging.acemq.message_type` | every span | the envelope's logical type |
+| `messaging.acemq.attempt` | process | which attempt this delivery was |
+| `messaging.acemq.outcome` | every span | the same value the counter carries |
+
+Up to 0.3.0 this library put its *metric* tag keys on spans instead — `queue`,
+`outcome`, `acemq.attempt` — and set `messaging.system` to `acemq`. A trace query
+written against any of the other four libraries matched none of its spans. The keys
+are constants on `AceMqTelemetry` (`AttrOutcome`, `AttrAttempt`, and so on).
+
+**The outcome on the span is the outcome on the counter**, always, for the same
+delivery. They are written from one value in one place, and `TelemetryTests` asserts
+that a message which exhausts its attempts has them agreeing.
+
+### Span events
+
+| Event | Attributes |
 |---|---|
-| `acemq.message.retried` | `acemq.retry.delay.ms`, `acemq.destination`, `acemq.reason` |
-| `acemq.message.dead-lettered` | `acemq.destination`, `acemq.reason` |
+| `message.retried` | `messaging.destination.name`, `messaging.acemq.retry_delay_ms`, `messaging.acemq.reason` |
+| `message.dead_lettered` | `messaging.destination.name`, `messaging.acemq.reason` |
+| `outbox.publish_failed` | `messaging.destination.name`, `messaging.acemq.reason` |
+| `pipeline.run_finished` | `pipeline`, `step`, `outcome`, `messaging.acemq.run_age_ms` |
 
-The names are on `AceMqTelemetry` — `EventRetried`, `EventDeadLettered`,
-`EventTagDelayMs`, `EventTagDestination`, `EventTagReason` — rather than on
-`MetricNames`, which is kept character for character identical to Java's and has no
-span-event constants in it. Java carries the same two moments as `messageRetried` and
-`messageDeadLettered` on its `Telemetry` interface.
+Java records these four under exactly these names, and Go, Python and Ruby copy them.
+Up to 0.3.0 the first two were `acemq.message.retried` and
+`acemq.message.dead-lettered` here, which matched nothing anywhere else.
 
-`acemq.retry.delay.ms` is the delay the engine **actually chose** — the policy's, not
-the handler's suggestion — so a trace shows the wait that happened. Where the message
-went is on `acemq.destination`: the source queue for a wait held in the consumer, a
-rung queue for a wait held in the broker, `{queue}.dlq` or `{queue}.parked` for a
-message given up on.
+The three keys on `pipeline.run_finished` are bare rather than namespaced, and that
+is deliberate on all five libraries: `outcome` there is the *run's* outcome, a
+different thing from the span's own `messaging.acemq.outcome`, which still reads
+`acked`.
+
+`messaging.acemq.retry_delay_ms` is the delay the engine **actually chose** — the
+policy's, not the handler's suggestion — so a trace shows the wait that happened.
+Where the message went is on `messaging.destination.name`: the source queue for a
+wait held in the consumer, a rung queue for a wait held in the broker, `{queue}.dlq`
+or `{queue}.parked` for a message given up on.
 
 None of this is allocated when nothing is listening. No listener means no `Activity`
 was ever created, so emitting an event is a null check and a return.

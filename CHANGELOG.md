@@ -8,8 +8,80 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **The outbox, the pipeline and request/reply now report themselves.** All three
+  ran silently: the relay published records and told nobody, a pipeline run ended
+  and counted nothing, and a request's round trip — the one duration the caller
+  actually waited for — was the gap between two other spans. `acemq.outbox.lag`,
+  `acemq.outbox.total`, `acemq.pipeline.run.duration`, `acemq.pipeline.run.total`,
+  `acemq.request.duration` and `acemq.request.total` are now recorded under the
+  names Java has used since 0.2, with the same tags. `acemq.outbox.lag` is the one
+  number that reveals a stopped relay: a committed, unpublished row is a message
+  that exists, is owed to somebody, and appears in no queue depth anywhere.
+- **`Envelope.Age`**, the elapsed time since `FirstSeen`, matching Java's
+  `Envelope.age()`.
+
+### Changed
+
+- **Spans are named the way the other four libraries name them.** Every span
+  attribute now uses OpenTelemetry's messaging semantic conventions, plus
+  `messaging.acemq.*` for the three things those conventions have no name for —
+  the exact keys Java, Go, Python and Ruby all write. This library used to put its
+  *metric* tag keys on spans (`queue`, `outcome`, `acemq.attempt`) and to set
+  `messaging.system` to `acemq`, so a trace query written against any of the other
+  four matched none of its spans. The four span events are renamed to match too:
+  `message.retried`, `message.dead_lettered`, `outbox.publish_failed` and
+  `pipeline.run_finished`, in place of `acemq.message.retried` and
+  `acemq.message.dead-lettered`.
+
+  **This is a breaking change for anything reading the old attribute names.** The
+  constants on `AceMqTelemetry` are the supported way to refer to them, and they
+  have been updated in step.
+
+- **`MetricNames` is complete, and now says something checkable.** The file claimed
+  to be identical to `org.acemq.amqp.api.MetricNames` character for character while
+  missing fourteen of its members — the request, outbox and pipeline names, the
+  `pipeline` and `step` tag keys, five outcome values and the request span suffix.
+  All of them are there, and `TelemetryTests` asserts every single one rather than
+  a sample, which is what the old claim needed in order not to rot again.
+
 ### Fixed
 
+- **A pipeline encoded every payload twice, so every step after the first read
+  nonsense.** A step encodes its own output; the publisher carrying that output to
+  the next step then sent those bytes through the connection's codec as well, so
+  what arrived was base64 of JSON of the payload. It went unnoticed because a step
+  that trims or appends a string succeeds just as well on nonsense, and because no
+  test had ever asserted a payload's value past the first hop. A Java, Go, Python
+  or Ruby consumer reading a `<pipeline>.<step>` queue got the same nonsense. Both
+  the entry publish and every hop now send the encoded bytes verbatim, under the
+  content type the sending step encoded with.
+- **A pipeline run whose last step returned nothing was counted as filtered out
+  rather than completed.** The last step of a route is almost always a terminal
+  action with nothing to return, so `Pipeline.Completed` stayed at zero for a
+  pipeline that was working perfectly and `EndedEarly` counted every success.
+  Whether there is a step after this one is now asked first, which is the order
+  Java's `Pipeline` uses and warns about in a comment.
+- **A pipeline reset the message clock at every hop.** The envelope handed to the
+  next step was rebuilt without `FirstSeen`, so a message looked newly published at
+  each step: an age-bounded `RetryPolicy` could never expire it, and a run's
+  duration measured the last step instead of the run. `FirstSeen`, `Version` and
+  `Origin` now travel with it.
+- **A broker's refusal to accept a publish was counted as `rejected`.** A publish
+  has three outcomes in this family's vocabulary — `confirmed`, `unroutable`,
+  `failed` — and `rejected` belongs to a delivery, where it means a handler
+  released the message. A nack therefore put a value on `acemq.publish.total` that
+  no other library writes, and a panel filtering publishes by outcome silently
+  dropped every broker refusal. It is `failed`, as it is in Java.
+- **A requester's reply queue outlived the process that made it.** Java's
+  `Requester` declares its reply queue with `x-expires`; this one did not, so every
+  requester that died without disposing left a durable queue behind a guid nothing
+  could ever look up again, and a long-lived service accumulated one per restart.
+  The queue now expires after the same ten minutes idle.
+- **`AceMq.Amqp.Yaml` refused `text/x-yaml`.** The fourth of the four names YAML
+  has gone by, accepted by the Java, Python and Ruby codecs and refused here, so a
+  body labelled that way by any of them arrived undecodable.
 - **`AceMq.Amqp.XmlCodec` no longer returns an empty object for a body it could not
   bind.** `XmlSerializer` matches element names case-sensitively, so the
   `<orderId>` a Java, Go, Python or Ruby publisher writes never bound to a C#

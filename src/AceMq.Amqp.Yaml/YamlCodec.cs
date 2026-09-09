@@ -125,9 +125,14 @@ public sealed class YamlCodec : ICodec
     {
         if (string.IsNullOrEmpty(contentType)) return false;
         return contentType!.StartsWith(YamlContentType, StringComparison.OrdinalIgnoreCase)
-               // Both were in use long before application/yaml was registered.
+               // All three were in use long before application/yaml was registered as
+               // the one true name by RFC 9512, and all three are still written by
+               // tools nobody here controls. text/x-yaml was the odd one out: Java,
+               // Python and Ruby take it, this codec refused it, so a body one of them
+               // labelled that way arrived here undecodable.
                || contentType.StartsWith("application/x-yaml", StringComparison.OrdinalIgnoreCase)
                || contentType.StartsWith("text/yaml", StringComparison.OrdinalIgnoreCase)
+               || contentType.StartsWith("text/x-yaml", StringComparison.OrdinalIgnoreCase)
                || contentType.IndexOf("+yaml", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 

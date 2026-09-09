@@ -139,29 +139,58 @@ public sealed class Pipeline<T> : IDisposable
 
                     if (_idempotency != null) await _idempotency.ConfirmAsync(key).ConfigureAwait(false);
 
-                    if (output == null)
-                    {
-                        // The step filtered it out. That is an outcome, not a failure,
-                        // so it is counted separately from both success and error.
-                        Interlocked.Increment(ref _endedEarly);
-                        return Ack.Accept();
-                    }
-
+                    // Whether there is a step after this one is asked first, and the
+                    // order matters. The last step of a route is almost always a
+                    // terminal action with nothing to return, so reading its null as
+                    // "ended early" reported every completed run as a filtered one --
+                    // which is exactly what this used to do, and what Java's Pipeline
+                    // has a comment warning against.
                     if (next == null)
                     {
                         Interlocked.Increment(ref _completed);
+                        AceMqTelemetry.PipelineRunFinished(
+                            Name, step.Name, MetricNames.OutcomeCompleted, message.Envelope.Age);
+                        return Ack.Accept();
+                    }
+
+                    if (output == null)
+                    {
+                        // The step filtered it out: a decision, not a failure, and
+                        // counted apart from both so that "how many were filtered out"
+                        // needs no log reading.
+                        Interlocked.Increment(ref _endedEarly);
+                        AceMqTelemetry.PipelineRunFinished(
+                            Name, step.Name, MetricNames.OutcomeEndedEarly, message.Envelope.Age);
                         return Ack.Accept();
                     }
 
                     // The envelope travels with the message, so a correlation id set
-                    // at the entrance is still on it at the exit.
+                    // at the entrance is still on it at the exit -- and so does
+                    // FirstSeen, which this used to drop. Restarting the clock at every
+                    // hop made a message look newly published at each step, which is
+                    // wrong twice over: an age-bounded retry policy never expires, and
+                    // the run duration measures the last step instead of the run.
                     var onward = Envelope.Of(message.Envelope.Type)
                         .Id(message.Envelope.Id)
+                        .Version(message.Envelope.Version)
                         .CorrelationId(message.Envelope.CorrelationId)
                         .CausationId(message.Envelope.CausationId)
+                        .FirstSeen(message.Envelope.FirstSeen)
+                        .Origin(message.Envelope.Origin)
                         .Build();
 
-                    var publisher = _mq.Publisher<byte[]>(string.Empty, QueueFor(next.Name));
+                    // Verbatim, and that is the whole of it. step.Encode has already
+                    // turned the handler's output into this step's wire format; sending
+                    // those bytes through the connection's codec encoded them a second
+                    // time, so what reached the next step was base64 of JSON of the
+                    // payload rather than the payload. Every step after the first
+                    // received a mangled body — invisibly, because a string step that
+                    // trims or appends succeeds just as well on nonsense — and a Java
+                    // consumer reading the same queue got nonsense too. The content type
+                    // is the sending step's, so the next step is told what it is reading.
+                    var publisher = _mq.Publisher<byte[]>(
+                        string.Empty, QueueFor(next.Name), PublishOptions.Defaults(), null,
+                        new VerbatimCodec(step.ContentType));
                     await publisher.SendAsync(step.Encode(output), onward).ConfigureAwait(false);
                     return Ack.Accept();
                 }).ConfigureAwait(false);
@@ -180,7 +209,12 @@ public sealed class Pipeline<T> : IDisposable
 
         var first = _steps[0];
         var wrapper = envelope ?? Envelope.Of(Name).Build();
-        var publisher = _mq.Publisher<byte[]>(string.Empty, QueueFor(first.Name));
+
+        // Verbatim, for the same reason the hop between two steps is: the payload has
+        // already been encoded, and the connection's codec would encode it again.
+        var publisher = _mq.Publisher<byte[]>(
+            string.Empty, QueueFor(first.Name), PublishOptions.Defaults(), null,
+            new VerbatimCodec(first.ContentType));
         await publisher.SendAsync(first.Encode(payload!), wrapper).ConfigureAwait(false);
         Interlocked.Increment(ref _entered);
         return wrapper.Id;
@@ -201,16 +235,44 @@ public sealed class Pipeline<T> : IDisposable
         $"Pipeline[{Name}, {_steps.Count} step(s), {InFlight} in flight]";
 }
 
+/// <summary>
+/// Puts already-encoded bytes on the wire under the content type they were encoded as.
+/// </summary>
+/// <remarks>
+/// A step encodes its own output; the publisher between two steps must not encode it
+/// again. The same trade the outbox relay makes with its own verbatim codec, and for
+/// the same reason: the bytes are already the message.
+/// </remarks>
+internal sealed class VerbatimCodec : ICodec
+{
+    internal VerbatimCodec(string contentType) => ContentType = contentType;
+
+    public string ContentType { get; }
+
+    public byte[] Encode(object payload) => (byte[])payload;
+
+    public object Decode(byte[] body, Type target) => body;
+
+    /// <summary>
+    /// Never. This codec exists to send, and offering it for decoding would let it win
+    /// a registry lookup against the codec that can actually read the format.
+    /// </summary>
+    public bool CanDecode(string? contentType) => false;
+
+    public override string ToString() => $"Pipeline.Verbatim[{ContentType}]";
+}
+
 /// <summary>One step of a pipeline, after type erasure.</summary>
 internal sealed class PipelineStep
 {
     internal PipelineStep(
         string name, Func<byte[], Envelope, Task<object?>> invoke,
-        Func<object, byte[]> encode, int prefetch, TimeSpan retryDelay)
+        Func<object, byte[]> encode, string contentType, int prefetch, TimeSpan retryDelay)
     {
         Name = name;
         Invoke = invoke;
         Encode = encode;
+        ContentType = contentType;
         Prefetch = prefetch;
         RetryDelay = retryDelay;
     }
@@ -218,6 +280,18 @@ internal sealed class PipelineStep
     internal string Name { get; }
     internal Func<byte[], Envelope, Task<object?>> Invoke { get; }
     internal Func<object, byte[]> Encode { get; }
+
+    /// <summary>
+    /// What <see cref="Encode"/> produced, so the next step is told what it is reading.
+    /// </summary>
+    /// <remarks>
+    /// The content type belongs to the step that <em>sends</em>, not to the one that
+    /// receives — the format of a message arriving at <c>store</c> is the one the step
+    /// before <c>store</c> encoded with. Java's <c>Pipeline.encodingBefore</c> makes the
+    /// same point, and names reading it off the destination instead as a real bug.
+    /// </remarks>
+    internal string ContentType { get; }
+
     internal int Prefetch { get; }
     internal TimeSpan RetryDelay { get; }
 }
@@ -291,6 +365,7 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
                 return await handler(input).ConfigureAwait(false);
             },
             value => codec.Encode(value),
+            codec.ContentType,
             _prefetch, _retryDelay));
 
         return Continuing<TOut>();

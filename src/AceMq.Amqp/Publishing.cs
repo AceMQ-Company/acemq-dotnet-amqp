@@ -186,7 +186,7 @@ internal sealed class Publisher<T> : IPublisher<T>
 
         // Started before the message is built, so the trace context is written into
         // the headers the broker actually receives.
-        using var span = AceMqTelemetry.StartPublish(_exchange, _routingKey, headers);
+        using var span = AceMqTelemetry.StartPublish(_exchange, _routingKey, envelope, headers);
         var message = new OutboundMessage(
             _exchange, _routingKey, body,
             new Dictionary<string, object>(headers),
@@ -221,7 +221,14 @@ internal sealed class Publisher<T> : IPublisher<T>
 
             if (!confirm.Confirmed)
             {
-                Record(envelope, MetricNames.OutcomeRejected, clock.Elapsed, span);
+                // failed, not rejected. A publish has three outcomes in this family's
+                // vocabulary -- confirmed, unroutable, failed -- and `rejected` belongs
+                // to a delivery, where it means a handler released the message. A nack
+                // counted as `rejected` put a value on acemq.publish.total that Java
+                // never writes, so a panel filtering publishes by outcome silently
+                // dropped every broker refusal. Java's DefaultPublisher records the
+                // same nack as failed.
+                Record(envelope, MetricNames.OutcomeFailed, clock.Elapsed, span);
                 throw new PublishFailedException(
                     $"the broker rejected {envelope.Id}: {confirm.Reason ?? "no reason given"}");
             }
@@ -293,7 +300,7 @@ internal sealed class Publisher<T> : IPublisher<T>
         };
         AceMqTelemetry.PublishDuration.Record(elapsed.TotalSeconds, tags);
         AceMqTelemetry.PublishTotal.Add(1, tags);
-        span?.SetTag(MetricNames.TagOutcome, outcome);
+        AceMqTelemetry.Outcome(span, outcome);
         if (outcome != MetricNames.OutcomeConfirmed)
         {
             span?.SetStatus(ActivityStatusCode.Error, outcome);
