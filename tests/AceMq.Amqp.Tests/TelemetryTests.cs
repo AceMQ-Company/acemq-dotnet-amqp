@@ -168,6 +168,112 @@ public sealed class TelemetryTests : IDisposable
     }
 
     [Fact]
+    public async Task SaysDeadLetteredOnTheSpanOfAMessageThatRanOutOfAttempts()
+    {
+        // The assertion this test exists for.
+        //
+        // The handler asks for a retry every time -- it just throws -- so the ack
+        // reaching the engine is always Ack.Retry. On the last attempt the policy
+        // allows, the engine dead-letters it anyway. Up to 0.3.0 the span was tagged
+        // from the handler's ack before the engine had decided, so this span said
+        // outcome="retried" about a message nothing would ever try again, and anyone
+        // querying a trace backend for dead letters found nothing at all.
+        var spans = new List<Activity>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a => { lock (spans) spans.Add(a); },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q,
+            ConsumerOptions.Defaults().WithRetry(
+                RetryPolicy.Fixed(2, TimeSpan.FromMilliseconds(5))),
+            _ => throw new InvalidOperationException("nope"));
+
+        await mq.Publisher<string>("", _q).SendAsync("hello");
+
+        await Eventually(
+            () => Taken().Any(m => m.Name == MetricNames.DeadLetteredTotal
+                                   && m.Tags[MetricNames.TagQueue] == _q),
+            "the message to be given up on");
+
+        Activity[] mine;
+        lock (spans) mine = spans.Where(a => a.DisplayName == _q + MetricNames.SpanProcessSuffix).ToArray();
+
+        // Every attempt but the last is a retry; the last one is the dead-letter.
+        var final = mine.Single(
+            a => a.GetTagItem(MetricNames.TagOutcome) as string == MetricNames.OutcomeDeadLettered);
+        Assert.Equal(MetricNames.OutcomeDeadLettered, final.GetTagItem(MetricNames.TagOutcome));
+        Assert.NotEqual(MetricNames.OutcomeRetried, final.GetTagItem(MetricNames.TagOutcome) as string);
+
+        // And the event carries the reason, so the trace says why it was given up on
+        // rather than only that it was.
+        var buried = final.Events.Single(e => e.Name == AceMqTelemetry.EventDeadLettered);
+        var reason = buried.Tags.Single(t => t.Key == AceMqTelemetry.EventTagReason).Value as string;
+        Assert.Contains("nope", reason);
+        Assert.Contains(
+            Naming.DeadLetterQueue(_q),
+            buried.Tags.Single(t => t.Key == AceMqTelemetry.EventTagDestination).Value as string);
+
+        // The counter agrees with the span. It used to count this as a retry.
+        var counted = Taken().Single(
+            m => m.Name == MetricNames.DeadLetteredTotal && m.Tags[MetricNames.TagQueue] == _q);
+        Assert.Equal(MetricNames.OutcomeDeadLettered, counted.Tags[MetricNames.TagOutcome]);
+    }
+
+    [Fact]
+    public async Task RecordsTheDelayTheEngineActuallyChoseOnARetry()
+    {
+        // The delay on the event is the policy's, not the handler's suggestion, so a
+        // trace shows the wait that happened rather than the one that was asked for.
+        var spans = new List<Activity>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a => { lock (spans) spans.Add(a); },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var attempts = 0;
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q,
+            ConsumerOptions.Defaults().WithRetry(
+                RetryPolicy.Fixed(3, TimeSpan.FromMilliseconds(40))),
+            _ =>
+            {
+                if (Interlocked.Increment(ref attempts) == 1) throw new InvalidOperationException("once");
+                return Task.FromResult(Ack.Accept());
+            });
+
+        await mq.Publisher<string>("", _q).SendAsync("hello");
+
+        await Eventually(
+            () => Taken().Any(m => m.Name == MetricNames.ConsumeTotal
+                                   && m.Tags[MetricNames.TagQueue] == _q
+                                   && m.Tags[MetricNames.TagOutcome] == MetricNames.OutcomeAcked),
+            "the second attempt to succeed");
+
+        Activity[] mine;
+        lock (spans) mine = spans.Where(a => a.DisplayName == _q + MetricNames.SpanProcessSuffix).ToArray();
+
+        var retried = mine.Single(
+            a => a.GetTagItem(MetricNames.TagOutcome) as string == MetricNames.OutcomeRetried);
+        var scheduled = retried.Events.Single(e => e.Name == AceMqTelemetry.EventRetried);
+        Assert.Equal(
+            40L, scheduled.Tags.Single(t => t.Key == AceMqTelemetry.EventTagDelayMs).Value);
+    }
+
+    [Fact]
     public void NamesEveryMetricExactlyAsTheJavaLibraryDoes()
     {
         // Copied from org.acemq.amqp.api.MetricNames. If one of these changes, a

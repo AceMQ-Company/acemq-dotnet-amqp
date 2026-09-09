@@ -8,6 +8,79 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`AceMq.Amqp.XmlCodec` no longer returns an empty object for a body it could not
+  bind.** `XmlSerializer` matches element names case-sensitively, so the
+  `<orderId>` a Java, Go, Python or Ruby publisher writes never bound to a C#
+  `OrderId` — and up to 0.3.0 it said nothing about that. It returned a
+  fully-formed `Order` with every member at its default, and the message was gone
+  with no exception anywhere. `Decode` now throws `AceFatalException` when a
+  document had content and none of it reached a member, and the message names
+  `AceMq.Amqp.Xml.InteropXmlCodec` as the codec that would have worked.
+
+  **This is a breaking change**, and a deliberate one: there is no version of
+  "relied on getting an empty object back" that was working. It is an
+  `AceFatalException`, so such a message is dead-lettered rather than retried
+  forever — the same bytes bind no better on the next attempt.
+
+  The refusal is narrow. It fires only when *nothing* bound. A document with some
+  elements bound and some unknown still decodes, because that is what a producer
+  adding a field looks like and breaking forward compatibility would be a worse bug
+  than the one being fixed; an empty document that legitimately decodes to an
+  all-default object still decodes, because nothing in it was unknown.
+
+  `XmlCodec` was **not** marked `[Obsolete]`, which was the other candidate. It is
+  correct for .NET talking to .NET and for a document that has to match an XSD, and
+  an obsolete warning on a correct use is noise that teaches people to suppress
+  warnings. The defect was silence, not existence.
+
+- **A message that exhausts its retry policy now reports `dead_lettered` rather
+  than `retried`.** The consume outcome was derived from the handler's `Ack` before
+  the engine had settled the delivery, so a handler asking for a retry on its last
+  permitted attempt produced a span tagged `outcome="retried"` and a
+  `acemq.messages.retried.total` increment — for a message nothing would ever try
+  again. `acemq.messages.dead.lettered.total` therefore only ever counted the
+  dead-letters a handler asked for by name, and a trace backend queried for
+  dead-lettered messages found none at all.
+
+  The outcome is now decided by the settle, which is the only place that knows it.
+  A dashboard built on 0.3.0 numbers will show retries falling and dead-letters
+  rising without anything changing in the service being measured.
+
+### Added
+
+- **Span events at the two moments a failing message reaches.** A `<queue> process`
+  span now carries `acemq.message.retried` (tagged with `acemq.retry.delay.ms`,
+  `acemq.destination` and `acemq.reason`) when the engine schedules another
+  attempt, and `acemq.message.dead-lettered` (tagged with `acemq.destination` and
+  `acemq.reason`) when it gives up. The delay is the one the engine actually chose
+  — the policy's, not the handler's suggestion — so a trace shows the wait that
+  happened.
+
+  The names are constants on `AceMqTelemetry` (`EventRetried`, `EventDeadLettered`,
+  `EventTagDelayMs`, `EventTagDestination`, `EventTagReason`) rather than on
+  `MetricNames`, which is kept character for character identical to Java's
+  `org.acemq.amqp.api.MetricNames` and has no span-event constants in it. Java
+  carries the same two moments as `messageRetried` and `messageDeadLettered` on its
+  `Telemetry` interface.
+
+  Nothing is allocated when nothing is listening: no listener means no `Activity`
+  was created, so emitting an event is a null check and a return.
+
+- **`ProtobufCodec` reads `application/vnd.google.protobuf`**, the content type
+  Google's own tooling writes. It has no `+protobuf` suffix to be caught by, so it
+  had to be named; until it was, .NET refused a message Go and Ruby read without
+  complaint. The full read set is now `application/x-protobuf`,
+  `application/protobuf`, `application/vnd.google.protobuf` and any `*+protobuf`
+  suffix type, exposed as `ProtobufCodec.ReadableContentTypes`. The write side is
+  unchanged: `application/x-protobuf`, the same as Java's.
+
+- The API reference now covers every optional package — `AceMq.Amqp.Avro`,
+  `.Protobuf`, `.Toml`, `.Xml` and `.Yaml` alongside the core, `.RabbitMq`,
+  `.Diagnostics` and `.Crypto`. A consumer looking up `InteropXmlCodec` gets a
+  page. It roughly doubles the docfx step, from about 6 seconds to about 12.
+
 ### Changed
 
 - **BREAKING, and it is a change to the wire format: encrypted message bodies are

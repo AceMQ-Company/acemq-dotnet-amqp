@@ -310,10 +310,12 @@ public sealed class AceMqConnection : IDisposable
                     // message that failed five times and a message nothing could read
                     // are two different problems, and whoever drains the dead letters
                     // should not have to sort them by hand.
-                    return await SettleAsync(
+                    var parked = await SettleAsync(
                         queue, ladder, policy, delivery, envelope,
-                        Ack.Park($"could not decode as {typeof(T).Name}: {e.Message}"))
+                        Ack.Park($"could not decode as {typeof(T).Name}: {e.Message}"),
+                        span: null)
                         .ConfigureAwait(false);
+                    return parked.Ack;
                 }
 
                 // Held here rather than rejected, so a paused consumer keeps its
@@ -405,10 +407,22 @@ public sealed class AceMqConnection : IDisposable
                     }
                 }
 
-                RecordConsume(queue, envelope, attempt, ack, clock.Elapsed, span);
+                // Stopped before settling, not after: a short backoff is waited inside
+                // SettleAsync, and folding that wait into "how long the handler took"
+                // would make every retrying consumer look slow.
+                var elapsed = clock.Elapsed;
 
-                return await SettleAsync(queue, ladder, policy, delivery, envelope, ack)
+                // Settled first, then recorded. The handler's answer is a request, not
+                // the outcome: Ack.Retry on the last attempt a policy allows becomes a
+                // dead-letter, and recording before settling is what used to tag that
+                // span outcome="retried" and count it as a retry that never happened.
+                var settled = await SettleAsync(
+                        queue, ladder, policy, delivery, envelope, ack, span)
                     .ConfigureAwait(false);
+
+                RecordConsume(queue, envelope, attempt, ack, settled.Outcome, elapsed, span);
+
+                return settled.Ack;
             },
             CancellationToken.None).ConfigureAwait(false);
 
@@ -446,40 +460,81 @@ public sealed class AceMqConnection : IDisposable
     /// of this library is built to survive.
     /// </para>
     /// </remarks>
-    private async Task<Ack> SettleAsync(
+    private async Task<Settled> SettleAsync(
         string queue, RetryLadder ladder, RetryPolicy? policy,
-        InboundDelivery delivery, Envelope envelope, Ack ack)
+        InboundDelivery delivery, Envelope envelope, Ack ack,
+        System.Diagnostics.Activity? span)
     {
         switch (ack.Kind)
         {
             case AckKind.Accept:
+                return new Settled(ack, MetricNames.OutcomeAcked);
+
             case AckKind.Release:
-                return ack;
+                return new Settled(ack, MetricNames.OutcomeRejected);
 
             case AckKind.Park:
+            {
+                var reason = ack.Reason ?? "parked with no reason given";
                 AceMqDiagnostics.Report(
                     AceMqDiagnostics.Parked, DiagnosticLevel.Warning,
-                    ack.Reason ?? "parked with no reason given",
-                    queue, ladder.ParkedQueue, envelope.Id, envelope.Attempt, null);
-                return await MoveAsync(
-                        ladder.ParkedQueue, delivery,
-                        envelope.WithError(ack.Reason ?? "parked with no reason given"))
+                    reason, queue, ladder.ParkedQueue, envelope.Id, envelope.Attempt, null);
+
+                // Parked counts and traces as dead-lettered, for the same reason the
+                // metric does: the number anyone alerts on is "messages this consumer
+                // could not handle", and the destination on the event says which of
+                // the two queues it went to.
+                AceMqTelemetry.MessageDeadLettered(span, ladder.ParkedQueue, reason);
+
+                var moved = await MoveAsync(
+                        ladder.ParkedQueue, delivery, envelope.WithError(reason))
                     .ConfigureAwait(false);
+                return new Settled(moved, MetricNames.OutcomeDeadLettered);
+            }
 
             case AckKind.DeadLetter:
+            {
+                var reason = ack.Reason ?? "no reason given";
                 AceMqDiagnostics.Report(
                     AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
-                    ack.Reason ?? "no reason given",
-                    queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
-                return await MoveAsync(
-                        ladder.DeadLetterQueue, delivery,
-                        envelope.WithError(ack.Reason ?? "no reason given"))
+                    reason, queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
+
+                AceMqTelemetry.MessageDeadLettered(span, ladder.DeadLetterQueue, reason);
+
+                var moved = await MoveAsync(
+                        ladder.DeadLetterQueue, delivery, envelope.WithError(reason))
                     .ConfigureAwait(false);
+                return new Settled(moved, MetricNames.OutcomeDeadLettered);
+            }
 
             default:
-                return await RetryAsync(queue, ladder, policy, delivery, envelope, ack)
+                return await RetryAsync(queue, ladder, policy, delivery, envelope, ack, span)
                     .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// What actually became of a delivery, and the outcome that names it.
+    /// </summary>
+    /// <remarks>
+    /// The outcome is carried out of <see cref="SettleAsync"/> rather than derived
+    /// from the handler's <see cref="Ack"/>, because only the settle knows it: a
+    /// handler that asks for a retry on its last permitted attempt gets a dead-letter,
+    /// and both the span and the counters have to say so.
+    /// </remarks>
+    private readonly struct Settled
+    {
+        internal Settled(Ack ack, string outcome)
+        {
+            Ack = ack;
+            Outcome = outcome;
+        }
+
+        /// <summary>What the transport is told to do with the original delivery.</summary>
+        internal Ack Ack { get; }
+
+        /// <summary>One of the <c>MetricNames.Outcome*</c> constants.</summary>
+        internal string Outcome { get; }
     }
 
     /// <summary>
@@ -493,9 +548,10 @@ public sealed class AceMqConnection : IDisposable
     /// message at once, and a five-minute policy delivers in none. Giving up is decided
     /// here too, and not left to the broker, because the broker cannot say why.
     /// </remarks>
-    private async Task<Ack> RetryAsync(
+    private async Task<Settled> RetryAsync(
         string queue, RetryLadder ladder, RetryPolicy? policy,
-        InboundDelivery delivery, Envelope envelope, Ack ack)
+        InboundDelivery delivery, Envelope envelope, Ack ack,
+        System.Diagnostics.Activity? span)
     {
         var reason = ack.Reason ?? "no reason given";
         var advanced = envelope.WithAttempt(envelope.Attempt + 1);
@@ -506,22 +562,29 @@ public sealed class AceMqConnection : IDisposable
             // here, for ever. Bounding it is exactly what a policy is for, which is
             // why one is worth configuring.
             var asked = ack.Delay ?? TimeSpan.Zero;
+            AceMqTelemetry.MessageRetried(span, asked, queue, reason);
             if (asked > TimeSpan.Zero) await Task.Delay(asked).ConfigureAwait(false);
-            return await MoveAsync(queue, delivery, advanced)
-                .ConfigureAwait(false);
+            var requeued = await MoveAsync(queue, delivery, advanced).ConfigureAwait(false);
+            return new Settled(requeued, MetricNames.OutcomeRetried);
         }
 
         var next = policy.NextWait(envelope.Attempt, AgeOf(envelope));
         if (next == null)
         {
+            var gaveUp = $"{GaveUp(policy, envelope)}: {reason}";
             AceMqDiagnostics.Report(
                 AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
-                $"{GaveUp(policy, envelope)}: {reason}",
-                queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
-            return await MoveAsync(
-                    ladder.DeadLetterQueue, delivery,
-                    envelope.WithError($"{GaveUp(policy, envelope)}: {reason}"))
+                gaveUp, queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, null);
+
+            // The moment the message stops being retried. Emitted here and nowhere
+            // else, so a trace backend searching for dead letters finds the ones the
+            // policy decided as well as the ones a handler asked for.
+            AceMqTelemetry.MessageDeadLettered(span, ladder.DeadLetterQueue, gaveUp);
+
+            var buried = await MoveAsync(
+                    ladder.DeadLetterQueue, delivery, envelope.WithError(gaveUp))
                 .ConfigureAwait(false);
+            return new Settled(buried, MetricNames.OutcomeDeadLettered);
         }
 
         if (next.InBroker)
@@ -533,8 +596,9 @@ public sealed class AceMqConnection : IDisposable
                 // like the flexible answer and is a trap: RabbitMQ expires messages
                 // only from the head of a queue, so one long wait at the front holds
                 // back every shorter one behind it.
-                return await MoveAsync(rung, delivery, advanced)
-                    .ConfigureAwait(false);
+                AceMqTelemetry.MessageRetried(span, next.Delay, rung, reason);
+                var held = await MoveAsync(rung, delivery, advanced).ConfigureAwait(false);
+                return new Settled(held, MetricNames.OutcomeRetried);
             }
 
             // The policy wanted the broker to hold this and the ladder has nowhere to
@@ -550,9 +614,10 @@ public sealed class AceMqConnection : IDisposable
                 queue, null, envelope.Id, envelope.Attempt, null);
         }
 
+        AceMqTelemetry.MessageRetried(span, next.Delay, queue, reason);
         if (next.Delay > TimeSpan.Zero) await Task.Delay(next.Delay).ConfigureAwait(false);
-        return await MoveAsync(queue, delivery, advanced)
-            .ConfigureAwait(false);
+        var again = await MoveAsync(queue, delivery, advanced).ConfigureAwait(false);
+        return new Settled(again, MetricNames.OutcomeRetried);
     }
 
     /// <summary>
@@ -1099,23 +1164,24 @@ public sealed class AceMqConnection : IDisposable
     /// </remarks>
     public ITransportConnection Transport => _connection;
 
+    /// <summary>
+    /// Records what became of one delivery, under the outcome the settle decided.
+    /// </summary>
+    /// <remarks>
+    /// The outcome is an argument rather than something worked out from
+    /// <paramref name="ack"/>. Deriving it from the handler's answer was the bug: a
+    /// message that used up its last attempt was counted as retried and its span
+    /// tagged <c>retried</c>, so <c>acemq.messages.dead.lettered.total</c> only ever
+    /// saw the dead-letters a handler asked for by name, and a trace backend queried
+    /// for dead-lettered messages found none. Parking still reports as dead-lettered:
+    /// the queues differ because the two need different people, but the number an
+    /// operator alerts on is "messages this consumer could not handle", and splitting
+    /// it would mean every dashboard had to add the two back together.
+    /// </remarks>
     private static void RecordConsume(
-        string queue, Envelope envelope, int attempt, Ack ack, TimeSpan elapsed,
-        System.Diagnostics.Activity? span)
+        string queue, Envelope envelope, int attempt, Ack ack, string outcome,
+        TimeSpan elapsed, System.Diagnostics.Activity? span)
     {
-        var outcome = ack.Kind switch
-        {
-            AckKind.Accept => MetricNames.OutcomeAcked,
-            AckKind.Retry => MetricNames.OutcomeRetried,
-            AckKind.DeadLetter => MetricNames.OutcomeDeadLettered,
-            // Parking counts as dead-lettering for the metric. The queues differ
-            // because the two need different people; the number an operator alerts on
-            // is "messages this consumer could not handle", and splitting it would
-            // mean every dashboard had to add the two back together.
-            AckKind.Park => MetricNames.OutcomeDeadLettered,
-            _ => MetricNames.OutcomeRejected,
-        };
-
         var tags = new System.Diagnostics.TagList
         {
             { MetricNames.TagQueue, queue },
@@ -1127,8 +1193,8 @@ public sealed class AceMqConnection : IDisposable
         AceMqTelemetry.ConsumeTotal.Add(1, tags);
         AceMqTelemetry.ConsumeAttempts.Record(attempt, tags);
 
-        if (ack.IsRetry) AceMqTelemetry.RetriedTotal.Add(1, tags);
-        if (ack.IsDeadLetter || ack.IsPark) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
+        if (outcome == MetricNames.OutcomeRetried) AceMqTelemetry.RetriedTotal.Add(1, tags);
+        if (outcome == MetricNames.OutcomeDeadLettered) AceMqTelemetry.DeadLetteredTotal.Add(1, tags);
 
         span?.SetTag(MetricNames.TagOutcome, outcome);
         span?.SetTag("acemq.attempt", attempt);

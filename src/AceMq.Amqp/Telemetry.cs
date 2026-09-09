@@ -44,6 +44,30 @@ namespace AceMq.Amqp;
 /// </remarks>
 public static class AceMqTelemetry
 {
+    /// <summary>
+    /// The span event recorded when the engine schedules another attempt.
+    /// </summary>
+    /// <remarks>
+    /// Not in <see cref="MetricNames"/>, which is kept character for character
+    /// identical to Java's. Java carries the same two moments as methods on its
+    /// <c>Telemetry</c> interface — <c>messageRetried</c> and
+    /// <c>messageDeadLettered</c> — rather than as named constants, so these two
+    /// strings live here instead of pretending to a contract Java does not have.
+    /// </remarks>
+    public const string EventRetried = "acemq.message.retried";
+
+    /// <summary>The span event recorded when the engine gives up on a message.</summary>
+    public const string EventDeadLettered = "acemq.message.dead-lettered";
+
+    /// <summary>How long the retry the engine just scheduled will wait, in milliseconds.</summary>
+    public const string EventTagDelayMs = "acemq.retry.delay.ms";
+
+    /// <summary>The queue the message was moved to.</summary>
+    public const string EventTagDestination = "acemq.destination";
+
+    /// <summary>Why, as the handler or the policy put it.</summary>
+    public const string EventTagReason = "acemq.reason";
+
     internal static readonly Meter Meter = new Meter(MetricNames.Meter, ThisVersion());
 
     internal static readonly ActivitySource Activity =
@@ -141,5 +165,57 @@ public static class AceMqTelemetry
         activity?.SetTag("messaging.system", "acemq");
         activity?.SetTag(MetricNames.TagQueue, queue);
         return activity;
+    }
+
+    /// <summary>
+    /// Records that the engine chose another attempt, and how long that attempt waits.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Called at the moment the decision is made rather than at the moment the handler
+    /// returns, because they are not the same moment and the difference is where the
+    /// old bug lived: a handler asking for a retry on its last permitted attempt is
+    /// dead-lettered, and a span tagged from the handler's answer said <c>retried</c>
+    /// about a message nothing would ever try again.
+    /// </para>
+    /// <para>
+    /// The delay is the one actually chosen — the policy's, not the handler's
+    /// suggestion — so a trace shows the wait that happened.
+    /// </para>
+    /// </remarks>
+    internal static void MessageRetried(
+        Activity? span, TimeSpan delay, string destination, string reason)
+    {
+        // Nothing listening means no Activity was ever created, so this is a null
+        // check and a return. The ActivityEvent and its tag collection are only
+        // allocated for a span something is going to read.
+        if (span == null) return;
+
+        span.SetTag(MetricNames.TagOutcome, MetricNames.OutcomeRetried);
+        span.AddEvent(new ActivityEvent(EventRetried, tags: new ActivityTagsCollection
+        {
+            { EventTagDelayMs, (long)delay.TotalMilliseconds },
+            { EventTagDestination, destination },
+            { EventTagReason, reason },
+        }));
+    }
+
+    /// <summary>Records that the engine gave up on a message, and why.</summary>
+    /// <remarks>
+    /// The outcome tag is set here as well as counted afterwards, so the span of a
+    /// message dead-lettered on a path that records no metrics — a body that would
+    /// not decode, parked before a handler ever ran — still says what happened to it.
+    /// </remarks>
+    internal static void MessageDeadLettered(
+        Activity? span, string destination, string reason)
+    {
+        if (span == null) return;
+
+        span.SetTag(MetricNames.TagOutcome, MetricNames.OutcomeDeadLettered);
+        span.AddEvent(new ActivityEvent(EventDeadLettered, tags: new ActivityTagsCollection
+        {
+            { EventTagDestination, destination },
+            { EventTagReason, reason },
+        }));
     }
 }

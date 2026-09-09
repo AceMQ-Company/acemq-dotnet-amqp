@@ -20,7 +20,7 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 | Codec | Content type | |
 |---|---|---|
 | `JsonCodec` | `application/json` | the default |
-| `XmlCodec` | `application/xml` | `XmlSerializer`, for .NET talking to .NET — see [XML](#xml) |
+| `XmlCodec` | `application/xml` | `XmlSerializer`, for .NET talking to .NET only — see [XML](#xml) |
 | `StringCodec` | `text/plain` | text, as UTF-8 |
 | `BytesCodec` | `application/octet-stream` | bytes, untouched |
 | `CompositeCodec` | first codec's | reads several, writes one |
@@ -78,9 +78,20 @@ await mq.ConsumeAsync<OrderPlaced>(
     "orders", ConsumerOptions.Defaults().As(new ProtobufCodec()), Handle);
 ```
 
-The content type is `application/x-protobuf`, the same as Java's, and
-`application/protobuf` and anything ending `+protobuf` are read as well — the last
-because a schema registry usually names its own wrapping that way.
+The content type written is `application/x-protobuf`, the same as Java's. Three are
+read, plus a suffix:
+
+| Read | Written | Who writes it |
+|---|---|---|
+| `application/x-protobuf` | yes | this library, Java, Go, Python, Ruby |
+| `application/protobuf` | no | the IETF draft's spelling |
+| `application/vnd.google.protobuf` | no | Google's own tooling |
+| anything ending `+protobuf` | no | a schema registry wrapping the same bytes |
+
+The asymmetry is deliberate. A wider read set costs a string comparison; a narrower
+one silently refuses a message it could have read perfectly well, and the refusal
+looks like a broken producer rather than a fussy consumer. `ProtobufCodec.ReadableContentTypes`
+is the list, if you want to assert on it.
 
 **It works with generated types, not with your own classes.** Protobuf encoding is
 defined by a `.proto` and the code generated from it; there is no reflection-based
@@ -294,20 +305,53 @@ readable message into a rejected one. That case belongs to `JsonCodec` and
 | Built on | `XmlSerializer` | `XmlReader` + `System.Text.Json` |
 | Writes | declaration, `xsi`/`xsd` namespaces, PascalCase | bare elements, camelCase |
 | Element names | the member's own name, matched case-**sensitively** | camelCased, matched case-insensitively |
-| Reads Java and Go messages | no | yes |
+| Reads Java and Go messages | no — it throws | yes |
 | Use it for | .NET to .NET, and documents that must match an XSD | anything the other four languages send |
 
 The second row is the whole point. `XmlSerializer` binds element names
-case-sensitively, so Java's `<orderId>` does not bind to a C# `OrderId` — and it does
-not complain about that. It returns an object with every field at its default. A
-service that reached for the core codec to read a Java queue would see empty orders
-and no errors, which is the worst of both. There is a test in
-`AceMq.Amqp.Xml.Tests` that decodes a real Java body with each codec and asserts
-exactly that difference.
+case-sensitively, so Java's `<orderId>` does not bind to a C# `OrderId`.
 
-The core `XmlCodec` stays where it is and keeps working. The names differ so that a
-consumer with both `using AceMq.Amqp;` and `using AceMq.Amqp.Xml;` gets a choice
-rather than a `CS0104`.
+**Up to 0.3.0 it did not complain about that.** It returned an object with every
+field at its default. A service that reached for the core codec to read a Java queue
+saw empty orders and no errors, which is the worst of both: the message was gone and
+nothing said so.
+
+Since 0.4.0 `XmlCodec` throws instead:
+
+```
+AceFatalException: nothing in the body bound to Order: all 6 of its elements and
+attributes were unknown to XmlSerializer, which matches names case-sensitively. This
+is what a body written by the Java, Go, Python or Ruby AceMQ library looks like here
+-- camelCase elements against PascalCase members. Read it with
+AceMq.Amqp.Xml.InteropXmlCodec, from the AceMq.Amqp.Xml package, which reads what the
+other four write.
+```
+
+It is an `AceFatalException`, so the message is dead-lettered rather than retried
+forever: the same bytes bind no better on the next attempt.
+
+**The refusal is narrow on purpose.** It fires only when the document had content and
+*none of it* reached a member. A document with some elements bound and some unknown
+still decodes — that is what a producer adding a field looks like, and breaking
+forward compatibility would be a worse bug than the one being fixed. An empty
+document that legitimately decodes to an all-default object still decodes too,
+because nothing in it was unknown.
+
+#### Why not just mark `XmlCodec` obsolete
+
+That was the other candidate, and it was rejected. `XmlCodec` is *correct* for .NET
+talking to .NET and for a document that has to match an XSD; an obsolete warning on a
+correct use is noise, and noise is what teaches people to suppress warnings. The
+failure was silence, not existence, so silence is what was fixed — and the exception
+arrives at exactly the moment it is useful, naming the codec that would have worked,
+in front of somebody holding a stack trace.
+
+The names still differ so that a consumer with both `using AceMq.Amqp;` and
+`using AceMq.Amqp.Xml;` gets a choice rather than a `CS0104`.
+
+This is a breaking change: code that relied on getting an empty object back now gets
+an exception. That is the intent — there is no version of "relied on getting an empty
+object back" that was working.
 
 ### No document type declaration, ever
 

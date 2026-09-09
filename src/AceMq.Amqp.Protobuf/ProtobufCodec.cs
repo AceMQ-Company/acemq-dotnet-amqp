@@ -38,13 +38,42 @@ namespace AceMq.Amqp.Protobuf;
 /// </para>
 /// <para>
 /// The content type matches the Java library's, so a Java consumer reading
-/// <c>application/x-protobuf</c> reads what this writes.
+/// <c>application/x-protobuf</c> reads what this writes. Reading is wider than
+/// writing — see <see cref="ReadableContentTypes"/> — because a message this codec
+/// could decode is not worth refusing over the name somebody else gave the bytes.
 /// </para>
 /// </remarks>
 public sealed class ProtobufCodec : ICodec
 {
     /// <summary>What this codec declares, and what Java declares.</summary>
     public const string ProtobufContentType = "application/x-protobuf";
+
+    /// <summary>
+    /// Every spelling of "these bytes are protobuf" this codec will read.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One is written and three are read, plus any <c>*+protobuf</c> suffix type, which
+    /// is how a schema registry usually names its own wrapping of the same bytes.
+    /// <c>application/x-protobuf</c> is what this and the Java library write;
+    /// <c>application/protobuf</c> is the spelling in the IETF draft;
+    /// <c>application/vnd.google.protobuf</c> is what Google's own tooling emits, and
+    /// it has no <c>+protobuf</c> suffix to be caught by, so it has to be named.
+    /// </para>
+    /// <para>
+    /// The asymmetry is deliberate. A wider read set costs a string comparison and
+    /// nothing else; a narrower one refuses a message it could have read perfectly
+    /// well, and the refusal looks like a broken producer rather than a fussy consumer.
+    /// The Go and Ruby libraries already accept all three, and Java is being widened
+    /// to match.
+    /// </para>
+    /// </remarks>
+    public static readonly IReadOnlyList<string> ReadableContentTypes = new[]
+    {
+        ProtobufContentType,
+        "application/protobuf",
+        "application/vnd.google.protobuf",
+    };
 
     // Parsers are found by reflection once and kept. Generated types expose a static
     // Parser property; looking it up per message would put reflection on the hot
@@ -87,11 +116,13 @@ public sealed class ProtobufCodec : ICodec
     public bool CanDecode(string? contentType)
     {
         if (contentType == null) return false;
-        return contentType.StartsWith(ProtobufContentType, StringComparison.OrdinalIgnoreCase)
-               // Both spellings are in use, and a "+protobuf" suffix is how a schema
-               // registry usually names its own wrapping of the same bytes.
-               || contentType.StartsWith("application/protobuf", StringComparison.OrdinalIgnoreCase)
-               || contentType.IndexOf("+protobuf", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        foreach (var readable in ReadableContentTypes)
+        {
+            if (contentType.StartsWith(readable, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return contentType.IndexOf("+protobuf", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     /// <summary>The parser a generated type exposes as a static <c>Parser</c> property.</summary>

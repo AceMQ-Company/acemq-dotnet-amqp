@@ -35,12 +35,12 @@ native API rather than a transliterated Java one.
 | `RetryLadder` | the `{queue}.retry.{delay}` queues a long backoff waits in |
 | `Replay` | put dead-lettered messages back, on a fresh set of attempts |
 | `StreamReader<T>` | read a stream from an offset |
-| Codecs | JSON, XML, text, bytes and composite |
+| Codecs | JSON, XML, text, bytes and composite — the core `XmlCodec` is for .NET to .NET, and throws on a body it cannot bind rather than emptying it |
 | `AceMq.Amqp.Protobuf` | Protocol Buffers, in its own package so the core keeps no serialization dependency |
 | `AceMq.Amqp.Avro` | Avro, with a fixed schema or a registry that makes adding a field safe |
 | `AceMq.Amqp.Yaml` | YAML, for messages a person will read |
 | `AceMq.Amqp.Toml` | TOML, the same but without the ambiguity |
-| `AceMq.Amqp.Xml` | XML that Java, Go, Python and Ruby read and write, refusing every DTD |
+| `AceMq.Amqp.Xml` | `InteropXmlCodec` — XML that Java, Go, Python and Ruby read and write, refusing every DTD |
 | `AceMq.Amqp.Crypto` | `EncryptedCodec` — AES-256-GCM payload encryption in the framing all five libraries read |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |

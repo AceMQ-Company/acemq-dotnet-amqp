@@ -8,7 +8,12 @@
             "AceMq.Amqp/AceMq.Amqp.csproj",
             "AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj",
             "AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj",
-            "AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj"
+            "AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj",
+            "AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj",
+            "AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj",
+            "AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj",
+            "AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj",
+            "AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj"
           ]
         }
       ],

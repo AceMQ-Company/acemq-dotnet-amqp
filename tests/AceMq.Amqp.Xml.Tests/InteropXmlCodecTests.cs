@@ -627,21 +627,28 @@ public sealed class InteropXmlCodecTests
     }
 
     [Fact]
-    public void ReadsTheJavaMessageTheCoreXmlCodecSilentlyEmpties()
+    public void ReadsTheJavaMessageTheCoreXmlCodecRefuses()
     {
         // The reason this package exists, stated as the failure it prevents.
         //
         // XmlSerializer matches element names case-sensitively, so Java's <orderId>
-        // does not bind to OrderId. It does not complain about that: it returns an
-        // Order with every field at its default, and the message is gone. A consumer
-        // that reached for the core codec to read a Java queue would see empty
-        // orders and no errors, which is the worst of both.
+        // does not bind to OrderId. Up to 0.3.0 it did not complain about that: it
+        // returned an Order with every field at its default, and the message was
+        // gone. A consumer that reached for the core codec to read a Java queue saw
+        // empty orders and no errors, which is the worst of both.
         var java = Samples.Named("order", "java");
 
-        var silentlyEmpty = (Order)new AceMq.Amqp.XmlCodec().Decode(java.Body, typeof(Order));
-        Assert.Equal("", silentlyEmpty.OrderId);
-        Assert.Equal(0L, silentlyEmpty.TotalCents);
-        Assert.Empty(silentlyEmpty.Lines);
+        var refused = Assert.Throws<AceFatalException>(
+            () => new AceMq.Amqp.XmlCodec().Decode(java.Body, typeof(Order)));
+
+        // The message has to name the codec that would have worked, because the
+        // person reading it is holding a stack trace, not this file.
+        Assert.Contains("InteropXmlCodec", refused.Message);
+        Assert.Contains(nameof(Order), refused.Message);
+
+        // Fatal and not retryable: the same bytes bind no better on the next
+        // attempt, so the message is dead-lettered rather than looped.
+        Assert.IsAssignableFrom<AceFatalException>(refused);
 
         // Go's message does not even get that far: its root element is <order>, and
         // XmlSerializer binds the root by name too.
@@ -653,6 +660,38 @@ public sealed class InteropXmlCodecTests
         Assert.Equal("A-1", read.OrderId);
         Assert.Equal(4250L, read.TotalCents);
         Assert.Equal(new[] { "widget", "gasket" }, read.Lines);
+    }
+
+    [Fact]
+    public void TheCoreXmlCodecStillReadsWhatItWrote()
+    {
+        // The other half of the 0.4.0 change, and the reason the core codec was not
+        // marked obsolete: refusing a body that bound to nothing must not refuse a
+        // body that bound. .NET to .NET still round-trips.
+        var core = new AceMq.Amqp.XmlCodec();
+        var written = core.Encode(SomeOrder());
+
+        var read = (Order)core.Decode(written, typeof(Order));
+        Assert.Equal("A-1", read.OrderId);
+        Assert.Equal(4250L, read.TotalCents);
+        Assert.Equal(new[] { "widget", "gasket" }, read.Lines);
+    }
+
+    [Fact]
+    public void TheCoreXmlCodecStillIgnoresAnElementItDoesNotKnow()
+    {
+        // The refusal is narrow: it fires only when *nothing* bound. A producer that
+        // added a field must not break a consumer that has not been rebuilt, so a
+        // document with one unknown element among known ones still decodes.
+        var forwardCompatible = Encoding.UTF8.GetBytes(
+            "<Order xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">" +
+            "<OrderId>A-1</OrderId><TotalCents>4250</TotalCents>" +
+            "<Discount>10</Discount>" +
+            "</Order>");
+
+        var read = (Order)new AceMq.Amqp.XmlCodec().Decode(forwardCompatible, typeof(Order));
+        Assert.Equal("A-1", read.OrderId);
+        Assert.Equal(4250L, read.TotalCents);
     }
 
     [Fact]

@@ -34,6 +34,16 @@ between a bad binding and an outage.
 
 Consume outcomes are `acked`, `retried`, `dead_lettered` and `rejected`.
 
+**The outcome is the engine's, not the handler's.** A handler that throws is asking
+for a retry, but on the last attempt a `RetryPolicy` allows, the engine dead-letters
+the message instead. Up to 0.3.0 the outcome was tagged from the handler's answer
+before the engine had decided, so a message that ran out of attempts was counted as
+`retried` and its span said `retried` — and `acemq.messages.dead.lettered.total` only
+ever saw the dead-letters a handler asked for by name. Since 0.4.0 both the counter
+and the span carry `dead_lettered`, which means a dashboard built on 0.3.0 numbers
+will show retries falling and dead-letters rising without anything changing in your
+service.
+
 Names are dotted here and underscored when scraped: `acemq.publish.duration` becomes
 `acemq_publish_duration_seconds`, and `routing.key` becomes `routing_key`. That
 translation is the exporter's, and Java's exporters do the same.
@@ -53,6 +63,31 @@ builder.Services.AddOpenTelemetry()
     .WithTracing(t => t.AddSource(MetricNames.ActivitySource))
     .WithMetrics(m => m.AddMeter(MetricNames.Meter));
 ```
+
+### Span events on a message that failed
+
+A `<queue> process` span carries an event at each of the two moments a failing
+message can reach:
+
+| Event | Tags |
+|---|---|
+| `acemq.message.retried` | `acemq.retry.delay.ms`, `acemq.destination`, `acemq.reason` |
+| `acemq.message.dead-lettered` | `acemq.destination`, `acemq.reason` |
+
+The names are on `AceMqTelemetry` — `EventRetried`, `EventDeadLettered`,
+`EventTagDelayMs`, `EventTagDestination`, `EventTagReason` — rather than on
+`MetricNames`, which is kept character for character identical to Java's and has no
+span-event constants in it. Java carries the same two moments as `messageRetried` and
+`messageDeadLettered` on its `Telemetry` interface.
+
+`acemq.retry.delay.ms` is the delay the engine **actually chose** — the policy's, not
+the handler's suggestion — so a trace shows the wait that happened. Where the message
+went is on `acemq.destination`: the source queue for a wait held in the consumer, a
+rung queue for a wait held in the broker, `{queue}.dlq` or `{queue}.parked` for a
+message given up on.
+
+None of this is allocated when nothing is listening. No listener means no `Activity`
+was ever created, so emitting an event is a null check and a return.
 
 ## Getting it to Prometheus
 

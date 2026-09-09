@@ -74,13 +74,31 @@ public sealed class ProtobufCodecTests
     {
         Assert.Equal("application/x-protobuf", _codec.ContentType);
 
-        // Both spellings are in use, and a schema registry usually names its own
+        // Three spellings are in use, and a schema registry usually names its own
         // wrapping with a +protobuf suffix.
         Assert.True(_codec.CanDecode("application/x-protobuf"));
         Assert.True(_codec.CanDecode("application/protobuf"));
         Assert.True(_codec.CanDecode("application/vnd.acme.order+protobuf"));
         Assert.False(_codec.CanDecode("application/json"));
         Assert.False(_codec.CanDecode(null));
+    }
+
+    [Fact]
+    public void ReadsTheContentTypeGooglesOwnToolingWrites()
+    {
+        // application/vnd.google.protobuf has no +protobuf suffix to be caught by, so
+        // it had to be named -- and until it was, .NET refused a message Go and Ruby
+        // read without complaint. A wider read set costs a string comparison; a
+        // narrower one silently refuses a readable message.
+        Assert.True(_codec.CanDecode("application/vnd.google.protobuf"));
+        Assert.True(_codec.CanDecode("application/vnd.google.protobuf; charset=utf-8"));
+        Assert.True(_codec.CanDecode("APPLICATION/VND.GOOGLE.PROTOBUF"));
+
+        // The write side did not move: one spelling out, three plus a suffix in.
+        Assert.Equal(ProtobufCodec.ProtobufContentType, _codec.ContentType);
+        Assert.Equal(
+            new[] { "application/x-protobuf", "application/protobuf", "application/vnd.google.protobuf" },
+            ProtobufCodec.ReadableContentTypes);
     }
 
     [Fact]
