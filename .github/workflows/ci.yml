@@ -72,6 +72,20 @@ jobs:
           dotnet test tests/AceMq.Amqp.Xml.Tests/AceMq.Amqp.Xml.Tests.csproj
           --configuration Release --no-build --verbosity normal
 
+      - name: Test payload encryption
+        # The one suite that can catch a wire format only .NET can read. It decrypts
+        # base64 bodies the Java, Python and Ruby libraries really wrote, from a
+        # fixture the build copies beside the test assembly, and pins the exact bytes
+        # this package writes for a known key and nonce. Every encryption test up to
+        # 0.3.0 passed while nothing else in the family could read a word of it,
+        # because every one of them decrypted what it had itself encrypted.
+        #
+        # The build above is what puts the fixture there, so this step must not be
+        # reordered ahead of it.
+        run: >
+          dotnet test tests/AceMq.Amqp.Crypto.Tests/AceMq.Amqp.Crypto.Tests.csproj
+          --configuration Release --no-build --verbosity normal
+
       - name: Compile and run the C# example
         run: dotnet run --project examples/csharp --configuration Release
 
@@ -92,7 +106,7 @@ jobs:
         # and it has to hold for the transport too, or the promise only covers code
         # that never talks to a broker.
         run: |
-          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj src/AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj src/AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj; do
+          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj src/AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj src/AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj; do
             grep -q '<TargetFramework>netstandard2.0</TargetFramework>' "$p" \
               || { echo "$p no longer targets netstandard2.0"; exit 1; }
             echo "netstandard2.0 confirmed: $p"

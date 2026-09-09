@@ -92,6 +92,11 @@ That is deliberate rather than conservative. The applications most likely to wan
 supported AMQP library are the ones that cannot easily move, and `netstandard2.0` is
 the only target that reaches all of them at once.
 
+Every optional package holds that target too, `AceMq.Amqp.Crypto` included — which is
+why payload encryption takes AES-GCM from BouncyCastle rather than from
+`System.Security.Cryptography.AesGcm`, which has never existed there. See
+[serialization](serialization.md#where-aes-gcm-comes-from-on-netstandard20).
+
 ## The rest of AceMQ
 
 The JVM libraries — the AMQP core, its Spring Boot starter, the RabbitMQ management

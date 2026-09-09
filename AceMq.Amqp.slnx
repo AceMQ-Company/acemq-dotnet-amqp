@@ -9,6 +9,7 @@
     <Project Path="src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj" />
     <Project Path="src/AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj" />
     <Project Path="src/AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj" />
+    <Project Path="src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AceMq.Amqp.Tests/AceMq.Amqp.Tests.csproj" />
@@ -19,6 +20,7 @@
     <Project Path="tests/AceMq.Amqp.Yaml.Tests/AceMq.Amqp.Yaml.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.Toml.Tests/AceMq.Amqp.Toml.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.Xml.Tests/AceMq.Amqp.Xml.Tests.csproj" />
+    <Project Path="tests/AceMq.Amqp.Crypto.Tests/AceMq.Amqp.Crypto.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/vb-audit/vb-audit.csproj" />

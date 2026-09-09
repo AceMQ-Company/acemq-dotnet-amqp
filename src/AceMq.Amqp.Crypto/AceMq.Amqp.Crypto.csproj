@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      netstandard2.0, like the core and every other package here, and that is the
+      whole point of this project existing.
+
+      Payload encryption used to live in the core assembly, and it used AES-256-CBC
+      with HMAC-SHA-256 because `System.Security.Cryptography.AesGcm` does not exist
+      on netstandard2.0. That was sound cryptography and the wrong wire format: the
+      other four AceMQ libraries write AES-GCM under the same content type, so a .NET
+      publisher and a Java consumer could not read each other while both believed
+      they agreed.
+
+      Three ways out were on the table.
+
+      1. Multi-target the core `netstandard2.0;net8.0` and use the built-in `AesGcm`
+         on the modern target. Rejected: it puts two cryptographic code paths behind
+         one wire format, and a divergence between them shows up only at runtime, on
+         one target, in somebody else's queue. It also breaks the core's one-line
+         reach promise that CI greps for, and leaves netstandard2.0, the target
+         this library exists to reach, with no GCM at all.
+
+      2. Keep encryption in the core and throw `PlatformNotSupportedException` on
+         netstandard2.0. Rejected outright: that is the .NET Framework 4.6.2 consumer,
+         the one who cannot easily move and is the reason for the reach promise. A
+         library does not answer "you are the audience I was built for" with an
+         exception.
+
+      3. This. Encryption moves into its own package, the way `AceMq.Amqp.Avro`,
+         `.Yaml`, `.Toml` and `.Xml` already isolate an optional dependency, and gets
+         GCM from BouncyCastle, which has it on netstandard2.0. One implementation,
+         one set of bytes, identical on .NET Framework 4.6.2 and on .NET 10, matching
+         Java, Python, Ruby and Go byte for byte. The core keeps its target, keeps its
+         dependency list, and a consumer who does not encrypt does not acquire a
+         cryptography library.
+
+      Moving the types is a breaking change and was accepted as one. It is recorded
+      in CHANGELOG.md under a heading that says so.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <PackageId>AceMq.Amqp.Crypto</PackageId>
+    <Description>Payload encryption for AceMq.Amqp. AES-256-GCM in the framing the Java, Python, Ruby and Go libraries read and write, so an encrypted message crosses languages. A separate package so the core takes no cryptography dependency.</Description>
+    <PackageTags>$(PackageTags);encryption;aes-gcm</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../AceMq.Amqp/AceMq.Amqp.csproj" />
+    <!--
+      AES-GCM on netstandard2.0. `System.Security.Cryptography.AesGcm` arrived in
+      .NET Core 3.0 and has never existed on netstandard2.0 or .NET Framework, so a
+      library that must reach those and must write GCM has to get it from somewhere.
+      BouncyCastle is the somewhere: widely deployed, audited, and its GCM is
+      arithmetic on bytes rather than a wrapper over a platform primitive, so it
+      behaves the same everywhere this package runs.
+
+      It is a real dependency and that is exactly why it is in this package and not
+      in the core. A consumer who publishes plaintext never sees it.
+    -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.7.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The nonce source is injectable for one reason: the interoperability vector
+         pins the exact bytes this package writes for a known key, key id and nonce,
+         and a random nonce cannot be asserted against. It is not public API. A
+         caller choosing nonces is a caller who can repeat one, and repeating a nonce
+         under GCM does not weaken the encryption, it forfeits it. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>AceMq.Amqp.Crypto.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

@@ -18,6 +18,7 @@
     <ProjectReference Include="../../src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj" />
     <ProjectReference Include="../../src/AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj" />
+    <ProjectReference Include="../../src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj" />
   </ItemGroup>
 
 </Project>

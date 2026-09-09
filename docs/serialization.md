@@ -24,9 +24,8 @@ await mq.ConsumeAsync<Order>("legacy", ConsumerOptions.Defaults().As(new XmlCode
 | `StringCodec` | `text/plain` | text, as UTF-8 |
 | `BytesCodec` | `application/octet-stream` | bytes, untouched |
 | `CompositeCodec` | first codec's | reads several, writes one |
-| `EncryptedCodec` | `application/vnd.acemq.encrypted` | wraps any of the above |
 
-Those six need nothing but the framework — the core's whole dependency list is two
+Those five need nothing but the framework — the core's whole dependency list is two
 Microsoft packages.
 
 Formats that need an outside library get their own package, so an application that
@@ -39,8 +38,11 @@ wants one does not acquire the rest:
 | `AceMq.Amqp.Yaml` | `YamlCodec` | `YamlDotNet` |
 | `AceMq.Amqp.Toml` | `TomlCodec` | `Tomlyn` |
 | `AceMq.Amqp.Xml` | `InteropXmlCodec` | nothing |
+| `AceMq.Amqp.Crypto` | `EncryptedCodec` | `BouncyCastle.Cryptography` |
 
-That is every format the Java library has.
+That is every format the Java library has, plus payload encryption — which is in a
+package for the same reason and one of its own besides, covered in
+[Encrypting the payload](#encrypting-the-payload).
 
 **What each costs you.** `YamlDotNet` has no dependencies of its own.
 `Google.Protobuf` has none either. `Apache.Avro` brings `Newtonsoft.Json` and
@@ -54,6 +56,10 @@ separate packages rather than part of the core.
 `System.Text.Json` arrives with the core, which already pins it. It is a separate
 package for the other reason these exist — so the core's list of formats does not
 grow by one every time somebody wants a different one.
+
+`AceMq.Amqp.Crypto` brings `BouncyCastle.Cryptography`, which has no dependencies of
+its own. It is there because AES-GCM has to come from somewhere on `netstandard2.0`,
+and it is in its own package so a consumer publishing plaintext never sees it.
 
 ## Protocol Buffers
 
@@ -396,7 +402,13 @@ something registered it — not because a package happened to be installed.
 TLS protects a message between your process and the broker. It does nothing about
 the message **sitting in a queue**, in the broker's storage, or in a backup of it.
 
+```bash
+dotnet add package AceMq.Amqp.Crypto
+```
+
 ```csharp
+using AceMq.Amqp.Crypto;
+
 var keyring = Keyring.Of(EncryptionKey.Generate("2026-01"));
 var codec = EncryptedCodec.Wrapping(new JsonCodec(), keyring);
 
@@ -428,25 +440,75 @@ which is normally how that gets diagnosed.
 
 ### What the construction is
 
-AES-256-CBC with HMAC-SHA-256 over the ciphertext — encrypt, then authenticate. A
-body whose tag does not verify is rejected **before** anything is decrypted, which is
-what stops a modified message being turned into a padding oracle.
+AES-256-GCM with a 128-bit tag, and a fresh nonce per message.
 
 ```
-[version:1][keyIdLength:1][keyId][iv:16][ciphertext][tag:32]
+0xAE  0x01  len  key identifier   12-byte nonce   ciphertext + 16-byte tag
 ```
 
-The tag covers everything before it, so the version and the key id are authenticated
-too and cannot be edited to point a consumer at a different key. A fresh IV per
-message means two identical payloads produce different ciphertexts — otherwise an
-observer could tell which messages repeat without decrypting any.
+**Byte for byte what the Java, Python, Ruby and Go libraries write, and what they
+read.** An encrypted message crosses languages; that is the point of the framing
+being this one and not one of its own.
 
-AES-GCM would be the obvious choice and is not available on `netstandard2.0`, which
-is the target that reaches .NET Framework. Encrypt-then-MAC is the standard answer
-where it is not.
+The header — magic, version, length and identifier — is authenticated but not
+encrypted: GCM binds all of it as associated data, so a key identifier edited to
+point a consumer at a different key makes the message fail to open rather than
+quietly opening as something else. A fresh nonce per message means two identical
+payloads produce different ciphertexts; it matters more than that, because two
+messages under one key and one nonce do not merely lose some strength under GCM,
+they leak their difference outright.
 
-Encryption and authentication use separate keys derived from the one you supply,
-because reusing one set of bytes for both is a long-standing recommendation against.
+A body that does not authenticate produces one error, whether the key was wrong or
+the body was altered:
+
+```
+this message did not decrypt with key '2026-01'. Either that is not the key it was
+written with, or it was altered after it was written
+```
+
+The two are told apart by nothing — no separate message, no separate type, no
+earlier check that only one of them reaches. An error that said which it was would
+be a padding oracle with better manners.
+
+### Where AES-GCM comes from on `netstandard2.0`
+
+It does not. `System.Security.Cryptography.AesGcm` arrived in .NET Core 3.0 and has
+never existed on `netstandard2.0` or .NET Framework, which is why this library wrote
+AES-256-CBC with HMAC-SHA-256 up to 0.3.0 — sound cryptography, and a format no
+other AceMQ library could read, under a content type that said they could.
+
+`AceMq.Amqp.Crypto` gets GCM from **BouncyCastle**, which has it on
+`netstandard2.0`. One implementation on every target rather than the built-in
+`AesGcm` on modern .NET and something else on .NET Framework: two cryptographic code
+paths behind one wire format is a divergence that only ever shows up at runtime, on
+one target, in somebody else's queue. The full reasoning, including what was
+rejected, is in `src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj`, next to the target
+it explains.
+
+### Bodies written before 0.4.0
+
+Releases up to and including 0.3.0 wrote a .NET-only framing:
+
+```
+[version:1][keyIdLength:1][keyId][iv:16][ciphertext][hmac-sha-256:32]
+```
+
+`Decode` still reads it, and `EncryptedCodec.KeyIdOf` still names its key. The two
+are never confused and never guessed at: the family framing begins `0xAE`, this one
+begins `0x01`, and a body that is neither is refused naming both. The tag is still
+verified **before** anything is decrypted, exactly as it was.
+
+**Nothing writes it any more, and this reader will be removed in 1.0.0.** Those
+bodies decrypt in .NET and nowhere else, so a queue holding them has to be drained —
+or republished by a .NET consumer running 0.4.0 — before anything in another
+language can read it.
+
+```csharp
+if (EncryptedCodec.IsLegacyDotNetBody(body))
+{
+    // written by 0.3.0; only .NET can read this one
+}
+```
 
 ## Schemas
 

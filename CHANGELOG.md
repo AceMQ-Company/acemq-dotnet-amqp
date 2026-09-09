@@ -8,6 +8,82 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING, and it is a change to the wire format: encrypted message bodies are
+  now AES-256-GCM in the framing the Java, Python, Ruby and Go libraries write.
+  Bodies this library wrote up to 0.3.0 are AES-256-CBC with HMAC-SHA-256 and are
+  not that.** They still decrypt here; they never decrypted anywhere else, and they
+  never will. If a queue holds encrypted bodies written by 0.3.0 and anything other
+  than .NET has to read them, they must be republished by a .NET consumer running
+  this release. Read the migration note below before upgrading a service that
+  encrypts.
+
+  The content type has been `application/vnd.acemq.encrypted` in all five libraries
+  from the beginning, and the bytes under it were never the same. On the wire now:
+
+  ```
+  0xAE  0x01  len  key identifier   12-byte nonce   ciphertext + 16-byte tag
+  ```
+
+  Against, up to 0.3.0:
+
+  ```
+  0x01  len  key identifier   16-byte IV   ciphertext   HMAC-SHA-256, 32 bytes
+  ```
+
+  Every encryption test this library had passed throughout, because every one of
+  them decrypted what it had itself encrypted — which proves nothing about reading
+  another language's message, since both sides share the bug. The new suite
+  decrypts bodies the Java, Python and Ruby libraries really wrote, and pins the
+  exact bytes this package produces for a known key, key identifier and nonce
+  against the vector the other four agree on.
+
+  **The old cryptography was not the defect.** AES-256-CBC with encrypt-then-MAC is
+  a sound construction, it verified the tag before decrypting anything, and it was
+  chosen because `System.Security.Cryptography.AesGcm` does not exist on
+  `netstandard2.0` — a real constraint, not an oversight. What was wrong is that it
+  travelled under a content type promising a format it could not read.
+
+- **BREAKING: `EncryptedCodec`, `Keyring`, `KeyringBuilder`, `EncryptionKey` and
+  `IKeyring` have moved out of the core assembly into a new `AceMq.Amqp.Crypto`
+  package, and out of the `AceMq.Amqp` namespace into `AceMq.Amqp.Crypto`.** A
+  consumer that encrypts adds one `PackageReference` and one `using`; the compiler
+  names every line that needs it. Nothing else in the core moved.
+
+  This is how the constraint above was resolved, and the reasoning is kept in
+  `src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj` beside the target it explains,
+  because that is the file somebody will edit when they next try to retarget it.
+  In short: multi-targeting the core `netstandard2.0;net8.0` would have put two
+  cryptographic code paths behind one wire format, where a divergence shows up only
+  at runtime, on one target, in somebody else's queue — and would have left
+  `netstandard2.0` with no GCM at all. Throwing `PlatformNotSupportedException`
+  there was worse: `netstandard2.0` is the .NET Framework 4.6.2 consumer this
+  library exists to reach. So encryption became its own package, the way
+  `AceMq.Amqp.Avro`, `.Yaml`, `.Toml` and `.Xml` already isolate an optional
+  dependency, and takes AES-GCM from **BouncyCastle**, which has it on
+  `netstandard2.0`. One implementation, one set of bytes, identical on .NET
+  Framework 4.6.2 and on .NET 10.
+
+  The core keeps its `netstandard2.0` target and its dependency list, and a
+  consumer who does not encrypt never acquires a cryptography library.
+
+### Deprecated
+
+- **Reading the pre-0.4.0 .NET framing.** `EncryptedCodec.Decode` still opens a body
+  beginning `0x01`, which is what 0.3.0 wrote, and `EncryptedCodec.KeyIdOf` still
+  names its key. The two framings are told apart with certainty rather than guessed
+  at — the family framing begins `0xAE`, the old .NET one begins `0x01`, and
+  anything else is refused naming both — so no body is ever tried one way and then
+  the other, which would have made a wrong key indistinguishable from an unknown
+  format.
+
+  **This is a migration affordance, not a feature, and there is no way to write that
+  framing any more.** `EncryptedCodec.IsLegacyDotNetBody(body)` answers the question
+  that has to be answered before it goes: is there anything left in this queue that
+  only .NET can read. **The reader and that method will be removed in 1.0.0.** Drain
+  those queues before then.
+
 ### Added
 
 - **`AceMq.Amqp.Xml`**, a package whose `InteropXmlCodec` reads and writes the XML the

@@ -20,7 +20,8 @@ Things worth reporting even if they feel minor:
 - A development certificate accepted without `AllowDevelopmentCertificates()`.
 - Anything that renders a credential, a key, or a message body into a log or an
   exception message.
-- A message body that can be altered without `EncryptedCodec` rejecting it.
+- A message body that can be altered without `AceMq.Amqp.Crypto`'s `EncryptedCodec`
+  rejecting it, or one it decrypts under a key it was not written with.
 - Anything in `AceMq.Amqp.Diagnostics` that exposes more than metrics, health and
   version.
 

@@ -23,7 +23,7 @@ library will not guess which.
 | | |
 |---|---|
 | In transit, service to broker | **TLS** — on with `amqps://`, verified by default |
-| The message body at rest in the broker | **`EncryptedCodec`** — not on by default |
+| The message body at rest in the broker | **`EncryptedCodec`**, in `AceMq.Amqp.Crypto` — not on by default |
 | Headers, routing keys, queue names | **Nothing.** The broker routes on them and the library reads them |
 | Who may publish or consume what | **The broker's** users and permissions, not this library |
 | The metrics and health endpoints | **Nothing.** They are unauthenticated — bind them to loopback |
@@ -262,9 +262,13 @@ scheme cannot quietly leave a production connection in clear text.
 ## Encrypting the payload
 
 TLS protects messages in transit only. Anything with access to the broker's storage
-— or a backup of it — reads the bodies. `EncryptedCodec` encrypts the body itself, so
-what the broker holds is unreadable without a key the broker does not have. See
+— or a backup of it — reads the bodies. `EncryptedCodec`, in the
+**`AceMq.Amqp.Crypto`** package, encrypts the body itself, so what the broker holds
+is unreadable without a key the broker does not have. See
 [serialization](serialization.md#encrypting-the-payload).
+
+AES-256-GCM with a 128-bit tag, in the framing the Java, Python, Ruby and Go
+libraries read, so an encrypted message crosses languages.
 
 ### Decide the operations story first
 
@@ -279,6 +283,26 @@ The encryption is the easy part. What needs deciding before you turn it on:
 - **How a failed message gets triaged.** A dead-lettered encrypted message cannot be
   read in the broker's management UI. Somebody will need to look at one at three in
   the morning, and "we cannot" is a bad answer to discover then.
+  `EncryptedCodec.KeyIdOf(body)` names the key a message needs without holding any of
+  them, which is usually what that person actually wants.
+
+### Upgrading from 0.3.0 or earlier
+
+**Encrypted bodies written before 0.4.0 are in a different format.** They still
+decrypt here and have never decrypted anywhere else. A queue holding them must be
+drained, or republished by a .NET consumer running this release, before anything in
+another language can read it —
+[the details](serialization.md#bodies-written-before-040).
+
+### What it does not do
+
+- **It is not authorisation.** Every service holding the keyring reads every message
+  encrypted with those keys. The granularity is the key, so separate audiences mean
+  separate keys.
+- **It does not authenticate the sender.** Anybody holding the key can write a
+  message the codec will happily decrypt.
+- **It does not hide the routing.** Exchange, routing key, headers and message size
+  stay in the clear, and for many systems the routing key is the sensitive part.
 
 ## The endpoints are not authenticated
 
@@ -303,8 +327,9 @@ come over loopback, through a sidecar, or behind a network policy instead.
   it — that is what it is named for.
 - `TlsOptions.Insecure()` likewise.
 - The actuator bound to loopback, or behind something that authenticates.
-- `EncryptedCodec` where the broker's operators should not be able to read the
-  messages — with the key rotation and triage decisions written down.
+- `AceMq.Amqp.Crypto`'s `EncryptedCodec` where the broker's operators should not be
+  able to read the messages — with the key rotation and triage decisions written
+  down.
 
 ---
 

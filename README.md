@@ -35,12 +35,13 @@ native API rather than a transliterated Java one.
 | `RetryLadder` | the `{queue}.retry.{delay}` queues a long backoff waits in |
 | `Replay` | put dead-lettered messages back, on a fresh set of attempts |
 | `StreamReader<T>` | read a stream from an offset |
-| Codecs | JSON, XML, text, bytes, composite, and `EncryptedCodec` for payload encryption |
+| Codecs | JSON, XML, text, bytes and composite |
 | `AceMq.Amqp.Protobuf` | Protocol Buffers, in its own package so the core keeps no serialization dependency |
 | `AceMq.Amqp.Avro` | Avro, with a fixed schema or a registry that makes adding a field safe |
 | `AceMq.Amqp.Yaml` | YAML, for messages a person will read |
 | `AceMq.Amqp.Toml` | TOML, the same but without the ambiguity |
 | `AceMq.Amqp.Xml` | XML that Java, Go, Python and Ruby read and write, refusing every DTD |
+| `AceMq.Amqp.Crypto` | `EncryptedCodec` — AES-256-GCM payload encryption in the framing all five libraries read |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
 | `RoutingSlip` | a route the message carries, changeable at each step |
@@ -245,7 +246,8 @@ other repository commits the same bytes.
 | `tests/AceMq.Amqp.Tests/fixtures/envelope-fixtures.json` | publishing through the Java library and reading the message back at the transport level | the wire headers |
 | `tests/AceMq.Amqp.Tests/fixtures/contract-fixtures.json` | Java's `ContractFixtures` generator | the retry schedule, the queue names, the rung arguments and the declared topology |
 
-A third fixture pins a narrower thing and is not part of that set:
+Two further fixtures pin narrower things and are not part of that set.
+
 `tests/AceMq.Amqp.Xml.Tests/fixtures/xml-interop-samples.json` carries XML message
 bodies exactly as the Java and Go libraries wrote them, copied from the Ruby and
 Python repositories' own copies. `AceMq.Amqp.Xml` is asserted against those bytes
@@ -254,6 +256,16 @@ proved nothing about reading a Java message. It is what caught the one real
 divergence in the format: Jackson wraps a list in an element of its own where Go's
 `encoding/xml` repeats the sibling, and both shapes are in the file because both are
 real.
+
+`tests/AceMq.Amqp.Crypto.Tests/fixtures/crypto-interop-samples.json` does the same
+for encrypted bodies, and is the sharpest illustration of why any of this is here.
+It holds five plaintexts encrypted three times over, by the Java, Python and Ruby
+libraries' own `EncryptedCodec`. Up to 0.3.0 this library could not read a single
+one of them — it wrote AES-256-CBC with HMAC-SHA-256 while the other four wrote
+AES-256-GCM, under the same content type — and **every encryption test it had
+passed**, because every one of them decrypted what it had itself encrypted. Both
+sides of a round trip share the bug. Regenerate the file with
+`../scripts/crypto-samples.sh`.
 
 `../scripts/check-fixtures.sh` compares all five copies of both files and fails on a
 single changed character. That check is the load-bearing part. A library that quietly
@@ -334,6 +346,15 @@ most likely to want a supported AMQP library are the ones that cannot move, and
 A `net8.0` target should be added alongside it for modern consumers; it is absent
 only because the SDK on the machine this was written on has no net8.0 targeting
 pack.
+
+**Every package holds that target, including `AceMq.Amqp.Crypto`**, and CI fails if
+one of them stops. That was the constraint that shaped payload encryption:
+`System.Security.Cryptography.AesGcm` does not exist on `netstandard2.0`, so the
+crypto package takes AES-GCM from BouncyCastle rather than multi-targeting and
+running two cryptographic code paths behind one wire format. The reasoning is in
+`src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj`, beside the target it explains.
+`AceMq.Amqp.DevCerts` is the one exception and always was: it is a command-line tool
+that runs on a developer's machine, not inside the .NET Framework service.
 
 ## VB.NET
 

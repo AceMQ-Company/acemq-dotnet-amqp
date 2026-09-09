@@ -7,7 +7,8 @@
           "files": [
             "AceMq.Amqp/AceMq.Amqp.csproj",
             "AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj",
-            "AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj"
+            "AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj",
+            "AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj"
           ]
         }
       ],
