@@ -30,7 +30,7 @@ native API rather than a transliterated Java one.
 | `Topology` | exchanges, queues and dead-letter wiring declared as one unit, on `acemq.dlx` |
 | `Requester` / `Responder` | request and reply, correlated on a shared reply queue |
 | `OrderedQueue<T>` | order per key across partitions; a partition halts rather than reorder |
-| `Pipeline<T>` | steps on their own queues, type-checked against each other |
+| `Pipeline<T>` | steps on their own queues, type-checked against each other, each message carrying its route so a replay resumes |
 | `OutboxRelay` | publish what was written in the same transaction as your data |
 | `RetryLadder` | the `{queue}.retry.{delay}` queues a long backoff waits in |
 | `Replay` | put dead-lettered messages back, on a fresh set of attempts |
@@ -44,7 +44,10 @@ native API rather than a transliterated Java one.
 | `AceMq.Amqp.Crypto` | `EncryptedCodec` — AES-256-GCM payload encryption in the framing all five libraries read |
 | `DbOutboxStore` / `DbIdempotencyStore` | ADO.NET, so the outbox commits with your data |
 | Interceptors | run around every publish and every handled message |
-| `RoutingSlip` | a route the message carries, changeable at each step |
+| `ClaimCheckCodec` | large payloads to a store and a key on the wire, in the framing Java, Python and Ruby read |
+| `IClaimCheckStore` | three methods, with in-memory and filesystem stores in the box |
+| `RoutingSlip` | a route the message carries as step names, changeable at each step |
+| `Itinerary` | the same route as JSON carrying each stop's address, the form Go, Python and Ruby write |
 | `Saga<T>` | steps that undo themselves, compensated in reverse, reporting what could not be |
 | `Scheduler` | deliver later, through a ladder of TTL queues rather than one that expires only at its head |
 | `DbSchemaRegistry` | schema ids that mean the same thing in every process |

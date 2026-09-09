@@ -1064,11 +1064,13 @@ public sealed class AceMqConnection : IDisposable
     /// Sends a message along a route it carries with it.
     /// </summary>
     /// <remarks>
-    /// The slip's current step names the queue. Each step's handler calls
-    /// <see cref="ForwardAsync{T}"/> to pass it on, so the route can be changed part
-    /// way through by whatever handled the last step.
+    /// Takes either wire form: a <see cref="RoutingSlip"/>, whose current step names a
+    /// queue, or an <see cref="Itinerary"/>, whose current step carries its own
+    /// exchange and routing key. Each step's handler calls <see cref="ForwardAsync{T}"/>
+    /// to pass it on, so the route can be changed part way through by whatever handled
+    /// the last step.
     /// </remarks>
-    public async Task<string> SendAlongAsync<T>(RoutingSlip slip, T payload)
+    public async Task<string> SendAlongAsync<T>(IRoute slip, T payload)
     {
         EnsureOpen();
         if (slip == null) throw new ArgumentNullException(nameof(slip));
@@ -1076,7 +1078,7 @@ public sealed class AceMqConnection : IDisposable
         {
             throw new ArgumentException("this routing slip has no steps left", nameof(slip));
         }
-        return await ForwardAsync(slip, payload, Envelope.Of(slip.Current!).Build())
+        return await ForwardAsync(slip, payload, Envelope.Of(slip.Destination!.Label).Build())
             .ConfigureAwait(false);
     }
 
@@ -1084,11 +1086,11 @@ public sealed class AceMqConnection : IDisposable
     /// Sends a message to the slip's current step, keeping its envelope.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="RoutingSlip.Advance"/> before this to move it on. A handler
-    /// that forwards without advancing sends the message back to itself, which is a
-    /// loop rather than a route.
+    /// Call <see cref="IRoute.Advance"/> before this to move it on. A handler that
+    /// forwards without advancing sends the message back to itself, which is a loop
+    /// rather than a route.
     /// </remarks>
-    public async Task<string> ForwardAsync<T>(RoutingSlip slip, T payload, Envelope envelope)
+    public async Task<string> ForwardAsync<T>(IRoute slip, T payload, Envelope envelope)
     {
         EnsureOpen();
         if (slip == null) throw new ArgumentNullException(nameof(slip));
@@ -1098,10 +1100,12 @@ public sealed class AceMqConnection : IDisposable
             throw new ArgumentException("this routing slip has no steps left", nameof(slip));
         }
 
-        // The slip rides in reserved headers, which the envelope strips from the
-        // application's view on the way back out -- so a handler sees its payload
-        // and asks for the slip explicitly rather than finding routing machinery
-        // mixed into its own headers.
+        // A declared slip rides in reserved headers, which the envelope strips from
+        // the application's view on the way back out -- so a handler sees its payload
+        // and asks for the slip explicitly rather than finding routing machinery mixed
+        // into its own headers. An itinerary rides in an ordinary header instead,
+        // because that is the name the other three libraries publish and read, and the
+        // reserved namespace would hide it from them as well as from the application.
         var builder = Envelope.Of(envelope.Type)
             .Id(envelope.Id)
             .CorrelationId(envelope.CorrelationId)
@@ -1110,11 +1114,16 @@ public sealed class AceMqConnection : IDisposable
             .FirstSeen(envelope.FirstSeen);
         foreach (var header in envelope.Headers)
         {
-            if (!AceHeaders.IsAceHeader(header.Key)) builder.Header(header.Key, header.Value);
+            // The stale slip on the way in is dropped rather than copied forward. The
+            // one being published replaces it below, so copying it would be harmless
+            // and confusing; leaving it out means the headers say one thing.
+            if (AceHeaders.IsAceHeader(header.Key) || header.Key == Itinerary.Header) continue;
+            builder.Header(header.Key, header.Value);
         }
 
         var carried = builder.Build();
-        var publisher = Publisher<T>(string.Empty, slip.Current!);
+        var destination = slip.Destination!;
+        var publisher = Publisher<T>(destination.Exchange, destination.RoutingKey);
         await ((Publisher<T>)publisher)
             .SendWithHeadersAsync(payload, carried, slip.ToHeaders(), CancellationToken.None)
             .ConfigureAwait(false);

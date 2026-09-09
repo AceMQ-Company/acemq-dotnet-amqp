@@ -40,8 +40,14 @@ namespace AceMq.Amqp;
 /// step four does not undo steps one to three; if that matters, the route needs
 /// compensating steps of its own.
 /// </para>
+/// <para>
+/// This is the form Java writes — step names against a route declared somewhere,
+/// which for a <see cref="Pipeline{T}"/> is the pipeline itself. <see cref="Itinerary"/>
+/// is the other form, the one Go, Python and Ruby write, where the message carries
+/// each stop's address instead. Both are read by <see cref="Route.From"/>.
+/// </para>
 /// </remarks>
-public sealed class RoutingSlip
+public sealed class RoutingSlip : IRoute
 {
     /// <summary>Header carrying the remaining steps, comma-separated.</summary>
     public const string RouteHeader = AceHeaders.Prefix + "route";
@@ -135,8 +141,23 @@ public sealed class RoutingSlip
     /// <summary>Whether every step has been done.</summary>
     public bool IsFinished => Position >= Steps.Count;
 
+    /// <summary>
+    /// The queue the current step reads from, or null when the route is finished.
+    /// </summary>
+    /// <remarks>
+    /// A step name is published to a queue of that name on the default exchange,
+    /// which is what <see cref="AceMqConnection.ForwardAsync{T}"/> has always done.
+    /// Inside a <see cref="Pipeline{T}"/> the name is resolved against the pipeline's
+    /// own queues instead, because there the step names are short and the queues they
+    /// belong to are prefixed with the pipeline's name.
+    /// </remarks>
+    public RouteDestination? Destination =>
+        Current == null ? null : new RouteDestination(string.Empty, Current, Current);
+
     /// <summary>The slip one step further along.</summary>
     public RoutingSlip Advance() => new RoutingSlip(Steps, Position + 1, RunId);
+
+    IRoute IRoute.Advance() => Advance();
 
     /// <summary>
     /// The slip moved to a chosen position.

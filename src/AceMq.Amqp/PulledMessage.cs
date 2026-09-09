@@ -78,6 +78,7 @@ public sealed class PulledMessage<T>
             if (!AceHeaders.IsAceHeader(pair.Key)) application[pair.Key] = pair.Value;
         }
         Headers = application;
+        WireHeaders = delivery.Headers;
 
         _delivery = pulled;
     }
@@ -90,6 +91,18 @@ public sealed class PulledMessage<T>
 
     /// <summary>Application headers. Never contains anything reserved.</summary>
     public IReadOnlyDictionary<string, object> Headers { get; }
+
+    /// <summary>
+    /// Every header as it arrived, the reserved ones included.
+    /// </summary>
+    /// <remarks>
+    /// The same escape hatch <see cref="IMessage{T}.WireHeaders"/> is, and needed for
+    /// the same reason plus one more: a tool draining a dead-letter queue pulls rather
+    /// than consumes, and the routing slip that says how far a message got is in the
+    /// reserved namespace. Without this, the one caller who most needs the slip is the
+    /// one who cannot see it.
+    /// </remarks>
+    public IReadOnlyDictionary<string, object> WireHeaders { get; }
 
     /// <summary>The queue it came from.</summary>
     public string Queue { get; }

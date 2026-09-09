@@ -10,6 +10,58 @@ While the version is `0.x` the public API may change in any release.
 
 ### Added
 
+- **A pipeline now puts a routing slip on every message, so a replay resumes
+  instead of restarting.** `Pipeline<T>` routed positionally — each consumer knew
+  its own index and published to the next one — and attached nothing to the
+  message. A message dead-lettered at step three therefore said nothing about
+  where it had got to, so the only safe place to replay it was the entrance, and
+  every step it had already passed ran again. That is survivable for a step that
+  validates and not for one that charges a card. The slip now travels with the
+  message and `Pipeline<T>.ResumeAsync` puts a half-finished message back at the
+  step it had reached. A slip also lets one message skip a step the pipeline
+  declares, which is the thing a positional chain cannot do at all.
+- **Both wire forms of a routing slip are now read and written.** AceMQ has two
+  and this library had one. `x-acemq-route` — step names, comma-joined, with a
+  position — is what Java writes and what `RoutingSlip` has always been.
+  `acemq-routing-slip`, a JSON itinerary carrying each stop's exchange and routing
+  key plus the stops already done, is what Go, Python and Ruby write, and is now
+  `Itinerary`. `Route.From(headers)` reads whichever is present, so a slip written
+  by any of the five libraries is followed here. The JSON is byte-compatible with
+  the other three: `steps` and `done`, each step an object with `exchange`,
+  `routingKey`, and `name` and `completedAt` when they are not empty.
+  `SendAlongAsync` and `ForwardAsync` take either form, and a pipeline writes the
+  declared form unless told `WritingSlipAs(SlipForm.Itinerary)`.
+- **The claim-check pattern**, which Java, Python and Ruby have had and this
+  library did not. `ClaimCheckCodec.Wrapping(codec, store)` sends payloads at or
+  above 64 KiB to an `IClaimCheckStore` and puts the key on the wire; anything
+  smaller travels inline, exactly as it would without the codec. The framing is
+  the three bytes the other three libraries write — `0xAC 0x01 0x00` for an inline
+  payload, `0xAC 0x01 0x01` for a key — and an unframed body is read as the
+  delegate would read it, so adding this to a live queue is safe. Ships with
+  `InMemoryClaimCheckStore` for tests and `FilesystemClaimCheckStore` for a shared
+  durable mount, both in the core package because neither needs a dependency.
+  `ClaimCheckCodec.KeyOf(body)` answers the dead-letter-queue question — which
+  object does this need — without fetching it.
+- **`PulledMessage<T>.WireHeaders`**, the escape hatch `IMessage<T>` already had.
+  A tool draining a dead-letter queue pulls rather than consumes, and the routing
+  slip that says how far a message got is in the reserved namespace that `Headers`
+  deliberately hides — so the one caller who most needs the slip was the one who
+  could not see it.
+- **A stream's segment size.** `DeclareStreamAsync(name, maxAge, maxLengthBytes,
+  segmentBytes)` sets `x-stream-max-segment-size-bytes`, which Go, Python and Ruby
+  expose and this library had no way to express — so a stream declared with a
+  segment size anywhere else could not be declared identically here, and a queue
+  redeclared with a different argument is refused rather than adjusted. **Absent
+  unless asked for**, exactly as it is in the other three: the broker's default is
+  the right one nearly always, and a default invented here would reintroduce the
+  same mismatch from the other side. The argument names are on `StreamArguments`
+  for a caller declaring through `Topology`.
+- **`MetricNames.SetAsideFailed`, `RungMissing`, `TagTarget` and `OutcomeParked`**,
+  mirroring the names Java added. `acemq.messages.set.aside.failed` is the counter
+  that separates two failures which look identical from anywhere else: a message
+  dead-lettered normally leaves the source queue and appears in the dead-letter
+  queue, and one whose dead-letter queue was never declared leaves the source queue
+  and appears nowhere. Queue depths show the same picture in both cases.
 - **The outbox, the pipeline and request/reply now report themselves.** All three
   ran silently: the relay published records and told nobody, a pipeline run ended
   and counted nothing, and a request's round trip — the one duration the caller

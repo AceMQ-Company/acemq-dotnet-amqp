@@ -98,6 +98,49 @@ pipeline.InFlight     // somewhere in between
 Rejection is a normal outcome, so it does not throw, and it does not look like a lost
 message.
 
+### Every message carries its route
+
+A pipeline puts a [routing slip](#routing-slips) on every message: the whole route and
+how far along it is. Nothing coordinates — each step reads the slip and publishes to
+whatever the slip says is next — and the two or three headers it costs buy the thing a
+positional pipeline cannot do.
+
+**A message dead-lettered at step three still says it is at step three.** Put it back
+there rather than at the entrance:
+
+```csharp
+var stuck = await mq.PullAsync<Order>(pipeline.QueueFor("charge") + ".dlq");
+await pipeline.ResumeAsync(stuck!.Payload, stuck.WireHeaders);
+await stuck.AcknowledgeAsync();
+```
+
+`ResumeAsync` reads the slip off those headers and publishes to the step the message
+had reached, so the steps it already passed do not run again. `SendAsync` would start
+the run over, re-running every step before the failure — which a step that charges a
+card cannot survive. Without a slip that is the only option available, because nothing
+on the message says where it was.
+
+The payload is what the *failing step* received, which is the output of the step
+before it rather than what entered the pipeline — hence its own type parameter on
+`ResumeAsync`. `WireHeaders` rather than `Headers`: the declared slip is in the
+reserved namespace, which `Headers` deliberately hides from an application.
+
+A slip also lets one message skip a step the pipeline declares. Publish it to the
+first step's queue with a slip naming only the steps it needs, and the pipeline
+follows the slip rather than its own declaration.
+
+### Which form the slip travels in
+
+`SlipForm.Declared` unless you say otherwise, which is what Java's pipeline writes.
+Switch when a consumer in Go, Python or Ruby reads one of these queues:
+
+```csharp
+mq.Pipeline<Order>("orders").WritingSlipAs(SlipForm.Itinerary)
+```
+
+Either form is *read* whatever this is set to. See
+[the two forms](#the-two-wire-forms) below.
+
 ## The outbox
 
 The problem: a service changes its database and publishes a message about it. Publish
@@ -229,6 +272,68 @@ compensating steps of its own.
 
 Use a pipeline where every message takes the same path: it says so more clearly and
 does not pay to carry the route around.
+
+### The two wire forms
+
+AceMQ has two, and this library reads and writes both. It has to: the five libraries
+did not agree on one, and a message written by any of them has to be followable here.
+
+| | header | carries | written by |
+|---|---|---|---|
+| `RoutingSlip` | `x-acemq-route`, `-position`, `-id` | step *names*, comma-joined, plus a position and a run id | Java, and this library by default |
+| `Itinerary` | `acemq-routing-slip` | JSON: each stop's exchange and routing key, and the stops already done | Go, Python, Ruby |
+
+`Route.From(headers)` and `Route.Of(message)` read whichever is there, so a consumer
+does not have to know. A message carrying both is unusual, and the itinerary is the
+one believed: it carries addresses rather than names that have to be resolved against
+a declaration somewhere, so following it needs nothing that could be missing.
+
+An itinerary is built and followed the same way:
+
+```csharp
+var slip = new Itinerary()
+    .Then("orders-events", "order.validate", "validate")
+    .Then("orders-events", "order.charge", "charge")
+    .Then("orders-events", "order.ship", "ship");
+
+await mq.SendAlongAsync(slip, order);
+```
+
+```csharp
+await mq.ConsumeAsync<Order>("charge-queue", async message =>
+{
+    await _payments.ChargeAsync(message.Payload);
+
+    var slip = Itinerary.Of(message)!.Advance();
+    if (!slip.IsFinished)
+    {
+        await mq.ForwardAsync(slip, message.Payload, message.Envelope);
+    }
+    return Ack.Accept();
+});
+```
+
+`Advance()` moves the finished step onto `Done`, stamped with the time. `Done` is
+carried rather than dropped so a slip that fails half way says how far it got — which
+is exactly what whoever finds the message in a dead-letter queue is asking.
+
+The JSON is byte-compatible with what Go, Python and Ruby write: `steps` and `done`,
+each step an object with `exchange`, `routingKey`, and `name` and `completedAt` when
+they are not empty. Those field names are camelCase rather than anything more
+idiomatic here because the wire is where five libraries have to agree, and three of
+them defined this one.
+
+`acemq-routing-slip` has no `x-acemq-` prefix, deliberately: the reserved namespace is
+stripped from an application's view of its headers, and this is the name the other
+three publish and read. So an itinerary *does* show up in `message.Headers`, where a
+declared slip does not.
+
+**Which to choose.** Declared is shorter, stays readable in a management console
+(`validate,enrich,dispatch` at position 1 says where a message is without anybody
+decoding anything), and is right when the route has already been declared somewhere —
+which is exactly the pipeline case. The itinerary is right when the stops are decided
+per message, when a stop is somewhere this library has not declared, or when a
+consumer in Go, Python or Ruby has to read it.
 
 ## Replay
 
