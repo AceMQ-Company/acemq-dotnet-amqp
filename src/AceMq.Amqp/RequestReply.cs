@@ -63,11 +63,13 @@ public sealed class Requester : IDisposable
     /// A header rather than only the property, because it travels through the same
     /// envelope machinery as everything else and survives a hop through a service
     /// that rebuilds the message. It deliberately does not carry the
-    /// <c>x-acemq-</c> prefix: that namespace is stripped before a handler sees it,
-    /// so a responder could never read this one.
+    /// <see cref="AceHeaders.Prefix"/>: that namespace is stripped before a handler
+    /// sees it, so a responder could never read this one. It is in
+    /// <see cref="AceHeaders.SharedPrefix"/> for the same reason the replay stamps
+    /// are.
     /// </para>
     /// </remarks>
-    public const string ReplyToHeader = "acemq-reply-to";
+    public const string ReplyToHeader = AceHeaders.SharedPrefix + "reply-to";
 
     private readonly AceMqConnection _mq;
     private readonly ICodec _codec;

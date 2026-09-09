@@ -75,16 +75,16 @@ for a retry, but on the last attempt a `RetryPolicy` allows, the engine dead-let
 the message instead. Up to 0.3.0 the outcome was tagged from the handler's answer
 before the engine had decided, so a message that ran out of attempts was counted as
 `retried` and its span said `retried` — and `acemq.messages.dead.lettered.total` only
-ever saw the dead-letters a handler asked for by name. Since 0.4.0 both the counter
+ever saw the dead-letters a handler asked for by name. Since 0.5.0 both the counter
 and the span carry `dead_lettered`, which means a dashboard built on 0.3.0 numbers
 will show retries falling and dead-letters rising without anything changing in your
 service.
 
-**A handler's own give-up is `rejected`, not `dead_lettered`.** Up to 0.5.x this
+**A handler's own give-up is `rejected`, not `dead_lettered`.** Up to 0.3.0 this
 library and Java reported `Ack.DeadLetter` as `dead_lettered`, while Go, Python and
 Ruby reported it as `rejected` and kept `dead_lettered` for the engine exhausting a
 policy. Three against two, and the three were right: a decision and an exhaustion are
-different events. From 0.6.0 the counter and the span both read `rejected` for a
+different events. Since 0.5.0 the counter and the span both read `rejected` for a
 handler's decision, and `acemq.messages.dead.lettered.total` counts the engine's
 give-ups and parked messages only. **A dashboard or an alert filtering
 `acemq.consume.total` by `outcome = dead_lettered`, or reading

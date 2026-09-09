@@ -102,7 +102,9 @@ Console.WriteLine($"replayed {await replay.ReplayAllAsync()}");
 ```
 
 They go back to `orders.placed` — the queue the dead-letter queue is named after —
-carrying `x-acemq-replay-count`, with the old failure reason cleared.
+carrying `acemq-replay-count`, with the old failure reason cleared. That header and
+its two companions reach your handler on `message.Headers`, because they are not in
+the reserved `x-acemq-` namespace that the engine strips on the way in.
 
 Replay only some of them:
 

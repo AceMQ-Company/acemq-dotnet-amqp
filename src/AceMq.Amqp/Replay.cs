@@ -34,6 +34,13 @@ namespace AceMq.Amqp;
 /// replay had just republished if the two queues are connected, and there would be
 /// no way to replay a bounded number and stop.
 /// </para>
+/// <para>
+/// Every replayed message is stamped with <see cref="AceHeaders.ReplayedFrom"/>,
+/// <see cref="AceHeaders.ReplayedAt"/> and <see cref="AceHeaders.ReplayCount"/>.
+/// None of the three carries <see cref="AceHeaders.Prefix"/>, so all three reach the
+/// handler — in this library and in the other four — rather than being stripped as
+/// the engine's on the way in.
+/// </para>
 /// </remarks>
 public sealed class Replay
 {
@@ -197,12 +204,22 @@ public sealed class Replay
         // means by a replay.
         if (_restart) headers[AceHeaders.Attempt] = 1;
 
+        // The count is read before the old names are dropped, so a message replayed by
+        // a 0.5.0 service carries on counting rather than starting again from one. A
+        // message on its fifth trip through a dead-letter queue is saying something
+        // that a reset counter would hide.
+        var count = PreviousReplays(headers);
+
+        // Written once, in the shared namespace, and the reserved spellings this
+        // library used up to 0.5.0 are taken off. Leaving them on would put two names
+        // for the same fact on the wire, and the pair that a consumer can actually see
+        // is not the pair an operator would find by grepping.
+        headers.Remove(AceHeaders.LegacyReplayedFrom);
+        headers.Remove(AceHeaders.LegacyReplayedAt);
+        headers.Remove(AceHeaders.LegacyReplayCount);
+
         headers[AceHeaders.ReplayedFrom] = From;
-        headers[AceHeaders.ReplayedAt] =
-            DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture);
-        var count = headers.TryGetValue(AceHeaders.ReplayCount, out var c)
-            ? Convert.ToInt32(c, CultureInfo.InvariantCulture)
-            : 0;
+        headers[AceHeaders.ReplayedAt] = Rfc3339(DateTimeOffset.UtcNow);
         headers[AceHeaders.ReplayCount] = count + 1;
 
         return new OutboundMessage(
@@ -211,6 +228,54 @@ public sealed class Replay
             persistent: true, mandatory: true, expiration: null, priority: null,
             replyTo: delivery.ReplyTo);
     }
+
+    /// <summary>
+    /// How many times this message has already been replayed, under either spelling.
+    /// </summary>
+    /// <remarks>
+    /// The current name wins where both are present, which is only ever a message some
+    /// other tool stamped by hand. A value that will not read counts as none: the
+    /// number is used for reporting, and failing a replay over it would refuse to move
+    /// a message because of a header nobody depends on.
+    /// </remarks>
+    private static int PreviousReplays(IDictionary<string, object> headers)
+    {
+        foreach (var name in new[] { AceHeaders.ReplayCount, AceHeaders.LegacyReplayCount })
+        {
+            if (!headers.TryGetValue(name, out var value) || value == null) continue;
+            try
+            {
+                return Convert.ToInt32(value, CultureInfo.InvariantCulture);
+            }
+            catch (Exception e) when (e is FormatException || e is InvalidCastException
+                || e is OverflowException)
+            {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// The instant as the other four libraries write it: seconds, and a <c>Z</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not <c>"o"</c>, which is what this wrote up to 0.5.0. That is legitimate RFC
+    /// 3339 and Java's reader takes it, but it is the one shape in the family with
+    /// both a <c>+00:00</c> offset and seven fractional digits — and the offset form
+    /// has already cost Java a widened reader once. Go and Ruby write exactly this;
+    /// Java writes it with an optional fraction; the shared <c>envelope-fixtures.json</c>
+    /// pins the <c>Z</c> form. Whole seconds lose nothing anybody uses: this is the
+    /// stamp on an operator draining a queue by hand.
+    /// </para>
+    /// <para>
+    /// The literal <c>Z</c> is quoted rather than spelled with a format specifier so
+    /// it stays a <c>Z</c> — an unquoted one would be read as the era designator.
+    /// </para>
+    /// </remarks>
+    private static string Rfc3339(DateTimeOffset at) =>
+        at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
     private OutboundMessage ReturnedToSource(InboundDelivery delivery) =>
         new OutboundMessage(

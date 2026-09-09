@@ -25,10 +25,10 @@ the reply's correlation id.
 A request carries the address **twice**: on AMQP's own `reply-to` property, and on an
 `acemq-reply-to` application header. They always hold the same value.
 
-The duplication is the fix for a real split. Up to 0.5.x this library and Java wrote
+The duplication is the fix for a real split. Up to 0.3.0 this library and Java wrote
 and read only the native property, while Go, Python and Ruby wrote and read only the
 header — so a .NET requester and a Go responder could not talk at all, in either
-direction, and nothing in the fixtures noticed. From 0.6.0 every library **writes both
+direction, and nothing in the fixtures noticed. Since 0.5.0 every library **writes both
 and reads either**, and the read order is the same everywhere: **the header first, the
 native property second.**
 

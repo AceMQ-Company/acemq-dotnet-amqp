@@ -13,6 +13,7 @@
 // limitations under the License.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using AceMq.Amqp;
 
 namespace AceMq.Amqp.Tests;
@@ -406,6 +407,83 @@ public sealed class PatternTests : IDisposable
         var envelope = Envelope.FromWire(back!.Headers);
         Assert.Equal(1, envelope.Attempt);
         Assert.Null(envelope.Error);
+    }
+
+    [Fact]
+    public async Task StampsAReplayedMessageWhereAHandlerCanSeeIt()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        await mq.DeclareQueueAsync("work.dlq");
+
+        await mq.Publisher<string>("", "work.dlq").SendAsync(
+            "stamped", Envelope.Of("job").Build());
+
+        Assert.Equal(1, await mq.Replay("work.dlq").ReplayAllAsync());
+
+        var back = await mq.Transport.ReceiveAsync(
+            "work", TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.NotNull(back);
+
+        // Through Envelope.FromWire rather than off the raw delivery, because that is
+        // the reading a handler gets and the one the reserved namespace used to eat.
+        var headers = Envelope.FromWire(back!.Headers).Headers;
+        Assert.Equal("work.dlq", headers[AceHeaders.ReplayedFrom]);
+        Assert.Equal(1, Convert.ToInt32(
+            headers[AceHeaders.ReplayCount], CultureInfo.InvariantCulture));
+
+        // The shape the other four write: whole seconds, and a Z. Not "o", which
+        // carries an offset and seven fractional digits that nothing else produces.
+        var at = Assert.IsType<string>(headers[AceHeaders.ReplayedAt]);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", at);
+        Assert.Equal(
+            at,
+            DateTimeOffset.Parse(at, CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind)
+                .UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
+
+        // And nothing left behind under the old spelling: one name for one fact.
+        Assert.DoesNotContain(AceHeaders.LegacyReplayedFrom, back.Headers.Keys);
+        Assert.DoesNotContain(AceHeaders.LegacyReplayedAt, back.Headers.Keys);
+        Assert.DoesNotContain(AceHeaders.LegacyReplayCount, back.Headers.Keys);
+    }
+
+    [Fact]
+    public async Task CarriesOnCountingFromAStampWrittenBefore0Point6()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        await mq.DeclareQueueAsync("work.dlq");
+
+        // A message a 0.5.0 service replayed twice: the count is on the wire under the
+        // reserved spelling, which Envelope.FromWire will not show anybody. Reading it
+        // anyway is the difference between a third replay and a first.
+        await mq.Transport.SendAsync(
+            new OutboundMessage(
+                "", "work.dlq", new byte[] { 1 },
+                new Dictionary<string, object>
+                {
+                    [AceHeaders.Id] = "old-1",
+                    [AceHeaders.Type] = "job",
+                    [AceHeaders.LegacyReplayedFrom] = "work.dlq",
+                    [AceHeaders.LegacyReplayedAt] = "2026-02-03T04:05:06.789Z",
+                    [AceHeaders.LegacyReplayCount] = 2,
+                },
+                "old-1", "application/json",
+                persistent: true, mandatory: true, expiration: null, priority: null,
+                replyTo: null),
+            CancellationToken.None);
+
+        Assert.Equal(1, await mq.Replay("work.dlq").ReplayAllAsync());
+
+        var back = await mq.Transport.ReceiveAsync(
+            "work", TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.NotNull(back);
+
+        var headers = Envelope.FromWire(back!.Headers).Headers;
+        Assert.Equal(3, Convert.ToInt32(
+            headers[AceHeaders.ReplayCount], CultureInfo.InvariantCulture));
+        Assert.DoesNotContain(AceHeaders.LegacyReplayCount, back.Headers.Keys);
     }
 
     [Fact]

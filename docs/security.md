@@ -288,11 +288,11 @@ The encryption is the easy part. What needs deciding before you turn it on:
 
 ### Upgrading from 0.3.0 or earlier
 
-**Encrypted bodies written before 0.4.0 are in a different format.** They still
+**Encrypted bodies written before 0.5.0 are in a different format.** They still
 decrypt here and have never decrypted anywhere else. A queue holding them must be
 drained, or republished by a .NET consumer running this release, before anything in
 another language can read it —
-[the details](serialization.md#bodies-written-before-040).
+[the details](serialization.md#bodies-written-before-050).
 
 ### What it does not do
 

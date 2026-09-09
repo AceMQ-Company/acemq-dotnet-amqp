@@ -6,6 +6,69 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 While the version is `0.x` the public API may change in any release.
 
+## [Unreleased]
+
+### Changed
+
+- **A replay's provenance moved out of the reserved header namespace, which
+  changes the bytes on the wire.** `Replay` wrote `x-acemq-replayed-from`,
+  `x-acemq-replayed-at` and `x-acemq-replay-count`; it now writes
+  `acemq-replayed-from`, `acemq-replayed-at` and `acemq-replay-count`, which is
+  what Java, Go, Python and Ruby write. This library was the last of the five on
+  the old spelling, and it was the wrong namespace twice over: `x-acemq-` is the
+  engine's, and every AceMQ library — this one included — drops a header carrying
+  it that the engine does not materialise onto the envelope. So the one question
+  the stamps exist to answer, *did this message come back off a dead-letter
+  queue?*, could not be asked of the headers a handler was handed, in any
+  language. **A message a .NET operator replayed reached a Go, Python, Ruby or
+  Java handler with its provenance silently removed** — an audit trail lost
+  rather than a message, and nothing reported the loss.
+
+  The three stamps are ordinary application headers now and reach the handler on
+  `IMessage<T>.Headers` and `Envelope.Headers` like any other.
+  `AceHeaders.SharedPrefix` names the namespace they live in — the one AceMQ
+  defines and does not reserve, which `acemq-reply-to` and `acemq-routing-slip`
+  were already in and which `AceHeaders.IsAceHeader` deliberately does not match.
+
+  **The old spelling is still read.** `AceHeaders.LegacyReplayedFrom`,
+  `LegacyReplayedAt` and `LegacyReplayCount` name it, and a replay takes its
+  count from whichever spelling is on the message — so a message a 0.5.0 service
+  replayed twice is replayed a third time rather than a first. Nothing writes the
+  old names any more, and a replay strips them on the way past so one fact
+  travels under one name. Reading either and writing only the new one is the
+  shape Java used for `acemq-replayed-at`'s encoding change, and the shape this
+  library and Go both use for the encryption framing.
+
+  **Anything matching on the old names — a shovel policy, a dashboard, a
+  firehose consumer — needs the new ones.** The shared `envelope-fixtures.json`
+  already carries a `replayed` case with the new spellings, and
+  `EnvelopeConformanceTests` now asserts against it.
+
+- **`acemq-replayed-at` is written to the second with a `Z`**, for example
+  `2026-02-03T04:05:06Z`, rather than .NET's `"o"` round-trip format. Both are
+  legitimate RFC 3339 and Java's reader takes either, but `"o"` produced the one
+  shape in the family carrying *both* a `+00:00` offset and seven fractional
+  digits — and the offset form has already cost Java a widened reader once, since
+  `Instant.parse` refuses it on a Java 11 runtime. Go and Ruby write exactly this
+  form, Java writes it with an optional fraction, and the shared fixture pins the
+  `Z`. Whole seconds lose nothing anybody uses: this is the stamp on an operator
+  draining a queue by hand. **Anything parsing that header with a format string
+  expecting an offset or a fraction needs to accept this instead.**
+
+### Fixed
+
+- **The documentation gave the wrong release for six changes that shipped in
+  0.5.0.** `docs/observability.md` said the `rejected` outcome arrived "from
+  0.6.0" and the engine-owned outcome "since 0.4.0"; `docs/request-reply.md` said
+  the reply-address duplication arrived "from 0.6.0"; `README.md` said the same
+  of `rejected` and dated the hyphenated diagnostic codes to "0.5.x";
+  `docs/serialization.md` dated the `XmlCodec` throw to 0.4.0 and titled the
+  legacy-crypto section "Bodies written before 0.4.0"; `docs/security.md` linked
+  to that title and repeated the version. All of it landed in 0.5.0, and this
+  library never released an 0.4.0 at all — so a reader checking whether they had
+  the behaviour was told to wait for a version that had already shipped, or to
+  look for one that does not exist.
+
 ## [0.5.0] - 2026-09-09
 
 ### Added

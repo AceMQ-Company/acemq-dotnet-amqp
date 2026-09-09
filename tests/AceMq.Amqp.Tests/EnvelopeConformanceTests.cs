@@ -146,6 +146,40 @@ public sealed class EnvelopeConformanceTests
     }
 
     [Fact]
+    public void ReplayStampsStayOutsideTheReservedNamespace()
+    {
+        // All three, and this is the whole reason they are named the way they are: a
+        // header carrying the reserved prefix that the engine does not materialise onto
+        // the envelope reaches the wire and is then dropped before any handler sees it.
+        // Put the replay provenance there and the one question it exists to answer --
+        // did this message come back off a dead-letter queue? -- cannot be asked.
+        Assert.False(AceHeaders.IsAceHeader(AceHeaders.ReplayedFrom));
+        Assert.False(AceHeaders.IsAceHeader(AceHeaders.ReplayedAt));
+        Assert.False(AceHeaders.IsAceHeader(AceHeaders.ReplayCount));
+
+        // The literals, not just the shape. These are the strings Java, Go, Python and
+        // Ruby write, and a rename here is a silent interoperability break.
+        Assert.Equal("acemq-replayed-from", AceHeaders.ReplayedFrom);
+        Assert.Equal("acemq-replayed-at", AceHeaders.ReplayedAt);
+        Assert.Equal("acemq-replay-count", AceHeaders.ReplayCount);
+    }
+
+    [Fact]
+    public void AReplayedMessageKeepsItsProvenanceOnTheWayIn()
+    {
+        // The fixture Java generates carries a replayed case for exactly this. Before
+        // 0.6.0 this library wrote the stamps under x-acemq-, so the assertion below
+        // could not have held for a message this library had produced.
+        var envelope = Envelope.FromWire(HeadersOf(Case("replayed")));
+
+        Assert.Equal("orders.new.dlq", envelope.Headers[AceHeaders.ReplayedFrom]);
+        Assert.Equal("2026-02-03T04:05:06.789Z", envelope.Headers[AceHeaders.ReplayedAt]);
+        Assert.Equal(2, Convert.ToInt32(
+            envelope.Headers[AceHeaders.ReplayCount],
+            System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public void RefusesToLetAnApplicationWriteIntoTheReservedNamespace()
     {
         // Java drops these silently on consume. Failing at the call site is kinder

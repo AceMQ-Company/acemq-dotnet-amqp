@@ -362,10 +362,37 @@ await replay.ReplayAsync(1000, delivery =>
 about picking out one tenant or one kind of failure, and losing the rest as a side
 effect of looking at them would be a poor trade.
 
-Replayed messages carry `x-acemq-replayed-from`, `x-acemq-replayed-at` and
-`x-acemq-replay-count`, and the failure reason is cleared — it belonged to the
+Replayed messages carry `acemq-replayed-from`, `acemq-replayed-at` and
+`acemq-replay-count`, and the failure reason is cleared — it belonged to the
 attempt that failed, and leaving it on would make every replayed message look like it
 had already failed again.
+
+**None of the three carries the `x-acemq-` prefix, and that is the point.** The
+reserved namespace is the engine's, and a header in it that the engine does not
+materialise onto the envelope is dropped before a handler sees it — so a stamp put
+there reaches the wire and then vanishes. These reach the handler, here and in the
+other four languages:
+
+```csharp
+using var consumer = await mq.ConsumeAsync<Order>("orders.placed", async message =>
+{
+    if (message.Headers.TryGetValue(AceHeaders.ReplayedFrom, out var from))
+    {
+        // This one came back off a dead-letter queue, and says which.
+    }
+    await Handle(message.Payload);
+    return Ack.Accept();
+});
+```
+
+**They were spelled `x-acemq-replayed-from` and so on up to and including 0.5.0**,
+where every AceMQ library — this one included — dropped them on consume. A replay
+still **reads** the old spelling, so a message a 0.5.0 service replayed keeps its
+count; it is never written any more. Anything matching on the old names needs the
+new ones.
+
+`acemq-replayed-at` is RFC 3339 to the second, with a `Z` — `2026-02-03T04:05:06Z`,
+which is what Go and Ruby write and what the shared envelope fixtures pin.
 
 **`x-acemq-attempt` is reset to 1 as well.** A dead-letter queue is full of messages that
 were given up on at the *last* attempt of their policy, and the attempt counter now

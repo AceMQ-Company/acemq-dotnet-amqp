@@ -327,7 +327,7 @@ field at its default. A service that reached for the core codec to read a Java q
 saw empty orders and no errors, which is the worst of both: the message was gone and
 nothing said so.
 
-Since 0.4.0 `XmlCodec` throws instead:
+Since 0.5.0 `XmlCodec` throws instead:
 
 ```
 AceFatalException: nothing in the body bound to Order: all 6 of its elements and
@@ -540,7 +540,7 @@ one target, in somebody else's queue. The full reasoning, including what was
 rejected, is in `src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj`, next to the target
 it explains.
 
-### Bodies written before 0.4.0
+### Bodies written before 0.5.0
 
 Releases up to and including 0.3.0 wrote a .NET-only framing:
 
@@ -555,7 +555,7 @@ verified **before** anything is decrypted, exactly as it was.
 
 **Nothing writes it any more, and this reader will be removed in 1.0.0.** Those
 bodies decrypt in .NET and nowhere else, so a queue holding them has to be drained —
-or republished by a .NET consumer running 0.4.0 — before anything in another
+or republished by a .NET consumer running 0.5.0 or later — before anything in another
 language can read it.
 
 ```csharp

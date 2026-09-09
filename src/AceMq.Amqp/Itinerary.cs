@@ -232,12 +232,12 @@ public sealed class Itinerary : IRoute
 {
     /// <summary>The header the itinerary travels in.</summary>
     /// <remarks>
-    /// No <see cref="AceHeaders.Prefix"/>, deliberately. The reserved namespace is
-    /// stripped from an application's view of its headers, and this name is the one
-    /// Go, Python and Ruby publish and read — changing it here would make a slip
-    /// written by any of them invisible.
+    /// <see cref="AceHeaders.SharedPrefix"/> and not <see cref="AceHeaders.Prefix"/>,
+    /// deliberately. The reserved namespace is stripped from an application's view of
+    /// its headers, and this name is the one Go, Python and Ruby publish and read —
+    /// changing it here would make a slip written by any of them invisible.
     /// </remarks>
-    public const string Header = "acemq-routing-slip";
+    public const string Header = AceHeaders.SharedPrefix + "routing-slip";
 
     private static readonly ItineraryStep[] None = new ItineraryStep[0];
 

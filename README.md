@@ -105,8 +105,8 @@ handler was unable to do.
 `dead_lettered`.** Both end in `{queue}.dlq` — this is about the word, not the
 destination. `Ack.DeadLetter` is a decision somebody took about this message;
 `dead_lettered` is a `RetryPolicy` running out of attempts, which is usually a
-dependency being down. Go, Python and Ruby have always drawn the line here, and from
-0.6.0 so do this library and Java. **It is visible on a dashboard**:
+dependency being down. Go, Python and Ruby have always drawn the line here, and since
+0.5.0 so do this library and Java. **It is visible on a dashboard**:
 `acemq.consume.total` now tags those deliveries `outcome = rejected`, and
 `acemq.messages.dead.lettered.total` no longer counts them.
 
@@ -181,6 +181,19 @@ saw it — and the operator who has just fixed the bug would have moved two thou
 messages from one queue to the same queue. `KeepingAttempts()` puts back exactly what
 was there, for an audit.
 
+**A replayed message's provenance now survives to the other four languages.** The three
+stamps a replay writes are `acemq-replayed-from`, `acemq-replayed-at` and
+`acemq-replay-count`. Up to and including 0.5.0 this library spelled them with the
+reserved `x-acemq-` prefix, and it was the last of the five to do so — which meant
+every AceMQ library, this one included, dropped them on consume, because a reserved
+header the engine does not materialise onto the envelope never reaches a handler. A
+message a .NET operator replayed arrived at a Go, Python, Ruby or Java handler with no
+record that it had ever been replayed. It cost an audit trail rather than a message,
+and nothing reported the loss. **Anything matching on the old names — a shovel policy,
+a dashboard, a firehose consumer — needs the new ones.** The old spelling is still
+**read**, so a message a 0.5.0 service replayed keeps its replay count when a newer
+service replays it again; nothing writes it any more.
+
 ```csharp
 var policy = RetryPolicy.Exponential(6, TimeSpan.FromSeconds(10));
 
@@ -236,7 +249,7 @@ events, each with the queue, the destination, the message id and the attempt:
 | `acemq.message.parked` | the body could not be read |
 | `acemq.retry.rung.missing` | a broker wait was asked for with no rung to spend it in, so the wait fell back to this process where a restart loses it |
 
-**The codes are dotted throughout.** Up to 0.5.x three of them were hyphenated —
+**The codes are dotted throughout.** Up to 0.3.0 three of them were hyphenated —
 `acemq.message.dead-lettered`, `acemq.retry.rung-missing` and
 `acemq.schedule.foreign-message` — which no other library writes: Go, Python and Ruby
 use dots, and Java has no diagnostics channel to appeal to. **These are public
@@ -358,7 +371,7 @@ Things the fixtures pinned that no document stated plainly:
 - `x-acemq-correlation` defaults to the **message id**
 - `x-acemq-origin` defaults to `acemq@{hostname}`
 - `x-acemq-first-seen` is an **integer of epoch milliseconds**, while
-  `x-acemq-replayed-at` is an **ISO-8601 string** — two timestamps, two encodings
+  `acemq-replayed-at` is an **RFC 3339 string** — two timestamps, two encodings
 - `x-acemq-causation` is **absent** when unset, never null
 - the AMQP `messageId` property mirrors `x-acemq-id`
 - a retry rung carries **exactly three** arguments — a fourth is a

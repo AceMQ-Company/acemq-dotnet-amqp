@@ -17,12 +17,34 @@ exactly, in every language, or two services stop understanding each other.
 | `x-acemq-first-seen` | **integer** | Epoch **milliseconds** of the first publish |
 | `x-acemq-origin` | string | The publishing process, conventionally `service@host` |
 | `x-acemq-error` | string | Why a message was dead-lettered |
-| `x-acemq-replayed-at` | **string** | ISO-8601 instant, when last replayed |
+| `acemq-replayed-from` | string | Queue a message was replayed out of |
+| `acemq-replayed-at` | **string** | RFC 3339 instant, when last replayed |
+| `acemq-replay-count` | integer | How many times it has been replayed |
 | `traceparent` / `tracestate` | string | W3C trace context |
 
 Note the two timestamps are encoded **differently** — `first-seen` is an integer,
 `replayed-at` is a string. That is not an inconsistency to tidy up in a port. It is
 the contract, and a port that "fixes" it produces messages Java cannot read.
+
+## `acemq-` is defined but not reserved
+
+The three replay stamps do **not** carry the `x-acemq-` prefix, and neither do
+`acemq-reply-to` or `acemq-routing-slip`. They are written by a pattern rather than
+by the engine, and they have to reach the handler: a header in the reserved namespace
+is stripped on consume, which for these would mean writing them and finding them
+gone. `AceHeaders.SharedPrefix` names this namespace, and `AceHeaders.IsAceHeader`
+deliberately does not match it.
+
+**These three changed spelling after 0.5.0.** Up to and including that release this
+library wrote `x-acemq-replayed-from`, `x-acemq-replayed-at` and
+`x-acemq-replay-count` — the reserved namespace, which every AceMQ library including
+this one strips before a handler sees it. A message a .NET operator replayed
+therefore reached a Java, Go, Python or Ruby handler with its provenance silently
+removed, and reached a .NET handler the same way. Java made the same move in 0.5.0
+and was the second-to-last to make it. **Anything matching on the old names — a
+shovel policy, a dashboard, a firehose consumer — needs the new ones.** The old
+spelling is still *read*, so a message a 0.5.0 service replayed keeps its replay
+count when a newer service replays it again; it is never written.
 
 ## `x-acemq-` is reserved
 
