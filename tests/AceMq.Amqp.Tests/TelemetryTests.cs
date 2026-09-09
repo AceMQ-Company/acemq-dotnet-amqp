@@ -592,6 +592,8 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("acemq.consume.in.flight", MetricNames.ConsumeInFlight);
         Assert.Equal("acemq.messages.retried.total", MetricNames.RetriedTotal);
         Assert.Equal("acemq.messages.dead.lettered.total", MetricNames.DeadLetteredTotal);
+        Assert.Equal("acemq.messages.set.aside.failed", MetricNames.SetAsideFailed);
+        Assert.Equal("acemq.retry.rung.missing", MetricNames.RungMissing);
         Assert.Equal("acemq.request.duration", MetricNames.RequestDuration);
         Assert.Equal("acemq.request.total", MetricNames.RequestTotal);
         Assert.Equal("acemq.outbox.lag", MetricNames.OutboxLag);
@@ -604,6 +606,7 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("queue", MetricNames.TagQueue);
         Assert.Equal("transport", MetricNames.TagTransport);
         Assert.Equal("message.type", MetricNames.TagMessageType);
+        Assert.Equal("target", MetricNames.TagTarget);
         Assert.Equal("outcome", MetricNames.TagOutcome);
         Assert.Equal("pipeline", MetricNames.TagPipeline);
         Assert.Equal("step", MetricNames.TagStep);
@@ -614,6 +617,7 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("acked", MetricNames.OutcomeAcked);
         Assert.Equal("retried", MetricNames.OutcomeRetried);
         Assert.Equal("dead_lettered", MetricNames.OutcomeDeadLettered);
+        Assert.Equal("parked", MetricNames.OutcomeParked);
         Assert.Equal("rejected", MetricNames.OutcomeRejected);
         Assert.Equal("answered", MetricNames.OutcomeAnswered);
         Assert.Equal("timed_out", MetricNames.OutcomeTimedOut);

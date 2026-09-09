@@ -79,6 +79,39 @@ public static class MetricNames
     /// </remarks>
     public const string DeadLetteredTotal = "acemq.messages.dead.lettered.total";
 
+    /// <summary>
+    /// Messages that could not be moved to a dead-letter or parking queue, tagged with
+    /// <see cref="TagQueue"/> and <see cref="TagTarget"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The counter that separates two failures which look identical from anywhere
+    /// else. A message dead-lettered normally leaves the source queue and appears in
+    /// the dead-letter queue; a message whose dead-letter queue was never declared
+    /// leaves the source queue and appears nowhere, because the republish failed and
+    /// the delivery went back to the broker with nothing to catch it. Queue depths
+    /// show the same picture in both cases — one queue going down — and only this
+    /// number says which of the two happened.
+    /// </para>
+    /// <para>
+    /// Worth an alert at any value above zero. It does not rise under load or during a
+    /// deploy; it rises when a topology is wrong.
+    /// </para>
+    /// </remarks>
+    public const string SetAsideFailed = "acemq.messages.set.aside.failed";
+
+    /// <summary>
+    /// Retries that had to wait in the consumer because the rung queue they belonged
+    /// in is not on the broker, tagged with <see cref="TagQueue"/>.
+    /// </summary>
+    /// <remarks>
+    /// Nothing breaks: the message is still retried and the wait still happens. What
+    /// is lost is the reason the rung exists — a consumer restarted mid-wait turns a
+    /// five-minute backoff into no backoff at all — and the only other sign of it is a
+    /// log line on a path nobody watches.
+    /// </remarks>
+    public const string RungMissing = "acemq.retry.rung.missing";
+
     /// <summary>Round trip of a request/reply call, as the caller experienced it.</summary>
     public const string RequestDuration = "acemq.request.duration";
 
@@ -124,6 +157,12 @@ public static class MetricNames
     /// <summary>Logical message type from the envelope.</summary>
     public const string TagMessageType = "message.type";
 
+    /// <summary>
+    /// Where a message was being set aside to when that failed: the dead-letter queue
+    /// or the parking lot. Bounded by the topology, so it is safe as a tag.
+    /// </summary>
+    public const string TagTarget = "target";
+
     /// <summary>What happened. One of the <c>Outcome*</c> constants below.</summary>
     public const string TagOutcome = "outcome";
 
@@ -149,6 +188,20 @@ public static class MetricNames
     /// in the dead-letter queue and only the word keeps them apart.
     /// </remarks>
     public const string OutcomeDeadLettered = "dead_lettered";
+
+    /// <summary>
+    /// A message set aside in the parking lot rather than the dead-letter queue.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="OutcomeDeadLettered"/> because the two mean different
+    /// things to whoever is on call. Dead-lettered is "this failed as many times as
+    /// the policy allows", which is usually a dependency being down and usually fixes
+    /// itself. Parked is "nothing can read this message" — a payload that will not
+    /// decode, which will not decode on any future attempt either — and it is a deploy
+    /// or a schema problem that will not fix itself. Sharing one outcome value would
+    /// put both on the same graph and make neither actionable.
+    /// </remarks>
+    public const string OutcomeParked = "parked";
 
     /// <summary>A handler gave up on the message by name, or released it unhandled.</summary>
     /// <remarks>
