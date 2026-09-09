@@ -358,6 +358,216 @@ public sealed class PatternTests : IDisposable
         Assert.Equal(0, responder.Answered);
     }
 
+    [Fact]
+    public async Task CountsTheAnswerBeforeTheReplyCanBeSeen()
+    {
+        // The ordering driven rather than waited for. AfterConfirm runs inside the
+        // responder's own publish, at the first instant the reply exists: the broker
+        // has taken it and SendAsync has not returned yet. Everything that can see
+        // that reply -- the caller holding it, a dashboard reading the counter --
+        // happens after this moment, so what Answered reads here is the smallest
+        // value any of them can observe. Reading zero here is a responder telling a
+        // caller who is holding the answer that nothing has been answered, and it is
+        // what the request/reply example had to sleep around.
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("pricing.ordered");
+        await mq.DeclareQueueAsync("replies.ordered");
+
+        Responder? responder = null;
+        var atTheReply = new TaskCompletionSource<long>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        mq.Intercept(new ReadsACounterAsTheReplyIsConfirmed(
+            "replies.ordered", () => responder!.Answered, atTheReply));
+
+        responder = await mq.RespondAsync<string, string>(
+            "pricing.ordered", request => Task.FromResult(request.ToUpperInvariant()));
+
+        var envelope = Envelope.Of("pricing.ordered")
+            .Header(Requester.ReplyToHeader, "replies.ordered")
+            .Build();
+        await mq.Publisher<string>("", "pricing.ordered").SendAsync("quote me", envelope);
+
+        var arrived = await Task.WhenAny(atTheReply.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        Assert.Same(atTheReply.Task, arrived);
+        Assert.Equal(1, await atTheReply.Task);
+    }
+
+    [Fact]
+    public async Task CountsARequestHandedOverWhileItIsStillStarting()
+    {
+        // The start-up window made certain instead of unlikely. This transport hands
+        // the request over from inside SubscribeAsync, so it is answered before
+        // ConsumeAsync has returned a consumer -- and therefore before anything could
+        // have built a Responder around one. A broker delivering during the subscribe
+        // is what a queue with a backlog looks like from in here, and the counters
+        // have to be reachable by then or the request is answered and never recorded.
+        var transport = new DeliversDuringSubscribe("pricing.startup", "replies.startup");
+        Transports.Register(transport);
+
+        using var mq = await AceMqConnection.ConnectAsync(transport.Url);
+        using var responder = await mq.RespondAsync<string, string>(
+            "pricing.startup", request => Task.FromResult(request.ToUpperInvariant()));
+
+        // Nothing to wait for: the reply was on the wire before RespondAsync returned.
+        Assert.Single(transport.Replies);
+        Assert.Equal(1, responder.Answered);
+    }
+
+    /// <summary>
+    /// Reads a number at the instant a reply reaches the broker.
+    /// </summary>
+    /// <remarks>
+    /// An interceptor rather than a second consumer, because this has to run inside
+    /// the publish. A consumer of the reply queue would only prove that the counter
+    /// moved eventually, which is the thing a sleep already proves and the thing that
+    /// was never in doubt.
+    /// </remarks>
+    private sealed class ReadsACounterAsTheReplyIsConfirmed : PublishInterceptor
+    {
+        private readonly string _replyQueue;
+        private readonly Func<long> _counter;
+        private readonly TaskCompletionSource<long> _read;
+
+        internal ReadsACounterAsTheReplyIsConfirmed(
+            string replyQueue, Func<long> counter, TaskCompletionSource<long> read)
+        {
+            _replyQueue = replyQueue;
+            _counter = counter;
+            _read = read;
+        }
+
+        public override void AfterConfirm(PublishContext context, PublishResult result)
+        {
+            if (context.RoutingKey == _replyQueue) _read.TrySetResult(_counter());
+        }
+    }
+
+    /// <summary>
+    /// A broker that hands one request over from inside the subscribe call.
+    /// </summary>
+    /// <remarks>
+    /// Everything not needed to deliver one request and take one reply throws. This
+    /// exists to close the window between subscribing and having somewhere to count,
+    /// and a test that reached one of the other methods would be testing something
+    /// else.
+    /// </remarks>
+    private sealed class DeliversDuringSubscribe : ITransport, ITransportConnection
+    {
+        private readonly string _requestQueue;
+        private readonly string _replyQueue;
+        private int _delivered;
+
+        internal DeliversDuringSubscribe(string requestQueue, string replyQueue)
+        {
+            _requestQueue = requestQueue;
+            _replyQueue = replyQueue;
+            Url = "startup-window://" + Guid.NewGuid().ToString("N");
+        }
+
+        internal string Url { get; }
+
+        internal ConcurrentQueue<string> Replies { get; } = new ConcurrentQueue<string>();
+
+        public IReadOnlyCollection<string> Schemes => new[] { "startup-window" };
+
+        public string Name => "startup-window";
+
+        public IReadOnlyCollection<Capability> Capabilities => Array.Empty<Capability>();
+
+        public Task<ITransportConnection> ConnectAsync(
+            ConnectionConfig config, CancellationToken cancellationToken) =>
+            Task.FromResult<ITransportConnection>(this);
+
+        public async Task<ISubscription> SubscribeAsync(
+            string queue, int prefetch, IReadOnlyDictionary<string, object>? arguments,
+            Func<InboundDelivery, Task<Ack>> handler, CancellationToken cancellationToken)
+        {
+            // Awaited here, not started here: the request is answered before this
+            // method returns a subscription, so nothing above can have wrapped one.
+            if (queue == _requestQueue && Interlocked.Exchange(ref _delivered, 1) == 0)
+            {
+                await handler(new InboundDelivery(
+                        queue, string.Empty, queue, new JsonCodec().Encode("quote me"),
+                        new Dictionary<string, object>(), Guid.NewGuid().ToString("N"),
+                        "application/json", false, _replyQueue))
+                    .ConfigureAwait(false);
+            }
+
+            return new Idle(queue);
+        }
+
+        public Task<ConfirmResult> SendAsync(
+            OutboundMessage message, CancellationToken cancellationToken)
+        {
+            if (message.RoutingKey == _replyQueue)
+            {
+                Replies.Enqueue(System.Text.Encoding.UTF8.GetString(message.Body));
+            }
+
+            return Task.FromResult(ConfirmResult.Ok(true));
+        }
+
+        public Task DeclareExchangeAsync(
+            string name, string type, bool durable, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task DeclareQueueAsync(
+            string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public Task BindQueueAsync(
+            string queue, string exchange, string routingKey, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public bool IsOpen => true;
+
+        public bool IsBlocked => false;
+
+        public string? BlockedReason => null;
+
+        public void Dispose() { }
+
+        private static Exception OneRequestOnly() =>
+            new NotSupportedException("this broker delivers one request and takes one reply");
+
+        public Task<InboundDelivery?> ReceiveAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task<IPulledDelivery?> PullAsync(
+            string queue, TimeSpan timeout, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task DeleteQueueAsync(string name, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task DeleteExchangeAsync(string name, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        public Task<QueueCheck> CheckQueueAsync(
+            string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken) =>
+            throw OneRequestOnly();
+
+        private sealed class Idle : ISubscription
+        {
+            internal Idle(string queue) => Queue = queue;
+
+            public string Queue { get; }
+
+            public bool IsActive => true;
+
+            public void Dispose() { }
+        }
+    }
+
     // ---- replay ----------------------------------------------------------
 
     [Fact]

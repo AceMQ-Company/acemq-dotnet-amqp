@@ -276,24 +276,34 @@ public sealed class RequestTimedOutException : AceMqException
 public sealed class Responder : IDisposable
 {
     private readonly IMessageConsumer _consumer;
-    private long _answered;
-    private long _unanswerable;
+    private readonly Counters _counters;
     private bool _disposed;
 
-    private Responder(IMessageConsumer consumer) => _consumer = consumer;
+    private Responder(IMessageConsumer consumer, Counters counters)
+    {
+        _consumer = consumer;
+        _counters = counters;
+    }
 
     internal static async Task<Responder> StartAsync<TRequest, TResponse>(
         AceMqConnection mq, ICodec codec, string queue, ConsumerOptions options,
         Func<TRequest, Task<TResponse>> handler)
     {
-        Responder? self = null;
+        // Made before the subscription rather than after it. A responder cannot exist
+        // until the consumer it wraps does, and a broker may hand the first request
+        // over from inside the subscribe -- which is what a queue with a backlog looks
+        // like from in here. The handler used to reach for the responder through a
+        // local that was still null in that window: the request was answered, its
+        // caller got the reply, and neither counter moved. Silent, and only ever at
+        // start-up, which is the worst place to lose the first number of the day.
+        var counters = new Counters();
 
         var consumer = await mq.ConsumeAsync<TRequest>(queue, options, async message =>
         {
             var replyTo = ReplyAddressOf(message);
             if (string.IsNullOrEmpty(replyTo))
             {
-                self?.CountUnanswerable();
+                counters.CountUnanswerable();
                 return Ack.Accept();
             }
 
@@ -308,13 +318,33 @@ public sealed class Responder : IDisposable
                 .Build();
 
             var publisher = mq.Publisher<TResponse>(string.Empty, replyTo!);
-            await publisher.SendAsync(answer, envelope).ConfigureAwait(false);
-            self?.CountAnswered();
+
+            // Counted before the reply goes out, and this order is the contract.
+            // The reply and the counter are two things one caller can see, and
+            // publishing first leaves a window where a caller holding its answer
+            // reads Answered as zero -- a dashboard reporting that nothing was
+            // answered while the answer is in somebody's hands. Incrementing first
+            // puts the counter behind the reply in every interleaving there is,
+            // which is the only ordering a reader can rely on. Java increments
+            // after the send and has the same window; this side is the one that is
+            // right. A publish that throws hands its increment back on the way out,
+            // so the failure mode incrementing early would otherwise have -- a send
+            // that never happened counted as an answer -- does not exist either.
+            counters.CountAnswered();
+            try
+            {
+                await publisher.SendAsync(answer, envelope).ConfigureAwait(false);
+            }
+            catch
+            {
+                counters.UncountAnswered();
+                throw;
+            }
+
             return Ack.Accept();
         }).ConfigureAwait(false);
 
-        self = new Responder(consumer);
-        return self;
+        return new Responder(consumer, counters);
     }
 
     /// <summary>
@@ -339,13 +369,19 @@ public sealed class Responder : IDisposable
         return message.ReplyTo;
     }
 
-    private void CountAnswered() => Interlocked.Increment(ref _answered);
-    private void CountUnanswerable() => Interlocked.Increment(ref _unanswerable);
-
-    public long Answered => Interlocked.Read(ref _answered);
+    /// <summary>
+    /// Requests answered, and answered before the reply left.
+    /// </summary>
+    /// <remarks>
+    /// A caller holding a reply can rely on this having counted it: the increment
+    /// happens before the publish, so there is no interleaving in which the answer is
+    /// visible and the number is not. A publish that fails takes its increment back,
+    /// so this counts replies that were sent rather than replies that were attempted.
+    /// </remarks>
+    public long Answered => _counters.Answered;
 
     /// <summary>Requests that arrived with no reply queue named.</summary>
-    public long Unanswerable => Interlocked.Read(ref _unanswerable);
+    public long Unanswerable => _counters.Unanswerable;
 
     public bool IsRunning => !_disposed && _consumer.IsActive;
 
@@ -354,5 +390,31 @@ public sealed class Responder : IDisposable
         if (_disposed) return;
         _disposed = true;
         _consumer.Dispose();
+    }
+
+    /// <summary>
+    /// The two numbers a responder reports, held apart from the responder itself.
+    /// </summary>
+    /// <remarks>
+    /// The handler closes over this rather than over the <see cref="Responder"/>,
+    /// which is what makes the counters reachable from the very first delivery. The
+    /// responder is built around a consumer and so cannot exist until the subscribe
+    /// has returned one; these can, and do.
+    /// </remarks>
+    private sealed class Counters
+    {
+        private long _answered;
+        private long _unanswerable;
+
+        internal long Answered => Interlocked.Read(ref _answered);
+
+        internal long Unanswerable => Interlocked.Read(ref _unanswerable);
+
+        internal void CountAnswered() => Interlocked.Increment(ref _answered);
+
+        /// <summary>Takes back an increment whose publish then failed.</summary>
+        internal void UncountAnswered() => Interlocked.Decrement(ref _answered);
+
+        internal void CountUnanswerable() => Interlocked.Increment(ref _unanswerable);
     }
 }

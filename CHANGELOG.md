@@ -57,6 +57,30 @@ While the version is `0.x` the public API may change in any release.
 
 ### Fixed
 
+- **`Responder.Answered` lagged the reply it was counting, so a caller holding
+  its answer could read zero.** The counter was incremented after the reply was
+  published, which left a window in which the answer had reached the broker — and
+  could already be in the caller's hands — while the responder still reported
+  nothing answered. It is incremented before the publish now, which is the only
+  ordering a reader can rely on: the count is behind the reply in every possible
+  interleaving. A publish that throws takes its increment back, so this still
+  counts replies that were sent rather than replies that were attempted, and
+  `Answered` never runs ahead of the work. Anything that read the counter
+  immediately after a round trip — a test, a dashboard scraped on a fast loop,
+  the request/reply example — had to wait before it could trust the number, and
+  no longer does. **Java's `Responder` increments after the send and has the same
+  window; this side is the one that is right.**
+
+- **A request delivered while a responder was still starting was answered and
+  counted by neither `Answered` nor `Unanswerable`.** The handler reached for the
+  responder through a local that was only assigned once the subscription had been
+  established, so a broker that handed a request over from inside the subscribe —
+  which is what a queue with a backlog looks like from in there — got a correct
+  reply and no record of it. The counters are created before the subscription
+  now, and no delivery can be handled before they are reachable. Narrow, silent,
+  and always at start-up, where the first number of the day was the one being
+  lost.
+
 - **The documentation gave the wrong release for six changes that shipped in
   0.5.0.** `docs/observability.md` said the `rejected` outcome arrived "from
   0.6.0" and the engine-owned outcome "since 0.4.0"; `docs/request-reply.md` said

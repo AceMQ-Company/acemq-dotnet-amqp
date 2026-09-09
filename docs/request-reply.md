@@ -105,6 +105,29 @@ responder.Unanswerable
 Redelivering it would not make a reply address appear, so retrying only moves the
 same message round the same loop.
 
+## What the counters promise
+
+A responder reports two numbers, and both are safe to read the instant a round trip
+returns:
+
+```csharp
+responder.Answered      // requests answered, counted before the reply left
+responder.Unanswerable  // requests that named nowhere to reply
+```
+
+`Answered` is incremented **before** the reply is published, so a caller holding its
+answer can rely on the count already including it. The other order looks more
+natural and is wrong: it leaves a window where the reply is in the caller's hands
+and the responder still says nothing has been answered, which is a monitoring
+dashboard reporting an idle service that is demonstrably working. A publish that
+fails takes its increment back, so this counts replies that were sent rather than
+replies that were attempted.
+
+The counters exist before the responder subscribes, so a request the broker hands
+over during start-up — what a queue with a backlog looks like from in here — is
+counted like any other. Neither number needs a wait before it can be trusted, and
+code that sleeps before reading one is working around a defect that is fixed.
+
 ## When not to use it
 
 Request/reply over a broker adds a network hop, a queue and a correlation to what an
