@@ -565,6 +565,110 @@ if (EncryptedCodec.IsLegacyDotNetBody(body))
 }
 ```
 
+## Keeping a large payload off the broker
+
+A scanned medical report is tens of megabytes. Putting it on a queue is possible and
+is a mistake: it fills the broker's memory, it is copied to every bound queue, it
+makes a dead-letter queue impossible to inspect, and it turns a broker into a
+filesystem with worse tools.
+
+What travels instead is a **claim check** — the payload goes to a store, and the
+message carries the key.
+
+```csharp
+var store = new FilesystemClaimCheckStore("/mnt/payloads");
+var codec = ClaimCheckCodec.Wrapping(new JsonCodec(), store);
+
+using var mq = await AceMqConnection.ConnectAsync(url, codec);
+```
+
+Nothing else changes. Publishers publish documents and consumers receive documents;
+the codec is the only thing that knows the payload went somewhere else.
+
+### Only when it is worth it
+
+Below the threshold — 64 KiB by default, the same number as Java — the payload
+travels inline, exactly as it would without this codec. That matters more than it
+sounds: offloading a two-hundred-byte message turns one broker round trip into a
+store round trip *and* a broker round trip, so an unconditional claim check makes the
+common case slower to fix the rare one.
+
+```csharp
+ClaimCheckCodec.Wrapping(new JsonCodec(), store, threshold: 1024 * 1024);
+ClaimCheckCodec.Wrapping(new JsonCodec(), store, threshold: 0);   // offload everything
+```
+
+The framing says which of the two it is, and a consumer handles both without being
+told. That is what lets the threshold be changed, or this codec be introduced, without
+a flag day: messages written before the change are still readable after it, and so are
+messages written by a publisher that does not use it at all.
+
+### What is on the wire
+
+```
+0xAC  0x01  0x00  payload      inline, and identical to what the delegate wrote
+0xAC  0x01  0x01  key          a claim check, the key as UTF-8
+```
+
+Three bytes, and the same three bytes Java, Python and Ruby write. A payload of
+*exactly* the threshold size is offloaded — the comparison is strictly less than for
+inline — which is asserted a byte either side of the boundary in the test suite,
+because "roughly a threshold" is how two libraries end up disagreeing about a message.
+
+The content type is the delegate's, unchanged. Unlike encryption, where the bytes
+really are something else: a claim-checked document is still a document, it is a
+document that is somewhere else, and a consumer that lacks the store gets a clear
+failure rather than a parser error.
+
+For an operator looking at a dead-letter queue — *which object does this need, and is
+it still in the store?*
+
+```csharp
+ClaimCheckCodec.KeyOf(body)          // the key, or null when it travelled inline
+ClaimCheckCodec.IsClaimCheck(body)
+```
+
+### The stores
+
+`IClaimCheckStore` is three methods, so a store in front of S3 or Azure Blob Storage
+is a small class:
+
+```csharp
+string Put(byte[] content);   // returns the key
+byte[]? Get(string key);      // null when the store no longer holds it
+void Delete(string key);
+```
+
+Two ship:
+
+- **`InMemoryClaimCheckStore`** — for tests, and not for anything else. The payloads
+  are held in the publisher's heap, which is where they were going to be anyway, so
+  it removes them from the broker and nothing else. A consumer in another process
+  gets "the claim check is not in the store".
+- **`FilesystemClaimCheckStore`** — useful where the filesystem is shared and durable,
+  an NFS mount or a persistent volume. Writes are staged and moved into place, so a
+  consumer fast enough to read the key before the writer finished sees the whole
+  payload or no payload. On a container's local disk it is the in-memory store with
+  extra steps. Keys are checked rather than trusted before they become path segments:
+  `../../etc/passwd` is a key too.
+
+`Delete` is never called by the codec. Deleting on read would break the second
+consumer of the same message and deleting on acknowledgement would break a replay, so
+when a payload may be removed is a retention decision, and retention decisions belong
+to whoever owns the data.
+
+### Retention is the part that goes wrong
+
+The store and the queue have different lifetimes and nothing enforces a relationship
+between them. A message replayed a month later carries a key, and if the store expired
+that key the replay produces a message nobody can read — **worse than a lost message,
+because it looks like a message** and fails deep inside a consumer rather than
+visibly.
+
+So the store's retention must exceed every retention that could bring a message back:
+queue TTLs, dead-letter queues, and however long somebody might sit on a message
+before replaying it by hand. When in doubt, longer.
+
 ## Schemas
 
 A registry maps a schema to a short id, so messages carry the id rather than

@@ -51,7 +51,7 @@ otherwise have reached a release. See [VB.NET](vbnet.md).
 | Publishing | confirms by default, back pressure, unroutable messages reported rather than dropped |
 | Consuming | explicit dispositions — accept, retry, dead-letter, release — and an attempt counter |
 | Topology | declared as one unit with dead-letter wiring, a dry run, and drift the broker actually reports |
-| Codecs | JSON, XML, text and bytes; composite for a format migration; payload encryption |
+| Codecs | JSON, XML, text and bytes; composite for a format migration; payload encryption; a claim check for payloads too large for a broker |
 | Request/reply | one reply queue per requester, replies matched by correlation |
 | Ordering | order per key across partitions, and a partition that halts rather than reorders |
 | Pipelines | steps on their own queues, type-checked against each other |
