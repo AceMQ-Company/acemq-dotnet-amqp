@@ -39,28 +39,25 @@ namespace AceMq.Amqp.Avro.Tests;
 /// languages: <strong>resolution happens when the library has a reader schema to
 /// resolve onto.</strong> Where a reader schema comes from is what differs. In this
 /// library the codec is constructed with a schema, so
-/// <c>AvroCodec.Registered(registry, schema)</c> always has one and .NET lands on the
-/// fixture's <c>resolved</c> column — which is what the first half of each test below
-/// asserts.
+/// <c>AvroCodec.Registered(registry, schema)</c> has one by default and .NET lands on
+/// the fixture's <c>resolved</c> column — which is what the first half of each test
+/// below asserts.
 /// </para>
 /// <para>
-/// The second half asserts the <c>writerShape</c> column, which this library can now
-/// also be asked for: <see cref="AvroCodec.WithoutReaderSchema"/> declines resolution
-/// and reads every message with the shape its writer gave it. Pinning both columns
-/// rather than only this library's default is the point — the opt-out is a claim
-/// about somebody else's bytes, and these are somebody else's bytes.
+/// The second half asserts the <c>writerShape</c> column, which this library can also
+/// be asked for: <see cref="AvroCodec.WithoutReaderSchema"/> declines resolution and
+/// reads every message with the shape its writer gave it. Pinning both columns rather
+/// than only this library's default is the point — the opt-out is a claim about
+/// somebody else's bytes, and these are somebody else's bytes.
 /// </para>
 /// <para>
-/// <strong>One thing the fixture says that is no longer quite true here.</strong> It
-/// puts this library in the <c>resolved</c> column because "the codec is constructed
-/// with a schema, so there is always one to resolve onto", and says of Java that it
-/// "is the only one of the five that shows both columns". Both sentences were written
-/// before <c>WithoutReaderSchema()</c> existed. The column is still right as this
-/// library's default, which is what <see cref="LandsOnTheColumnTheFixtureAssignsThisLibrary"/>
-/// asserts — but "always" is now "unless asked otherwise", and the four tests above
-/// are .NET showing both columns. That is a note for whoever regenerates the fixture,
-/// not a behaviour difference: the decoded values under each column are exactly what
-/// the fixture records.
+/// The column is a default, not a limit, and the fixture now says so: it puts this
+/// library in <c>resolved</c> because "the codec is constructed with a schema, so
+/// there is always one to resolve onto -- unless the caller declines it", and names
+/// <c>WithoutReaderSchema()</c> as how .NET reaches <c>writerShape</c>. That is what
+/// <see cref="LandsOnTheColumnTheFixtureAssignsThisLibrary"/> asserts — the default,
+/// not the only answer this library has — and the four tests above are .NET showing
+/// both columns.
 /// </para>
 /// </remarks>
 public sealed class AvroResolutionConformanceTests : IDisposable
