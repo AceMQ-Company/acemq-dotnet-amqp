@@ -23,4 +23,14 @@
     <ProjectReference Include="..\..\src\AceMq.Amqp.Avro\AceMq.Amqp.Avro.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The shared fixtures live in one place, AceMq.Amqp.Tests/fixtures, because
+         ../scripts/check-fixtures.sh compares that path against the other four
+         libraries byte for byte. Linked into this project's output rather than
+         copied, so there is one file on disk and not two that can disagree. -->
+    <None Include="..\AceMq.Amqp.Tests\fixtures\avro-resolution-fixtures.json"
+          Link="fixtures\avro-resolution-fixtures.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
