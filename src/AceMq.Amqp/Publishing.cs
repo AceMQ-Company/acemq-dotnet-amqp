@@ -99,7 +99,24 @@ public interface IPublisher<in T> : IDisposable
 
     Task<PublishResult> SendAsync(T payload, Envelope envelope, CancellationToken cancellationToken);
 
-    /// <summary>Publishes each payload, returning the results in the same order.</summary>
+    /// <summary>Publishes a batch and waits for every confirm.</summary>
+    /// <remarks>
+    /// <para>What most bulk publishing actually wants: the throughput of pipelining
+    /// with the safety of having waited. Every message goes out before any confirm is
+    /// awaited, then all of them are checked together. The results come back in the
+    /// order the payloads were given.</para>
+    /// <para>Fails if <em>any</em> message failed, and the exception names how many
+    /// succeeded — a partial batch is the normal outcome of a broker problem halfway
+    /// through, and pretending otherwise would leave the caller resending messages
+    /// that already arrived. The whole batch is awaited before that exception is
+    /// thrown, so a failure early on does not cut the rest short.</para>
+    /// <para>This is not atomic. AMQP has no such thing: there is no way to publish a
+    /// hundred messages such that all or none arrive, and a library that offered one
+    /// would be lying.</para>
+    /// </remarks>
+    /// <param name="payloads">the payloads to send, in order</param>
+    /// <returns>the results, in the same order</returns>
+    /// <exception cref="PublishFailedException">if any message was not confirmed</exception>
     Task<IReadOnlyList<PublishResult>> SendAllAsync(IEnumerable<T> payloads);
 }
 
@@ -310,11 +327,59 @@ internal sealed class Publisher<T> : IPublisher<T>
     public async Task<IReadOnlyList<PublishResult>> SendAllAsync(IEnumerable<T> payloads)
     {
         if (payloads == null) throw new ArgumentNullException(nameof(payloads));
-        var results = new List<PublishResult>();
+
+        // Everything goes out first, and only then is anything awaited. Awaiting each
+        // send in turn is a broker round trip per message -- the single-send loop a
+        // caller could have written, with none of the throughput this method exists
+        // for. MaxOutstandingPublishes still bounds how many are unconfirmed at once.
+        var inFlight = new List<Task<PublishResult>>();
         foreach (var payload in payloads)
         {
-            results.Add(await SendAsync(payload).ConfigureAwait(false));
+            Task<PublishResult> started;
+            try
+            {
+                started = SendAsync(payload);
+            }
+            catch (Exception e)
+            {
+                // A send that threw before it became a task is still one failure out
+                // of the batch, not a reason to abandon the ones already in flight.
+                started = Task.FromException<PublishResult>(e);
+            }
+
+            inFlight.Add(started);
         }
+
+        // Every task is awaited, including the ones after the first failure. Stopping
+        // at the first is what loses the count -- and it would also leave the rest as
+        // unobserved exceptions.
+        var results = new List<PublishResult>(inFlight.Count);
+        Exception? firstFailure = null;
+        var failed = 0;
+        foreach (var task in inFlight)
+        {
+            try
+            {
+                results.Add(await task.ConfigureAwait(false));
+            }
+            catch (Exception e)
+            {
+                failed++;
+                if (firstFailure == null) firstFailure = e;
+            }
+        }
+
+        if (firstFailure != null)
+        {
+            // The count matters. A batch that half succeeded is the ordinary outcome of
+            // a broker problem partway through, and a caller told only "it failed" will
+            // resend messages that already arrived.
+            throw new PublishFailedException(
+                $"{failed} of {inFlight.Count} messages were not confirmed; " +
+                $"{results.Count} were. The first failure was: {firstFailure.Message}",
+                firstFailure);
+        }
+
         return results;
     }
 

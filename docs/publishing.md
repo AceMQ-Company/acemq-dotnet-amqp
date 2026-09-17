@@ -98,9 +98,25 @@ way back out. See [the envelope](envelope.md).
 IReadOnlyList<PublishResult> results = await publisher.SendAllAsync(orders);
 ```
 
-Each is confirmed in turn, and the results come back in the order the payloads did.
-This is not a batch: it is a loop with one confirmation each, so a failure part way
-through leaves the earlier messages published.
+Every message goes out before any confirm is awaited, and only then are all of them
+checked together — the throughput of pipelining with the safety of having waited.
+The results come back in the order the payloads did, whatever order the broker
+answers in.
+
+This is not atomic. AMQP has no such thing: there is no way to publish a hundred
+messages such that all or none arrive, and a library that offered one would be
+lying. If any message fails, the whole batch is still awaited and then
+`PublishFailedException` is thrown naming how many were not confirmed and how many
+were:
+
+```
+2 of 100 messages were not confirmed; 98 were. The first failure was: ...
+```
+
+The counts are the point. A batch that half succeeded is the ordinary outcome of a
+broker problem partway through, and a caller told only "it failed" resends messages
+that already arrived. `InnerException` carries the first underlying failure, in
+payload order, for callers that need to tell a rejection from a timeout.
 
 ## Back pressure
 

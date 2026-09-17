@@ -10,6 +10,48 @@ While the version is `0.x` the public API may change in any release.
 
 ### Changed
 
+- **`IPublisher<T>.SendAllAsync` publishes the whole batch before it awaits any
+  confirm, and a failure is now reported after the batch has finished rather than
+  at the first bad answer.** It was a `foreach` that awaited each `SendAsync` in
+  turn — a full broker round trip per message, which is the single-send loop a
+  caller could have written for themselves and none of the throughput a batch API
+  exists for. On a link with 5 ms of latency, a hundred messages cost half a
+  second of waiting that nothing needed. Every payload is handed to the transport
+  first now and all of the confirms are awaited afterwards, which is what Java's
+  `sendAll` has always done; `MaxOutstandingPublishes` still bounds how many may
+  be unconfirmed at once, so the back pressure that stops a caller outrunning the
+  broker is unchanged.
+
+  **The second half of this is a behaviour change to a shipped API.** The old loop
+  threw out of the first failed await, which abandoned the rest of the batch and
+  discarded the results already collected — so a caller learned only *that* it had
+  failed, not that ninety-eight of a hundred messages were sitting on the broker.
+  Resending the batch was then the only safe thing to do, and it duplicated every
+  message that had already arrived. Every send is awaited now, whatever an earlier
+  one did, and the `PublishFailedException` that follows names the counts, in the
+  same words Java uses:
+
+  ```
+  2 of 100 messages were not confirmed; 98 were. The first failure was: ...
+  ```
+
+  `InnerException` carries the first underlying failure in payload order — the
+  `PublishFailedException` the individual send raised — so a caller that has to
+  tell a broker rejection from a confirm timeout still can. The results, when the
+  batch succeeds, come back in the order the payloads were given, whatever order
+  the broker answered in; that part has not changed.
+
+  **What a caller must do about it:** if you relied on the call returning as soon
+  as one message failed, it no longer does — it returns once every confirm has
+  been answered or timed out, so the worst case is now the confirm timeout rather
+  than the first failure. If you caught `PublishFailedException` from
+  `SendAllAsync` and resent the batch, read the counts before you do: some of
+  those messages are already on the broker, and the exception is the only place
+  that says how many. This is not atomic and never was — AMQP has no way to
+  publish a hundred messages such that all or none arrive — and the doc comment on
+  `SendAllAsync` now says so, along with the ordering and the partial-batch
+  reporting it had left unstated.
+
 - **A replay's provenance moved out of the reserved header namespace, which
   changes the bytes on the wire.** `Replay` wrote `x-acemq-replayed-from`,
   `x-acemq-replayed-at` and `x-acemq-replay-count`; it now writes

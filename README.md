@@ -3,7 +3,7 @@
 [![ci](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml)
 [![release](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml/badge.svg)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml)
 [![authorship guard](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml)
-[![version](https://img.shields.io/badge/version-0.1.7-blue)](https://acemq.org/nuget/)
+[![version](https://img.shields.io/badge/version-0.5.0-blue)](https://acemq.org/nuget/)
 [![packages](https://img.shields.io/badge/packages-acemq.org%2Fnuget-blue)](https://acemq.org/nuget/)
 [![docs](https://img.shields.io/badge/docs-acemq.org-blue)](https://acemq.org/acemq-dotnet-amqp/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
@@ -14,9 +14,10 @@ AceMQ for .NET. The same message envelope, the same patterns and the same metric
 names as [acemq-java-amqp](https://github.com/AceMQ-Company/acemq-java-amqp) — with a
 native API rather than a transliterated Java one.
 
-> **Status: pre-1.0, not published.** Publishing, consuming, topology, retries and
+> **Status: pre-1.0.** Publishing, consuming, topology, retries and
 > dead-lettering work against a real broker, and the integration suite runs against
-> RabbitMQ in CI. There is no package on any feed yet and the API is still free to
+> RabbitMQ in CI. Packages are published to the feed at
+> <https://acemq.org/nuget/>; while the version is `0.x` the API is still free to
 > change.
 
 ## What is here
@@ -446,8 +447,16 @@ The conformance fixtures already pin the two implementations to the same bytes;
 what has not been demonstrated is the two libraries talking to one broker at the
 same time.
 
-After that: outbox and idempotency, request/reply, streams, and OpenTelemetry —
-the parts of the Java library this does not have yet.
+Two things then stand between here and a stable API. A **`net8.0` target alongside
+`netstandard2.0`**, so a modern consumer gets the runtime's own spans, vectorised
+hashing and `AesGcm` instead of the compatibility path — without the core growing
+a second cryptographic implementation, which is why the crypto package was split
+out rather than multi-targeted. And the **VB.NET API audit** described above: it
+has to happen before the API freezes, because afterwards every correction is a
+breaking change.
+
+The outbox, idempotency, request/reply, streams and OpenTelemetry — once listed
+here as the parts of the Java library this did not have — all shipped in 0.5.0.
 
 ## Licence
 
