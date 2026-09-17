@@ -229,11 +229,11 @@ exception. That is Go's behaviour, in Go's words, so an operator draining a
 dead-letter queue fed by services in two languages reads one sentence rather than
 two.
 
-Up to 0.6.0 this was the one hole in the ladder: the exception was not caught at
-all, so it reached the transport, which turned it into a bare requeue. No attempt
-counter advanced — a requeue hands back the bytes the broker was given — nothing
-was recorded and nothing gave up, so an interceptor that always threw was an
-infinite redelivery loop that no panel could see.
+Up to and including 0.5.0 this was the one hole in the ladder: the exception was
+not caught at all, so it reached the transport, which turned it into a bare
+requeue. No attempt counter advanced — a requeue hands back the bytes the broker
+was given — nothing was recorded and nothing gave up, so an interceptor that
+always threw was an infinite redelivery loop that no panel could see.
 
 **From `AfterHandle` or `OnError` on a consume it is swallowed**, the same as
 `AfterConfirm` on the publish side and for the same reason. `AfterHandle` is the
