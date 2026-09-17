@@ -17,6 +17,7 @@ exactly, in every language, or two services stop understanding each other.
 | `x-acemq-first-seen` | **integer** | Epoch **milliseconds** of the first publish |
 | `x-acemq-origin` | string | The publishing process, conventionally `service@host` |
 | `x-acemq-error` | string | Why a message was dead-lettered |
+| `x-acemq-claim` | string | Where the payload is, when the message carries a reference to it |
 | `acemq-replayed-from` | string | Queue a message was replayed out of |
 | `acemq-replayed-at` | **string** | RFC 3339 instant, when last replayed |
 | `acemq-replay-count` | integer | How many times it has been replayed |
@@ -75,8 +76,39 @@ from prose:
 | `origin` | `acemq@{hostname}` |
 | `version`, `attempt` | `1` |
 | `causation` | **absent** — the header is omitted, not written as null |
+| `claim` | **absent** — likewise |
 
 The AMQP `messageId` property also mirrors `x-acemq-id`.
+
+## The claim
+
+`x-acemq-claim` is an optional field for a message whose payload is somewhere else
+and is named here — a URI, a bucket key, whatever the two ends have agreed:
+
+```csharp
+var outgoing = Envelope.Of("order.placed")
+    .Claim("s3://payloads/2026/09/A-1")
+    .Build();
+```
+
+It reads back as `message.Envelope.Claim`, survives every retry and every hop, and
+can be replaced on a copy with `envelope.WithClaim(...)` the way Ruby's
+`envelope.with(claim:)` does. **The engine never reads it and never writes it** —
+it is the application's field, carried in the engine's namespace so that it cannot
+be mistaken for an application header and so that all five libraries agree on the
+spelling.
+
+**It is not the claim-check pattern.** `ClaimCheckCodec` is a different answer to a
+related question: it frames the body itself — a marker byte, then the key — so a
+message either *is* a claim check or is not, and no header is involved. See
+[serialization](serialization.md#keeping-a-large-payload-off-the-broker). This is a field a message may carry
+alongside a body it already has, and the two are usable together or separately.
+
+**This field is new here.** Python and Ruby have carried `claim` as part of the
+envelope since their first release. This library reserved the name and materialised
+nothing, so a claim a Python or Ruby publisher set was dropped on the way in, like
+every other reserved header a version does not understand — silently, with nothing
+reporting the loss.
 
 ## How this is kept honest
 

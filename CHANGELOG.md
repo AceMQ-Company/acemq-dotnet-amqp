@@ -43,6 +43,33 @@ While the version is `0.x` the public API may change in any release.
 
 ### Changed
 
+- **`claim` is a real envelope field now, so a claim set by a Python or Ruby
+  publisher reaches a .NET handler.** `AceHeaders.Claim` — `x-acemq-claim` — has
+  been in this library since the header names were transliterated from Java, and
+  nothing read it and nothing wrote it. That is the worst of both: the name was
+  reserved, so `x-acemq-` stripping removed it from the application's headers on
+  the way in, and no field materialised it, so it went nowhere instead. A message
+  a Python or Ruby service published with a claim on it arrived at a .NET handler
+  with the claim gone, silently, with nothing reporting the loss — the same shape
+  of bug the replay stamps had.
+
+  It is `Envelope.Claim` now, read by `FromWire`, written by `ToWire` when it is
+  set, set by `Envelope.Of(...).Claim(...)`, replaced on a copy by
+  `envelope.WithClaim(...)` — which is Ruby's `envelope.with(claim:)` — and carried
+  through `WithAttempt` and `WithError`, so a retry and a dead-letter keep it. It is
+  **absent rather than empty** when unset, like causation, origin and error: a
+  header carrying `""` is one somebody has to write a special case for at the other
+  end, and the other four libraries omit it. Nothing in the engine reads it or acts
+  on it; it is the application's field, kept in the engine's namespace so that all
+  five libraries agree on the spelling and so that it cannot be mistaken for an
+  application header.
+
+  **This is not the claim-check pattern and does not change it.** `ClaimCheckCodec`
+  frames the body itself — a marker byte, then the key — so a message either is a
+  claim check or is not, and no header is involved. That is deliberate and
+  untouched. This is an optional field a message may carry alongside a body it
+  already has; the two are usable together or separately.
+
 - **Avro schema resolution has a name and an opt-out. `AvroCodec.ReaderSchema`,
   `Registered(registry, schema, readerSchema)` and `WithoutReaderSchema()` are
   new; the default is unchanged, and the reason it is unchanged is worth stating.**

@@ -179,6 +179,70 @@ public sealed class EnvelopeConformanceTests
             System.Globalization.CultureInfo.InvariantCulture));
     }
 
+    /// <summary>
+    /// A claim set by a Python or Ruby publisher reaches a .NET handler.
+    /// </summary>
+    /// <remarks>
+    /// <c>x-acemq-claim</c> was a reserved name this library wrote nothing into and
+    /// materialised onto nothing, so it was dropped on the way in like every other
+    /// reserved header this version did not understand — and a field two of the five
+    /// carry as a first-class part of the envelope arrived as silence.
+    /// </remarks>
+    [Fact]
+    public void ReadsAClaimAnotherLibraryPutOnTheMessage()
+    {
+        var envelope = Envelope.FromWire(new Dictionary<string, object>
+        {
+            [AceHeaders.Id] = "m-1",
+            [AceHeaders.Type] = "order.placed",
+            [AceHeaders.Claim] = "s3://payloads/2026/09/m-1",
+        });
+
+        Assert.Equal("s3://payloads/2026/09/m-1", envelope.Claim);
+
+        // And it is not also handed to the application as a raw header: it is the
+        // engine's namespace, and a materialised field is where it now lives.
+        Assert.DoesNotContain(AceHeaders.Claim, envelope.Headers.Keys);
+    }
+
+    [Fact]
+    public void WritesAClaimTheOtherLibrariesRead()
+    {
+        var wire = Envelope.Of("order.placed")
+            .Claim("s3://payloads/2026/09/m-1")
+            .Build()
+            .ToWire();
+
+        Assert.Equal("s3://payloads/2026/09/m-1", wire[AceHeaders.Claim]);
+        Assert.Equal("x-acemq-claim", AceHeaders.Claim);
+    }
+
+    [Fact]
+    public void LeavesTheClaimHeaderOffAMessageThatHasNoClaim()
+    {
+        // Absent rather than empty, like causation, origin and error. A header
+        // carrying "" is one somebody has to special-case at the other end.
+        var wire = Envelope.Of("order.placed").Build().ToWire();
+
+        Assert.DoesNotContain(AceHeaders.Claim, wire.Keys);
+    }
+
+    [Fact]
+    public void CarriesTheClaimThroughARetryAndADeadLetter()
+    {
+        // WithAttempt and WithError are what the retry ladder republishes with. A
+        // field they drop is a field that survives exactly one hop.
+        var envelope = Envelope.Of("order.placed").Claim("s3://payloads/m-1").Build();
+
+        Assert.Equal("s3://payloads/m-1", envelope.WithAttempt(4).Claim);
+        Assert.Equal("s3://payloads/m-1", envelope.WithError("gave up").Claim);
+
+        // And it can be set or cleared on a copy, the way Ruby's with(claim:) does.
+        Assert.Equal("elsewhere", envelope.WithClaim("elsewhere").Claim);
+        Assert.Null(envelope.WithClaim(null).Claim);
+        Assert.Equal("s3://payloads/m-1", envelope.Claim);
+    }
+
     [Fact]
     public void RefusesToLetAnApplicationWriteIntoTheReservedNamespace()
     {

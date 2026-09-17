@@ -32,7 +32,7 @@ public sealed class Envelope
 {
     private Envelope(
         string id, string type, int version, string correlationId, string? causationId,
-        int attempt, DateTimeOffset firstSeen, string? origin, string? error,
+        int attempt, DateTimeOffset firstSeen, string? origin, string? error, string? claim,
         IReadOnlyDictionary<string, object> headers)
     {
         Id = id;
@@ -44,6 +44,7 @@ public sealed class Envelope
         FirstSeen = firstSeen;
         Origin = origin;
         Error = error;
+        Claim = claim;
         Headers = headers;
     }
 
@@ -73,6 +74,30 @@ public sealed class Envelope
 
     /// <summary>Why the message was dead-lettered, when it was.</summary>
     public string? Error { get; }
+
+    /// <summary>
+    /// Where the payload is, when the payload is not in the message.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An optional field, carried on <c>x-acemq-claim</c>, for a message whose body
+    /// lives somewhere else and is named here — a URI, a bucket key, whatever the two
+    /// ends have agreed. The engine never reads it and never writes it on its own: it
+    /// is set by whoever publishes, survives every hop and every retry, and is handed
+    /// to the handler.
+    /// </para>
+    /// <para>
+    /// Distinct from <see cref="ClaimCheckCodec"/>, which is a different answer to a
+    /// related question. That one frames the body itself — a marker, then the key —
+    /// so a message either is a claim check or is not, and no header is involved.
+    /// This is a field a message may carry alongside a body it already has. Python
+    /// and Ruby have carried it as an envelope field since their first release; this
+    /// library reserved the name and wrote nothing into it, so a claim a Python or
+    /// Ruby publisher set reached a .NET handler and was dropped on the way in,
+    /// silently, along with every other reserved header this version did not know.
+    /// </para>
+    /// </remarks>
+    public string? Claim { get; }
 
     /// <summary>Application headers. Never contains anything in the reserved namespace.</summary>
     public IReadOnlyDictionary<string, object> Headers { get; }
@@ -104,7 +129,7 @@ public sealed class Envelope
     public Envelope WithAttempt(int attempt) =>
         new Envelope(
             Id, Type, Version, CorrelationId, CausationId, attempt, FirstSeen, Origin, Error,
-            Headers);
+            Claim, Headers);
 
     /// <summary>
     /// The same envelope carrying a reason it could not be handled, or none.
@@ -118,7 +143,20 @@ public sealed class Envelope
     public Envelope WithError(string? error) =>
         new Envelope(
             Id, Type, Version, CorrelationId, CausationId, Attempt, FirstSeen, Origin, error,
-            Headers);
+            Claim, Headers);
+
+    /// <summary>
+    /// The same envelope naming where the payload is, or naming nowhere.
+    /// </summary>
+    /// <remarks>
+    /// A copy rather than a mutation, for the same reason as the two above: an
+    /// envelope is shared with whatever has just seen it, and what it saw should stay
+    /// what it saw. Ruby spells this <c>envelope.with(claim: ...)</c>.
+    /// </remarks>
+    public Envelope WithClaim(string? claim) =>
+        new Envelope(
+            Id, Type, Version, CorrelationId, CausationId, Attempt, FirstSeen, Origin, Error,
+            claim, Headers);
 
     /// <summary>
     /// Reads an envelope back off the wire.
@@ -150,6 +188,7 @@ public sealed class Envelope
             DateTimeOffset.FromUnixTimeMilliseconds(Long(headers, AceHeaders.FirstSeen) ?? 0L),
             Str(headers, AceHeaders.Origin),
             Str(headers, AceHeaders.Error),
+            Str(headers, AceHeaders.Claim),
             application);
     }
 
@@ -178,6 +217,11 @@ public sealed class Envelope
         if (Origin != null) wire[AceHeaders.Origin] = Origin;
         if (Error != null) wire[AceHeaders.Error] = Error;
 
+        // Absent rather than empty, like the three above it. A header carrying "" is
+        // a header somebody has to write a special case for at the other end, and the
+        // other four libraries omit it.
+        if (Claim != null) wire[AceHeaders.Claim] = Claim;
+
         foreach (var pair in Headers)
         {
             if (!AceHeaders.IsAceHeader(pair.Key)) wire[pair.Key] = pair.Value;
@@ -205,6 +249,7 @@ public sealed class Envelope
         private string? _causationId;
         private string? _origin;
         private string? _error;
+        private string? _claim;
         private int _version = 1;
         private int _attempt = 1;
         private DateTimeOffset? _firstSeen;
@@ -220,6 +265,13 @@ public sealed class Envelope
         public Builder FirstSeen(DateTimeOffset when) { _firstSeen = when; return this; }
         public Builder Origin(string? origin) { _origin = origin; return this; }
         public Builder Error(string? error) { _error = error; return this; }
+
+        /// <summary>Names where the payload is, for a message that carries a reference.</summary>
+        /// <remarks>
+        /// Writes <c>x-acemq-claim</c>, which a Java, Go, Python or Ruby consumer reads
+        /// into the same field. Nothing in the engine acts on it.
+        /// </remarks>
+        public Builder Claim(string? claim) { _claim = claim; return this; }
 
         public Builder Header(string name, object value)
         {
@@ -243,6 +295,7 @@ public sealed class Envelope
                 _firstSeen ?? DateTimeOffset.UtcNow,
                 _origin ?? DefaultOrigin(),
                 _error,
+                _claim,
                 _headers);
         }
 
