@@ -37,8 +37,17 @@
 
       Moving the types is a breaking change and was accepted as one. It is recorded
       in CHANGELOG.md under a heading that says so.
+
+      Since 0.6.0 this package does multi-target, along with every other one, and
+      that is not a reversal of (1). What was rejected there was two *cryptographic
+      code paths* behind one wire format: BouncyCastle on netstandard2.0 and the
+      framework's AesGcm on the modern target, a divergence that shows up
+      only at runtime, on one target, in somebody else's queue. The multi-target here
+      compiles the same source twice: BouncyCastle on both, one implementation, the
+      same bytes. Nothing in this package is conditioned on the target framework, and
+      nothing should be.
     -->
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <PackageId>AceMq.Amqp.Crypto</PackageId>

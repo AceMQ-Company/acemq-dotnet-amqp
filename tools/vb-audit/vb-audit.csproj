@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <!-- For the pointer probe, which is how `unsafe` looks from outside an
+         assembly and therefore the only way to prove that rule fires. Nothing
+         shipped is compiled this way; this project is a test tool. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

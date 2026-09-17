@@ -2,6 +2,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AceMq.Amqp\AceMq.Amqp.csproj" />
+    <!-- Not because the sample needs Avro, but because the Avro package grew a
+         public surface today and this project is what proves a VB consumer can
+         reach it. The reflection audit checks the shape; only a compiler proves
+         the shape is callable. -->
+    <ProjectReference Include="..\..\src\AceMq.Amqp.Avro\AceMq.Amqp.Avro.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

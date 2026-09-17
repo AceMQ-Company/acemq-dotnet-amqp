@@ -7,8 +7,8 @@
 [![packages](https://img.shields.io/badge/packages-acemq.org%2Fnuget-blue)](https://acemq.org/nuget/)
 [![docs](https://img.shields.io/badge/docs-acemq.org-blue)](https://acemq.org/acemq-dotnet-amqp/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
-[![.NET](https://img.shields.io/badge/.NET-netstandard2.0-512BD4)](#requirements)
-[![brokers](https://img.shields.io/badge/broker-RabbitMQ-lightgrey)](#requirements)
+[![.NET](https://img.shields.io/badge/.NET-netstandard2.0%20%7C%20net8.0-512BD4)](#target-framework)
+[![brokers](https://img.shields.io/badge/broker-RabbitMQ-lightgrey)](#what-is-here)
 
 AceMQ for .NET. The same message envelope, the same patterns and the same metric
 names as [acemq-java-amqp](https://github.com/AceMQ-Company/acemq-java-amqp) — with a
@@ -381,20 +381,36 @@ Things the fixtures pinned that no document stated plainly:
 
 ## Target framework
 
-`netstandard2.0`, which reaches .NET Framework 4.6.2+, .NET Core and modern .NET
-from one assembly. That is deliberate rather than conservative: the applications
-most likely to want a supported AMQP library are the ones that cannot move, and
-`netstandard2.0` is the only target that reaches all of them.
+`netstandard2.0;net8.0`. Every package ships both, and every package has shipped
+`netstandard2.0` since the first release.
 
-A `net8.0` target should be added alongside it for modern consumers; it is absent
-only because the SDK on the machine this was written on has no net8.0 targeting
-pack.
+`netstandard2.0` reaches .NET Framework 4.6.2+, .NET Core and modern .NET from one
+assembly, and it is deliberate rather than conservative: the applications most
+likely to want a supported AMQP library are the ones that cannot move, and
+`netstandard2.0` is the only target that reaches all of them. It is not going
+anywhere.
 
-**Every package holds that target, including `AceMq.Amqp.Crypto`**, and CI fails if
-one of them stops. That was the constraint that shaped payload encryption:
+`net8.0` was added alongside it in 0.6.0 — it had been missing only because the
+SDK on the machine this was written on had no net8.0 targeting pack — and it is
+what a modern consumer resolves to. Nothing in the library is conditioned on which
+one a consumer gets: the same source compiles twice and the two assemblies do the
+same thing. What the second target buys is what NuGet does with it. A `net8.0`
+application taking the `netstandard2.0` asset drags in the compatibility shims that
+target needs — `System.Text.Json`, `System.Diagnostics.DiagnosticSource`,
+`System.Memory` and friends, as package references rather than as the runtime it
+already has — and now takes none of them.
+
+**Every package holds `netstandard2.0`, including `AceMq.Amqp.Crypto`**, and CI
+fails if one of them stops: it checks the built assembly and the packaged
+`lib/netstandard2.0`, rather than grepping the project file, because a multi-target
+breaks that grep even when both targets are there. That was the constraint that
+shaped payload encryption:
 `System.Security.Cryptography.AesGcm` does not exist on `netstandard2.0`, so the
-crypto package takes AES-GCM from BouncyCastle rather than multi-targeting and
-running two cryptographic code paths behind one wire format. The reasoning is in
+crypto package takes AES-GCM from BouncyCastle on **both** targets rather than
+running two cryptographic code paths behind one wire format — a divergence that
+would show up only at runtime, on one target, in somebody else's queue. Multi-
+targeting the project was never the objection; conditioning the cryptography on
+the target was. The reasoning is in
 `src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj`, beside the target it explains.
 `AceMq.Amqp.DevCerts` is the one exception and always was: it is a command-line tool
 that runs on a developer's machine, not inside the .NET Framework service.
@@ -404,12 +420,28 @@ that runs on a developer's machine, not inside the .NET Framework service.
 Not a separate library — VB and C# compile to the same IL, so a VB application
 references this assembly directly. What it costs is an API that stays callable from
 VB: no members differing only by case, no `ref struct` or `Span<T>` on the surface,
-no overloads separable only by optional arguments. **That audit has to happen before
-the API freezes**; afterwards it is a breaking change.
+no overloads separable only by optional arguments, no pointers, and async methods
+returning plain `Task`. **That audit had to happen before the API freezes**;
+afterwards every correction is a breaking change.
+
+**It has been done.** `tools/vb-audit` walks every exported type in all ten shipped
+assemblies and checks twelve rules — the five in
+[docs/vbnet.md](docs/vbnet.md) plus init-only setters, `required` members, default
+interface members, async streams, and a member colliding by case with an *inherited*
+one rather than a sibling. It now covers constructors, properties and fields as well
+as methods; constructors were missed entirely, so a `Span<T>` in a public
+constructor was invisible to the check meant to find it. **The public surface is
+clean against all twelve**, including everything added in 0.6.0.
+
+Every rule self-checks against a type written to trip it, and the audit fails if any
+rule does not fire: a check that never fires is indistinguishable from a check that
+is not running, and none of these twelve has ever fired on this library's own code.
 
 CI compiles *and runs* both examples, which has already caught two differences:
 `Dim envelope = Envelope.Of(...)` fails with BC30980 because VB is
-case-insensitive, and VB has no async `Main`. Both compile fine in C#.
+case-insensitive, and VB has no async `Main`. Both compile fine in C#. The two
+samples print the same output and are kept reaching the same API, so a new call
+lands in both.
 
 ## Documentation
 
@@ -447,13 +479,14 @@ The conformance fixtures already pin the two implementations to the same bytes;
 what has not been demonstrated is the two libraries talking to one broker at the
 same time.
 
-Two things then stand between here and a stable API. A **`net8.0` target alongside
-`netstandard2.0`**, so a modern consumer gets the runtime's own spans, vectorised
-hashing and `AesGcm` instead of the compatibility path — without the core growing
-a second cryptographic implementation, which is why the crypto package was split
-out rather than multi-targeted. And the **VB.NET API audit** described above: it
-has to happen before the API freezes, because afterwards every correction is a
-breaking change.
+Both of the things that used to stand between here and a stable API are done. The
+**`net8.0` target alongside `netstandard2.0`** shipped in 0.6.0 — every package
+multi-targets, and a modern consumer no longer drags in the compatibility shims
+`netstandard2.0` needs. The crypto package multi-targets with the others and still
+takes AES-GCM from BouncyCastle on both, because the objection was ever only to
+conditioning the cryptography on the target, not to building twice. And the
+**VB.NET API audit** described above has been carried out against the whole public
+surface; what it found is in the changelog.
 
 The outbox, idempotency, request/reply, streams and OpenTelemetry — once listed
 here as the parts of the Java library this did not have — all shipped in 0.5.0.

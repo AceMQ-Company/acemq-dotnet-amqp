@@ -9,6 +9,7 @@
 //     await AceMqConnection.ConnectAsync("amqp://localhost");
 
 using AceMq.Amqp;
+using AceMq.Amqp.Avro;
 
 using var mq = await AceMqConnection.ConnectAsync("memory://example");
 
@@ -55,6 +56,59 @@ catch (PublishFailedException)
 {
     Console.WriteLine("unroutable   publish failed: no queue bound for that routing key");
 }
+
+// A batch: every message is written before any confirm is awaited, and the results
+// come back in the order the payloads were given.
+var batch = new List<OrderPlaced>
+{
+    new OrderPlaced("B-1", 1m),
+    new OrderPlaced("B-2", 2m),
+    new OrderPlaced("B-3", 3m),
+};
+var confirmed = await publisher.SendAllAsync(batch);
+Console.WriteLine($"batch        {confirmed.Count} confirmed, all routed: {confirmed.All(r => r.Routed)}");
+
+// A batch that fails names how many did not arrive and how many did, because
+// resending a half-succeeded batch duplicates the half that already got there.
+try
+{
+    await orphan.SendAllAsync(batch);
+}
+catch (PublishFailedException e)
+{
+    Console.WriteLine($"batch failed {e.Message.Split('.')[0]}");
+}
+
+// The claim: an optional field naming where the payload is, for a message that
+// carries a reference rather than the bytes. Python and Ruby publishers set it and
+// a handler here reads it off the envelope.
+var claimed = Envelope.Of("order.placed")
+    .Claim("s3://payloads/2026/09/A-3")
+    .Build();
+Console.WriteLine($"claim        {claimed.Claim}");
+Console.WriteLine($"claim kept   {claimed.WithAttempt(2).Claim}");
+
+// The Avro reader schema: the default resolves onto the codec's own schema, a named
+// one resolves onto something else, and it can be declined altogether so every
+// message is read with the shape its writer gave it.
+var registry = new InMemorySchemaRegistry();
+const string v1 = """
+    {"type":"record","name":"OrderPlaced","namespace":"acemq.example",
+     "fields":[{"name":"orderId","type":"string"}]}
+    """;
+const string v2 = """
+    {"type":"record","name":"OrderPlaced","namespace":"acemq.example",
+     "fields":[{"name":"orderId","type":"string"},
+               {"name":"tenant","type":"string","default":""}]}
+    """;
+
+var resolving = AvroCodec.Registered(registry, v2);
+var ontoV1 = AvroCodec.Registered(registry, v2, v1);
+var asWritten = resolving.WithoutReaderSchema();
+
+Console.WriteLine($"avro reader  default resolves: {resolving.ReaderSchema is not null}");
+Console.WriteLine($"avro reader  named:            {ontoV1.ReaderSchema is not null}");
+Console.WriteLine($"avro reader  declined:         {asWritten.ReaderSchema is null}");
 
 // Topology as one unit: the queue, its dead-letter exchange and the queue bound to
 // it. Declared separately, forgetting one loses messages with nothing reporting it.

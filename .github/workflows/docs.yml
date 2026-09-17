@@ -38,7 +38,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target. The
+          # 10 SDK can build net8.0 by downloading the targeting pack from NuGet,
+          # which works until the day it does not; installing the SDK that carries
+          # it makes the build depend on the runner rather than on a fetch.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Install DocFX
         # Pinned, so a new DocFX cannot change the rendered reference without

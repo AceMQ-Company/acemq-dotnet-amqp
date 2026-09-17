@@ -8,8 +8,11 @@
 ' rather than assumed to work.
 
 Imports System
+Imports System.Collections.Generic
+Imports System.Linq
 Imports System.Threading.Tasks
 Imports AceMq.Amqp
+Imports AceMq.Amqp.Avro
 
 Module Program
     ' VB has no async entry point. C# accepts `static async Task Main`, VB does not,
@@ -67,6 +70,52 @@ Module Program
                 Catch ex As PublishFailedException
                     Console.WriteLine("unroutable   publish failed: no queue bound for that routing key")
                 End Try
+
+                ' A batch: every message is written before any confirm is awaited,
+                ' and the results come back in the order the payloads were given.
+                Dim batch = New List(Of OrderPlaced) From {
+                    New OrderPlaced("B-1", 1D),
+                    New OrderPlaced("B-2", 2D),
+                    New OrderPlaced("B-3", 3D)}
+                Dim confirmed = Await publisher.SendAllAsync(batch)
+                Console.WriteLine($"batch        {confirmed.Count} confirmed, all routed: {confirmed.All(Function(r) r.Routed)}")
+
+                ' A batch that fails names how many did not arrive and how many did,
+                ' because resending a half-succeeded batch duplicates the half that
+                ' already got there.
+                Try
+                    Await orphan.SendAllAsync(batch)
+                Catch ex As PublishFailedException
+                    Console.WriteLine($"batch failed {ex.Message.Split("."c)(0)}")
+                End Try
+
+                ' The claim: an optional field naming where the payload is, for a
+                ' message that carries a reference rather than the bytes. Python and
+                ' Ruby publishers set it and a VB handler reads it off the envelope.
+                Dim claimed = Envelope.Of("order.placed") _
+                    .Claim("s3://payloads/2026/09/A-3") _
+                    .Build()
+                Console.WriteLine($"claim        {claimed.Claim}")
+                Console.WriteLine($"claim kept   {claimed.WithAttempt(2).Claim}")
+
+                ' The Avro reader schema, from VB. Not because this sample needs
+                ' Avro, but because three of the four ways to set it are new and a
+                ' reflection audit proves the shape while only a compiler proves the
+                ' shape is callable.
+                Dim registry = New InMemorySchemaRegistry()
+                Dim v1 = "{""type"":""record"",""name"":""OrderPlaced"",""namespace"":""acemq.example""," &
+                         """fields"":[{""name"":""orderId"",""type"":""string""}]}"
+                Dim v2 = "{""type"":""record"",""name"":""OrderPlaced"",""namespace"":""acemq.example""," &
+                         """fields"":[{""name"":""orderId"",""type"":""string""}," &
+                         "{""name"":""tenant"",""type"":""string"",""default"":""""}]}"
+
+                Dim resolving = AvroCodec.Registered(registry, v2)
+                Dim ontoV1 = AvroCodec.Registered(registry, v2, v1)
+                Dim asWritten = resolving.WithoutReaderSchema()
+
+                Console.WriteLine($"avro reader  default resolves: {resolving.ReaderSchema IsNot Nothing}")
+                Console.WriteLine($"avro reader  named:            {ontoV1.ReaderSchema IsNot Nothing}")
+                Console.WriteLine($"avro reader  declined:         {asWritten.ReaderSchema Is Nothing}")
 
                 ' Topology as one unit: the queue, its dead-letter exchange and the
                 ' queue bound to it. Declared separately, forgetting one loses

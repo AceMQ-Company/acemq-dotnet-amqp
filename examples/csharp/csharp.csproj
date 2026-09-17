@@ -2,6 +2,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AceMq.Amqp\AceMq.Amqp.csproj" />
+    <!-- Kept in step with ../vb, which references it to prove the Avro reader
+         schema is callable from VB. The two samples have to print the same
+         output, so they have to reach the same API. -->
+    <ProjectReference Include="..\..\src\AceMq.Amqp.Avro\AceMq.Amqp.Avro.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

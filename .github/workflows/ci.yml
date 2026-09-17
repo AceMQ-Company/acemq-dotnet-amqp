@@ -28,7 +28,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target. The
+          # 10 SDK can build net8.0 by downloading the targeting pack from NuGet,
+          # which works until the day it does not; installing the SDK that carries
+          # it makes the build depend on the runner rather than on a fetch.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Build
         run: dotnet build --configuration Release
@@ -100,16 +106,40 @@ jobs:
         # that never fires is indistinguishable from one that is not running.
         run: dotnet run --project tools/vb-audit --configuration Release
 
-      - name: Verify every assembly targets netstandard2.0
+      - name: Verify every assembly still builds for netstandard2.0
         # The reach promise: .NET Framework 4.6.2+ as well as modern .NET. A
         # retarget would quietly drop the consumers this library exists to serve --
         # and it has to hold for the transport too, or the promise only covers code
         # that never talks to a broker.
+        #
+        # Every package multi-targets netstandard2.0;net8.0 since 0.6.0, so this
+        # checks the built assembly rather than the project file. It used to grep for
+        # a literal <TargetFramework>netstandard2.0</TargetFramework>, which a
+        # multi-target breaks even when both targets are there -- and a check that
+        # fails on the correct answer gets relaxed rather than fixed. The output
+        # directory cannot be fooled: the assembly is there because it compiled.
         run: |
-          for p in src/AceMq.Amqp/AceMq.Amqp.csproj src/AceMq.Amqp.RabbitMq/AceMq.Amqp.RabbitMq.csproj src/AceMq.Amqp.Diagnostics/AceMq.Amqp.Diagnostics.csproj src/AceMq.Amqp.Protobuf/AceMq.Amqp.Protobuf.csproj src/AceMq.Amqp.Avro/AceMq.Amqp.Avro.csproj src/AceMq.Amqp.Yaml/AceMq.Amqp.Yaml.csproj src/AceMq.Amqp.Toml/AceMq.Amqp.Toml.csproj src/AceMq.Amqp.Xml/AceMq.Amqp.Xml.csproj src/AceMq.Amqp.Crypto/AceMq.Amqp.Crypto.csproj; do
-            grep -q '<TargetFramework>netstandard2.0</TargetFramework>' "$p" \
-              || { echo "$p no longer targets netstandard2.0"; exit 1; }
+          for p in AceMq.Amqp AceMq.Amqp.RabbitMq AceMq.Amqp.Diagnostics AceMq.Amqp.Protobuf AceMq.Amqp.Avro AceMq.Amqp.Yaml AceMq.Amqp.Toml AceMq.Amqp.Xml AceMq.Amqp.Crypto; do
+            test -f "src/$p/bin/Release/netstandard2.0/$p.dll" \
+              || { echo "$p no longer builds for netstandard2.0"; exit 1; }
             echo "netstandard2.0 confirmed: $p"
+          done
+
+      - name: Verify every package ships both targets
+        # Multi-targeting is only real if it reaches the package. A project that
+        # builds netstandard2.0 into bin and ships one lib folder is a promise the
+        # consumer never sees.
+        run: |
+          dotnet pack --configuration Release --no-build -o "$RUNNER_TEMP/packages"
+          for p in AceMq.Amqp AceMq.Amqp.RabbitMq AceMq.Amqp.Diagnostics AceMq.Amqp.Protobuf AceMq.Amqp.Avro AceMq.Amqp.Yaml AceMq.Amqp.Toml AceMq.Amqp.Xml AceMq.Amqp.Crypto; do
+            # The [0-9] anchors on the version, so AceMq.Amqp does not match
+            # AceMq.Amqp.Avro and check the wrong package.
+            nupkg=$(find "$RUNNER_TEMP/packages" -name "$p.[0-9]*.nupkg" | head -1)
+            for tfm in netstandard2.0 net8.0; do
+              unzip -l "$nupkg" | grep -q "lib/$tfm/$p.dll" \
+                || { echo "$p ships no lib/$tfm"; exit 1; }
+            done
+            echo "both targets confirmed: $p"
           done
 
   integration:
@@ -132,7 +162,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target. The
+          # 10 SDK can build net8.0 by downloading the targeting pack from NuGet,
+          # which works until the day it does not; installing the SDK that carries
+          # it makes the build depend on the runner rather than on a fetch.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Test against RabbitMQ
         env:
@@ -155,7 +191,13 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target. The
+          # 10 SDK can build net8.0 by downloading the targeting pack from NuGet,
+          # which works until the day it does not; installing the SDK that carries
+          # it makes the build depend on the runner rather than on a fetch.
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Make the certificates
         # The library's own generator rather than openssl. It uses the framework's

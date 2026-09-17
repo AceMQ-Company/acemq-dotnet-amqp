@@ -82,8 +82,6 @@ Every async API in the library is reachable from VB — only `Main` is not.
 
 ## What the API may not do, so that this keeps working
 
-Enforced by a VB sample that CI compiles **and runs**, rather than remembered:
-
 | Constraint | Why |
 |---|---|
 | No two public members differing only by case | VB is case-insensitive; `Send` and `send` would be a compile error for the consumer |
@@ -92,9 +90,42 @@ Enforced by a VB sample that CI compiles **and runs**, rather than remembered:
 | No `unsafe`, pointer types, or C#-only operator tricks | No VB equivalent |
 | Async methods return plain `Task` / `Task(Of T)` | VB `Await` handles those; exotic awaitables are painful |
 
-The audit that enforces this has to happen **before the API freezes**. Afterwards it
-is a breaking change, and the whole point of the constraint is that it costs a week
-now instead of a major version later.
+Four more belong on that list and were nowhere, because each is a compile error for
+a VB consumer that C# never sees:
+
+| Constraint | Why |
+|---|---|
+| No member colliding by case with an **inherited** one | The same collision as the first rule, and invisible to a check that looks at one type at a time |
+| No `init`-only setters | The accessor carries a modreq VB has no syntax to satisfy, so the property is read-only to VB |
+| No `required` members | VB has no way to satisfy the compiler's initialization check, so the type is unconstructable |
+| No default interface members | VB can neither call nor implement one; this is why `PublishInterceptor` and `ConsumeInterceptor` exist as abstract classes |
+| No `IAsyncEnumerable<T>` on the public surface | VB has no `Await For Each` |
+
+## How that is enforced
+
+Two things, and neither is a note to remember.
+
+**`tools/vb-audit`**, which CI runs. It walks every exported type in all ten shipped
+assemblies by reflection and checks all twelve rules against methods, operators,
+**constructors**, properties and fields. Constructors used to be missed entirely —
+`GetMethods` does not return them — so a `Span<T>` in a public constructor was
+invisible to the one check meant to find it.
+
+Every rule **self-checks against a type written to trip it**, and the audit exits
+non-zero if any rule fails to fire. A check that never fires is indistinguishable
+from a check that is not running, and none of these twelve has ever fired on this
+library's own surface — so without the probes, a clean result would say nothing.
+
+**`examples/vb`**, which CI compiles *and runs*. The reflection audit proves the
+shape; only a compiler proves the shape is callable. The sample prints the same
+output as [the C# example](csharp.md), which is the claim VB support rests on, and
+the two are kept reaching the same API deliberately — including `SendAllAsync`, the
+batch failure, the envelope's `Claim` and the Avro reader schema.
+
+The audit had to happen **before the API freezes**. Afterwards every correction is a
+breaking change, and the whole point of the constraint is that it costs a week now
+instead of a major version later. It has been done: as of 0.6.0 the public surface
+is clean against all twelve rules.
 
 ## Runnable example
 

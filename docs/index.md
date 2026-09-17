@@ -89,17 +89,28 @@ explains how that is checked, and where this library still disagrees with it.
 
 ## Where it runs
 
-`netstandard2.0`, which reaches **.NET Framework 4.6.2+**, .NET Core and modern .NET
-from one assembly — and the RabbitMQ transport reaches the same, because
+`netstandard2.0` and `net8.0`. Every package ships both.
+
+`netstandard2.0` reaches **.NET Framework 4.6.2+**, .NET Core and modern .NET from
+one assembly — and the RabbitMQ transport reaches the same, because
 `RabbitMQ.Client` still ships a `netstandard2.0` build.
 
 That is deliberate rather than conservative. The applications most likely to want a
 supported AMQP library are the ones that cannot easily move, and `netstandard2.0` is
-the only target that reaches all of them at once.
+the only target that reaches all of them at once. It is not going anywhere, and CI
+fails if any package stops building for it.
 
-Every optional package holds that target too, `AceMq.Amqp.Crypto` included — which is
-why payload encryption takes AES-GCM from BouncyCastle rather than from
-`System.Security.Cryptography.AesGcm`, which has never existed there. See
+`net8.0` was added alongside it in 0.6.0, and is what a modern consumer resolves to.
+Nothing in the library is conditioned on which one you get: the same source compiles
+twice. What it buys is the compatibility shims `netstandard2.0` needs —
+`System.Text.Json`, `System.Diagnostics.DiagnosticSource`, `System.Memory` — no
+longer arriving as package references at an application whose runtime already has
+them.
+
+Every optional package holds `netstandard2.0` too, `AceMq.Amqp.Crypto` included —
+which is why payload encryption takes AES-GCM from BouncyCastle on both targets
+rather than from `System.Security.Cryptography.AesGcm`, which has never existed on
+one of them. See
 [serialization](serialization.md#where-aes-gcm-comes-from-on-netstandard20).
 
 ## The rest of AceMQ

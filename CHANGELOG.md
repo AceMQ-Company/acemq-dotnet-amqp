@@ -35,6 +35,101 @@ While the version is `0.x` the public API may change in any release.
   `when_settled` and Ruby's `Settlement` close that gap and this library has no
   equivalent, which the page says rather than works around.
 
+- **Every package multi-targets `netstandard2.0;net8.0`.** The `net8.0` target was
+  missing for one reason and it was never a good one: the SDK on the machine this
+  library was written on had no net8.0 targeting pack, and the README said so in
+  place of a decision. The SDK does have it now, so the target is there —
+  `AceMq.Amqp` and all eight optional packages, nine `lib/netstandard2.0` and nine
+  `lib/net8.0`.
+
+  **`netstandard2.0` is not going anywhere**, and it is not going anywhere from any
+  package. It is the target this library exists for: .NET Framework 4.6.2+ as well
+  as modern .NET, from one assembly, and the applications most likely to want a
+  supported AMQP library are the ones that cannot move. Multi-targeting is addition,
+  not migration.
+
+  What the second target buys is what NuGet does with it. A `net8.0` application
+  resolving to the `netstandard2.0` asset acquires the compatibility shims that
+  target needs — `System.Text.Json`, `System.Diagnostics.DiagnosticSource`,
+  `System.Memory` and what they drag behind them — as package references, at an
+  application whose runtime already has all of it. That stops. Nothing in the
+  library is conditioned on which target a consumer gets: the same source compiles
+  twice and the two assemblies do the same thing, which is deliberate and is the
+  rule for anything added later.
+
+  **`AceMq.Amqp.Crypto` multi-targets with the rest, and that is not a reversal of
+  the decision recorded in its project file.** What was rejected there was two
+  *cryptographic code paths* behind one wire format — BouncyCastle on
+  `netstandard2.0` and the framework's `AesGcm` on the modern target — a divergence
+  that shows up only at runtime, on one target, in somebody else's queue. This
+  package still takes AES-GCM from BouncyCastle on both targets. One implementation,
+  one set of bytes, identical on .NET Framework 4.6.2 and .NET 10, matching Java,
+  Python, Ruby and Go. The objection was to conditioning the cryptography, never to
+  building twice.
+
+  The CI check that guards the reach promise had to change with it, and is stronger
+  for it. It used to grep each project file for a literal
+  `<TargetFramework>netstandard2.0</TargetFramework>`, which a multi-target breaks
+  even when both targets are present — and a check that fails on the correct answer
+  gets relaxed rather than fixed. It now asserts that
+  `bin/Release/netstandard2.0/{package}.dll` was built and that the packed `.nupkg`
+  contains both `lib/netstandard2.0` and `lib/net8.0`, for all nine. An output
+  directory cannot be fooled by a project file. The workflows also install the .NET
+  8 SDK alongside 10, so the net8.0 half of the build depends on the runner rather
+  than on a NuGet fetch of the targeting pack.
+
+- **The VB.NET API audit has been carried out, and `tools/vb-audit` now checks
+  every rule it was supposed to.** `docs/vbnet.md` lists five constraints the public
+  surface must hold to stay callable from VB. The audit checked three of them.
+  Rule 4 — no `unsafe`, no pointer types, no C#-only operator tricks — and rule 5 —
+  async methods return plain `Task`/`Task(Of T)` — were written down and enforced by
+  nothing, which is the exact failure the audit exists to prevent: a rule nobody
+  checks is a rule that has already been broken.
+
+  Both are checked now, along with four more things that are a compile error for a
+  VB consumer and appeared on no list:
+
+  - **a member colliding by case with an inherited one.** The same collision as
+    rule 1, and invisible to a check that looks at one type at a time, because
+    neither the derived type nor the base has two names of its own.
+  - **an `init`-only setter.** The accessor carries a modreq on `IsExternalInit`,
+    which VB has no syntax to satisfy, so the property is read-only to VB and
+    settable from C#.
+  - **a `required` member.** VB cannot satisfy the compiler's initialization check,
+    so the type is not awkward from VB — it is unconstructable.
+  - **a default interface member.** VB can neither call nor implement one. The
+    library already knows this — it is why `PublishInterceptor` and
+    `ConsumeInterceptor` exist as abstract classes — and nothing checked that a
+    later interface had not quietly grown one.
+
+  The scan also got wider. It walked methods; it now walks methods, operators,
+  **constructors**, properties and fields. Constructors were missed entirely —
+  `GetMethods` does not return them — so a `Span<T>` or a pointer in a public
+  constructor was invisible to the one check meant to find it.
+
+  And every rule self-checks. The case rule always did, against a deliberately bad
+  type, on the principle that a check which never fires is indistinguishable from a
+  check that is not running. All twelve do now: the audit runs each rule against a
+  type written to trip exactly it and exits non-zero if any rule stays silent. That
+  matters more here than usual, because **none of these twelve has ever fired on
+  this library's own surface** — without the probes, a clean result would be
+  evidence of nothing.
+
+  **The findings: none.** The whole public surface — 141 exported types, 822 public
+  methods across all ten shipped assemblies — is clean against all twelve rules,
+  including everything added in this release: `SendAllAsync` and the batch
+  `PublishFailedException`, `AvroCodec.ReaderSchema`, the three-argument
+  `Registered` and `WithoutReaderSchema()`, and the envelope's `Claim`, `WithClaim`
+  and `Builder.Claim`. Nothing had to be fixed and nothing had to be deferred as a
+  breaking change, which is the outcome the constraint was imposed to produce.
+
+  Both examples were extended to call the new surface rather than only to have it
+  audited: the reflection scan proves the shape, and only a compiler proves the
+  shape is callable. `examples/vb` and `examples/csharp` both now exercise
+  `SendAllAsync`, a failed batch, the envelope claim and all three ways to set the
+  Avro reader schema — and both print the same output, which is the claim VB
+  support has always rested on.
+
 - **`BatchPublishTests` covers what interceptors do in a pipelined batch.** The
   behaviour was a consequence of the rewrite below and nothing asserted it: the
   chain runs once per message, every `BeforePublish` in the batch completes before
