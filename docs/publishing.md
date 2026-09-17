@@ -118,12 +118,27 @@ broker problem partway through, and a caller told only "it failed" resends messa
 that already arrived. `InnerException` carries the first underlying failure, in
 payload order, for callers that need to tell a rejection from a timeout.
 
+The pipelining is real all the way down. The RabbitMQ transport holds its publish
+lock across the frame write and releases it before waiting for the confirm, so a
+batch of a hundred is a hundred writes and then one wait rather than a hundred
+round trips. Two hundred messages against a loopback broker take about 6 ms as a
+batch and about 250 ms one at a time; on a link with real latency the gap is the
+latency multiplied by the batch size.
+
 ## Back pressure
 
-`MaxOutstandingPublishes` — 1000 by default — caps how many publishes may be in
-flight before `SendAsync` starts waiting. Without that cap, a caller in a tight loop
-can outrun the broker's ability to confirm, and the failure arrives as memory growth
-rather than as a slow publish.
+`MaxOutstandingPublishes` — 1000 by default — caps how many publishes may be
+waiting for a confirm at once. Reached, the next `SendAsync` waits for an answer
+before it writes. Without that cap, a caller in a tight loop can outrun the
+broker's ability to confirm, and the failure arrives as memory growth rather than
+as a slow publish.
+
+It is enforced twice, and deliberately: once above the codec, where it has always
+been, and once inside the RabbitMQ transport immediately before the frame write.
+The second one is what makes the number mean something for anything driving the
+transport directly, and it is the bound the pipelining above is safe because of —
+the setting used to be irrelevant under a lock that allowed exactly one
+unconfirmed publish anyway.
 
 ## When the broker stops accepting
 

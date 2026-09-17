@@ -80,11 +80,17 @@ public sealed class RabbitMqTransport : ITransport
             var connection = await factory.CreateConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            // Confirmation tracking makes BasicPublishAsync await the broker's ack,
-            // which is what turns "written to a socket" into "the broker has it".
+            // Confirms on, the client's own tracking off, and the second half is
+            // deliberate. With tracking enabled BasicPublishAsync does not return
+            // until the broker's ack arrives, so the wait happens inside whatever
+            // lock serialises the write -- and a batch of a hundred messages then
+            // costs a hundred round trips however well the layer above pipelines
+            // them. The confirms are tracked here instead, by sequence number, the
+            // way the Java library tracks them: the lock is held across the frame
+            // write and released before anything is awaited.
             var options = new CreateChannelOptions(
                 publisherConfirmationsEnabled: config.PublisherConfirms,
-                publisherConfirmationTrackingEnabled: config.PublisherConfirms);
+                publisherConfirmationTrackingEnabled: false);
             var channel = await connection.CreateChannelAsync(options, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -253,7 +259,64 @@ public sealed class RabbitMqTransport : ITransport
         private readonly IConnection _connection;
         private readonly IChannel _channel;
         private readonly ConnectionConfig _config;
+
+        /// <summary>
+        /// Serialises the frame write, and nothing else.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="IChannel"/> is not safe for concurrent publishing — the symptom
+        /// of ignoring that is interleaved frames rather than a clean error — so one
+        /// publish writes at a time. It is released before the confirm is awaited,
+        /// which is the difference between a batch that pipelines and a batch that
+        /// pays a round trip per message.
+        /// </remarks>
         private readonly SemaphoreSlim _publishLock = new SemaphoreSlim(1, 1);
+
+        /// <summary>
+        /// How many publishes may be waiting for a confirm at once.
+        /// </summary>
+        /// <remarks>
+        /// <c>MaxOutstandingPublishes</c>, and now the real bound rather than a
+        /// setting the publish lock made irrelevant. It is acquired <em>before</em>
+        /// the write, as Java's is: this is the only back pressure an asynchronous
+        /// publisher has, and without it a caller that publishes faster than the
+        /// broker confirms accumulates unconfirmed messages until the process dies —
+        /// which looks like throughput right up to the moment it does not.
+        /// </remarks>
+        private readonly SemaphoreSlim _outstanding;
+
+        /// <summary>Guards <see cref="_pending"/> and <see cref="_returned"/>.</summary>
+        private readonly object _confirmsLock = new object();
+
+        /// <summary>
+        /// Publishes waiting for a confirm, by publish sequence number.
+        /// </summary>
+        /// <remarks>
+        /// Sorted, because a confirm may be a range: <c>multiple</c> means "every
+        /// sequence number up to and including this one", and completing only the
+        /// exact number would leave the rest of the range waiting for a confirm that
+        /// has already been and gone.
+        /// </remarks>
+        private readonly SortedDictionary<ulong, PendingPublish> _pending =
+            new SortedDictionary<ulong, PendingPublish>();
+
+        /// <summary>
+        /// Messages the broker handed back as unroutable, by message id.
+        /// </summary>
+        /// <remarks>
+        /// A basic.return always precedes the basic.ack for the same message, so
+        /// recording it here and reading it when the confirm lands is what tells "the
+        /// broker took it" apart from "the broker took it and nothing wanted it".
+        /// Keyed by message id, the way the Java library keys it: with the client's
+        /// own tracking off there is no sequence number on the returned message, and
+        /// the id is what both ends already agree on. A message published without one
+        /// cannot be correlated and is reported as routed — the library never
+        /// publishes without an id, since the envelope's is always set.
+        /// </remarks>
+        private readonly Dictionary<string, string> _returned =
+            new Dictionary<string, string>(StringComparer.Ordinal);
+
+        private readonly bool _confirms;
         private volatile string? _blockedReason;
 
         internal Connection(IConnection connection, IChannel channel, ConnectionConfig config)
@@ -261,6 +324,9 @@ public sealed class RabbitMqTransport : ITransport
             _connection = connection;
             _channel = channel;
             _config = config;
+            _confirms = config.PublisherConfirms;
+            _outstanding = new SemaphoreSlim(
+                config.MaxOutstandingPublishes, config.MaxOutstandingPublishes);
 
             _connection.ConnectionBlockedAsync += (_, e) =>
             {
@@ -272,6 +338,128 @@ public sealed class RabbitMqTransport : ITransport
                 _blockedReason = null;
                 return Task.CompletedTask;
             };
+
+            if (!_confirms) return;
+
+            _channel.BasicAcksAsync += (_, e) =>
+            {
+                Settle(e.DeliveryTag, e.Multiple, acknowledged: true, reason: null);
+                return Task.CompletedTask;
+            };
+            _channel.BasicNacksAsync += (_, e) =>
+            {
+                Settle(e.DeliveryTag, e.Multiple, acknowledged: false,
+                    reason: "the broker rejected the message");
+                return Task.CompletedTask;
+            };
+            _channel.BasicReturnAsync += (_, e) =>
+            {
+                var id = e.BasicProperties?.MessageId;
+                if (id != null)
+                {
+                    lock (_confirmsLock) _returned[id] = $"{e.ReplyCode} {e.ReplyText}";
+                }
+                return Task.CompletedTask;
+            };
+            _channel.ChannelShutdownAsync += (_, e) =>
+            {
+                // Every outstanding publish would otherwise wait for a confirm that
+                // can no longer arrive. Failing them is the only honest answer: those
+                // messages may or may not have reached the broker.
+                FailAllPending(e.ReplyText);
+                return Task.CompletedTask;
+            };
+        }
+
+        /// <summary>One publish waiting for its confirm.</summary>
+        private sealed class PendingPublish
+        {
+            private readonly TaskCompletionSource<ConfirmResult> _result =
+                new TaskCompletionSource<ConfirmResult>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+            internal PendingPublish(string? messageId) => MessageId = messageId;
+
+            internal string? MessageId { get; }
+
+            internal Task<ConfirmResult> Result => _result.Task;
+
+            internal void Complete(ConfirmResult result) => _result.TrySetResult(result);
+        }
+
+        /// <summary>
+        /// Completes the publishes a confirm covers.
+        /// </summary>
+        /// <remarks>
+        /// Confirms arrive out of order and in ranges. Completing only the exact
+        /// sequence number would leave the rest of a range waiting for ever.
+        /// </remarks>
+        private void Settle(ulong sequence, bool multiple, bool acknowledged, string? reason)
+        {
+            var settled = new List<PendingPublish>();
+            lock (_confirmsLock)
+            {
+                if (multiple)
+                {
+                    var covered = new List<ulong>();
+                    foreach (var pair in _pending)
+                    {
+                        // Sorted by key, so the first one past the confirm ends it.
+                        if (pair.Key > sequence) break;
+                        covered.Add(pair.Key);
+                        settled.Add(pair.Value);
+                    }
+                    foreach (var key in covered) _pending.Remove(key);
+                }
+                else if (_pending.TryGetValue(sequence, out var one))
+                {
+                    _pending.Remove(sequence);
+                    settled.Add(one);
+                }
+            }
+
+            foreach (var publish in settled)
+            {
+                if (!acknowledged)
+                {
+                    publish.Complete(
+                        ConfirmResult.Rejected(reason ?? "the broker rejected the message"));
+                    continue;
+                }
+
+                string? returned = null;
+                if (publish.MessageId != null)
+                {
+                    lock (_confirmsLock)
+                    {
+                        if (_returned.TryGetValue(publish.MessageId, out var why))
+                        {
+                            returned = why;
+                            _returned.Remove(publish.MessageId);
+                        }
+                    }
+                }
+
+                publish.Complete(ConfirmResult.Ok(routed: returned == null));
+            }
+        }
+
+        /// <summary>Fails every publish still waiting, because nothing will answer them.</summary>
+        private void FailAllPending(string? why)
+        {
+            List<PendingPublish> abandoned;
+            lock (_confirmsLock)
+            {
+                abandoned = new List<PendingPublish>(_pending.Values);
+                _pending.Clear();
+                _returned.Clear();
+            }
+            foreach (var publish in abandoned)
+            {
+                publish.Complete(ConfirmResult.Rejected(
+                    $"the publishing channel closed before the broker confirmed this message, " +
+                    $"which may or may not have arrived: {why ?? "no reason given"}"));
+            }
         }
 
         public bool IsOpen => _connection.IsOpen && _channel.IsOpen;
@@ -314,6 +502,25 @@ public sealed class RabbitMqTransport : ITransport
             _channel.QueueBindAsync(queue, exchange, routingKey,
                 cancellationToken: cancellationToken);
 
+        /// <summary>
+        /// Publishes one message and waits for the broker's answer.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The frame write is serialised and the confirm is not. That is the whole
+        /// shape of this method: <see cref="_publishLock"/> covers taking a sequence
+        /// number and writing the frame — which have to happen together, or two
+        /// callers file their confirms under each other's numbers — and is released
+        /// before anything is awaited. A caller publishing a batch therefore gets one
+        /// write after another at socket speed and waits for all the confirms
+        /// together, instead of a round trip per message.
+        /// </para>
+        /// <para>
+        /// What bounds the pipeline is <see cref="_outstanding"/>, acquired before the
+        /// write. Without confirms there is nothing to correlate and nothing to bound:
+        /// the write is the whole operation, so that path is left as it was.
+        /// </para>
+        /// </remarks>
         public async Task<ConfirmResult> SendAsync(
             OutboundMessage message, CancellationToken cancellationToken)
         {
@@ -347,29 +554,107 @@ public sealed class RabbitMqTransport : ITransport
                 properties.Headers = headers;
             }
 
-            // One publish at a time on a channel: IChannel is not safe for concurrent
-            // publishing, and the symptom of ignoring that is interleaved frames
-            // rather than a clean error.
-            await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (!_confirms)
+            {
+                // Nothing to wait for, so the write is the whole operation and the
+                // lock covers all of it.
+                await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await _channel.BasicPublishAsync(
+                        message.Exchange, message.RoutingKey, message.Mandatory,
+                        properties, message.Body, cancellationToken).ConfigureAwait(false);
+                    return ConfirmResult.Ok(true);
+                }
+                finally
+                {
+                    _publishLock.Release();
+                }
+            }
+
+            // Bounded before the message is written, not after.
+            await _outstanding.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await _channel.BasicPublishAsync(
-                    message.Exchange, message.RoutingKey, message.Mandatory,
-                    properties, message.Body, cancellationToken).ConfigureAwait(false);
-                return ConfirmResult.Ok(true);
-            }
-            catch (PublishException e)
-            {
-                // The broker either rejected the message or could not route it. Both
-                // arrive here; only the second is a topology problem.
-                return e.IsReturn
-                    ? ConfirmResult.Ok(routed: false)
-                    : ConfirmResult.Rejected(e.Message);
+                var pending = new PendingPublish(message.MessageId);
+                ulong sequence;
+
+                // One publish at a time on a channel: IChannel is not safe for
+                // concurrent publishing, and the symptom of ignoring that is
+                // interleaved frames rather than a clean error. The sequence number
+                // has to be taken under the same lock — it only says what the *next*
+                // publish will use, so two callers interleaving here would file their
+                // confirms under each other's numbers and every answer after that
+                // would be attributed to the wrong message.
+                await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    sequence = await _channel
+                        .GetNextPublishSequenceNumberAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    lock (_confirmsLock) _pending[sequence] = pending;
+
+                    try
+                    {
+                        await _channel.BasicPublishAsync(
+                            message.Exchange, message.RoutingKey, message.Mandatory,
+                            properties, message.Body, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Never written, so no confirm is coming for it.
+                        lock (_confirmsLock) _pending.Remove(sequence);
+                        throw;
+                    }
+                }
+                finally
+                {
+                    _publishLock.Release();
+                }
+
+                return await AwaitConfirmAsync(sequence, pending, cancellationToken)
+                    .ConfigureAwait(false);
             }
             finally
             {
-                _publishLock.Release();
+                _outstanding.Release();
             }
+        }
+
+        /// <summary>
+        /// Waits for one publish's confirm, giving up if the caller does.
+        /// </summary>
+        /// <remarks>
+        /// <c>Task.WaitAsync(CancellationToken)</c> would be this method, and does not
+        /// exist on <c>netstandard2.0</c>. A publish the caller stopped waiting for is
+        /// forgotten rather than left in the map, or a cancelled batch would leak an
+        /// entry per message.
+        /// </remarks>
+        private async Task<ConfirmResult> AwaitConfirmAsync(
+            ulong sequence, PendingPublish pending, CancellationToken cancellationToken)
+        {
+            if (!cancellationToken.CanBeCanceled)
+            {
+                return await pending.Result.ConfigureAwait(false);
+            }
+
+            var cancelled = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            using (cancellationToken.Register(() => cancelled.TrySetResult(true)))
+            {
+                await Task.WhenAny(pending.Result, cancelled.Task).ConfigureAwait(false);
+            }
+
+            // The answer wins a tie. A confirm that landed while the token was being
+            // cancelled is still an answer, and throwing it away would report a
+            // message the broker has as one that may never have arrived.
+            if (!pending.Result.IsCompleted)
+            {
+                lock (_confirmsLock) _pending.Remove(sequence);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            return await pending.Result.ConfigureAwait(false);
         }
 
         public async Task<ISubscription> SubscribeAsync(
@@ -671,9 +956,13 @@ public sealed class RabbitMqTransport : ITransport
 
         public void Dispose()
         {
+            // Before the channel goes, so a caller still awaiting a confirm is told
+            // rather than left waiting for an answer nothing will now deliver.
+            FailAllPending("the connection was disposed");
             try { _channel.Dispose(); } catch { /* closing a closed channel is not news */ }
             try { _connection.Dispose(); } catch { /* nor is closing a closed connection */ }
             _publishLock.Dispose();
+            _outstanding.Dispose();
         }
     }
 

@@ -165,6 +165,150 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         Assert.Equal(1, received.Attempt);
     }
 
+    /// <summary>How many messages the batch tests publish.</summary>
+    /// <remarks>
+    /// Large enough that a round trip per message is unmistakable against the noise
+    /// of a local broker, small enough that the sequential half of the comparison
+    /// still finishes in a second or two.
+    /// </remarks>
+    private const int BatchSize = 200;
+
+    /// <summary>
+    /// A batch of <see cref="BatchSize"/> costs far less than <see cref="BatchSize"/>
+    /// round trips.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The test the transport change exists for, and one that cannot be written
+    /// against a fake: what is being measured is the broker's answer coming back.
+    /// Up to this change <c>SendAllAsync</c> pipelined at the library layer and then
+    /// queued behind a lock in the transport, because publisher confirmation
+    /// tracking made <c>BasicPublishAsync</c> await the broker's ack and that await
+    /// happened inside the lock serialising the writes. The batch and the loop were
+    /// therefore the same number of round trips, and this assertion would have
+    /// failed with the two times within noise of each other.
+    /// </para>
+    /// <para>
+    /// The threshold is a third rather than something tighter on purpose. On a
+    /// loopback broker a round trip is a fraction of a millisecond and the constant
+    /// costs — encoding, the envelope, the telemetry — are a real share of the total,
+    /// so the ratio a CI runner sees is nothing like the one a 5 ms link would show.
+    /// A third is comfortably past anything scheduling noise can produce and
+    /// comfortably short of what the change actually buys.
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task PublishesABatchInFarLessThanARoundTripPerMessage()
+    {
+        var queue = $"{Queue}.batch";
+        _alsoDeclared.Add(queue);
+        await _mq.DeclareQueueAsync(queue);
+        await _mq.BindAsync(queue, Exchange, "order.batched");
+
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.batched");
+        var payloads = Enumerable.Range(0, BatchSize)
+            .Select(i => new OrderPlaced { OrderId = $"B-{i}", Total = i })
+            .ToList();
+
+        // One at a time, which is the round trip per message being compared against.
+        var loopClock = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var payload in payloads) await publisher.SendAsync(payload);
+        loopClock.Stop();
+
+        var batchClock = System.Diagnostics.Stopwatch.StartNew();
+        var results = await publisher.SendAllAsync(payloads);
+        batchClock.Stop();
+
+        _output.WriteLine(
+            $"{BatchSize} messages: one at a time {loopClock.ElapsedMilliseconds} ms, " +
+            $"as a batch {batchClock.ElapsedMilliseconds} ms");
+
+        Assert.Equal(BatchSize, results.Count);
+        Assert.All(results, r => Assert.True(r.Routed));
+
+        // Both halves really arrived. A batch that is fast because it lost messages
+        // is the failure this guards against.
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        long waiting = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            waiting = await _mq.MessageCountAsync(queue);
+            if (waiting >= BatchSize * 2) break;
+            await Task.Delay(50);
+        }
+        Assert.Equal(BatchSize * 2, waiting);
+
+        Assert.True(
+            batchClock.Elapsed * 3 < loopClock.Elapsed,
+            $"the batch took {batchClock.ElapsedMilliseconds} ms against " +
+            $"{loopClock.ElapsedMilliseconds} ms one at a time, which is not the " +
+            "difference pipelining the confirms should make");
+    }
+
+    /// <summary>
+    /// A pipelined batch keeps its order, and the mandatory flag still reports.
+    /// </summary>
+    /// <remarks>
+    /// The two things most easily lost by publishing without waiting. Order is the
+    /// broker's: messages written down one channel in one order arrive in that order,
+    /// and nothing about awaiting the confirms later changes it. The mandatory flag
+    /// is the transport's: with the client's own confirmation tracking switched off,
+    /// a <c>basic.return</c> no longer arrives as an exception out of the publish and
+    /// has to be correlated back to the message it belongs to by hand.
+    /// </remarks>
+    [Fact]
+    public async Task KeepsABatchInOrderAndStillReportsWhatTheBrokerReturned()
+    {
+        var queue = $"{Queue}.ordered";
+        _alsoDeclared.Add(queue);
+        await _mq.DeclareQueueAsync(queue);
+        await _mq.BindAsync(queue, Exchange, "order.ordered");
+
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.ordered");
+        var payloads = Enumerable.Range(0, 50)
+            .Select(i => new OrderPlaced { OrderId = $"O-{i}", Total = i })
+            .ToList();
+
+        var results = await publisher.SendAllAsync(payloads);
+        Assert.Equal(50, results.Count);
+
+        var seen = new List<string>();
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using (var consumer = await _mq.ConsumeAsync<OrderPlaced>(queue, message =>
+               {
+                   lock (seen)
+                   {
+                       seen.Add(message.Payload.OrderId);
+                       if (seen.Count == 50) done.TrySetResult(true);
+                   }
+                   return Task.FromResult(Ack.Accept());
+               }))
+        {
+            await done.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+
+        lock (seen)
+        {
+            Assert.Equal(payloads.Select(p => p.OrderId).ToList(), seen);
+        }
+
+        // Nothing is bound to this key, so every message in the batch comes back as a
+        // basic.return and the batch fails naming how many. Before the change the
+        // return arrived as a PublishException out of BasicPublishAsync; now it is a
+        // return listener matching the message by its id, which is what Java does.
+        var nowhere = _mq.Publisher<OrderPlaced>(Exchange, "order.nobody.wants");
+        var refused = await Assert.ThrowsAsync<PublishFailedException>(
+            () => nowhere.SendAllAsync(payloads.Take(5)));
+        Assert.Contains("5 of 5 messages were not confirmed", refused.Message);
+        Assert.Contains("matched no queue", refused.InnerException!.Message);
+
+        // And the same thing one message at a time still reports unroutable rather
+        // than rejected, which is a different outcome on acemq.publish.total.
+        var single = await Assert.ThrowsAsync<PublishFailedException>(
+            () => nowhere.SendAsync(payloads[0]));
+        Assert.Contains("matched no queue", single.Message);
+    }
+
     /// <summary>
     /// The retry rungs, against a real broker, with the consumer switched off for the
     /// duration of the wait.

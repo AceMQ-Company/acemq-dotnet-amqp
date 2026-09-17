@@ -42,6 +42,58 @@ While the version is `0.x` the public API may change in any release.
 
 ### Changed
 
+- **The RabbitMQ transport no longer holds its publish lock while it waits for a
+  confirm, so batch publishing finally buys the throughput it has always claimed
+  to.** `SendAllAsync` was rewritten to pipeline in the entry below, and it did —
+  at the library layer, where every message was handed to the transport before any
+  answer was awaited. Underneath, it was still one broker round trip at a time.
+  The channel was created with both `publisherConfirmationsEnabled` and
+  `publisherConfirmationTrackingEnabled` set, which makes RabbitMQ.Client v7's
+  `BasicPublishAsync` await the broker's acknowledgement inside the call — and that
+  await happened inside `_publishLock`, the semaphore that stops two publishes
+  interleaving their frames on one channel. So the lock serialised the round trips,
+  not the writes, and a batch of two hundred cost two hundred round trips however
+  well the layer above pipelined them. Against a loopback broker the batch took
+  307 ms and the same two hundred messages one at a time took 323 ms: the same
+  thing, measured.
+
+  The confirms are tracked here now, by publish sequence number, the way
+  `RabbitMqConnection` has tracked them in the Java library all along. The
+  client's own tracking is switched off; `BasicAcksAsync`, `BasicNacksAsync` and
+  `BasicReturnAsync` complete a `TaskCompletionSource` per outstanding publish, a
+  `multiple` confirm completes every sequence number it covers rather than only
+  the one it names, and a channel that shuts down fails everything still waiting
+  with a message saying those publishes may or may not have arrived — which is the
+  honest answer and better than waiting for ever for one that cannot come. The
+  lock is now held across exactly two things that must happen together: taking the
+  sequence number and writing the frame. Taking them apart is what would file two
+  publishes' confirms under each other's numbers. **The frame write is still
+  serialised** — `IChannel` is not safe for concurrent publishing and the symptom
+  of ignoring that is interleaved frames rather than a clean error.
+
+  The same two hundred messages now take **6 ms as a batch against 249 ms one at a
+  time**, and `PublishesABatchInFarLessThanARoundTripPerMessage` asserts the ratio
+  against a real broker rather than trusting it.
+
+  **`MaxOutstandingPublishes` is the real bound now.** It was a setting the lock
+  made irrelevant: with one publish allowed to be unconfirmed at a time, a cap of a
+  thousand capped nothing. The transport acquires it before the write, as Java's
+  `sendAsync` acquires its `Semaphore` before `basicPublish`, so the number of
+  publishes waiting for an answer is bounded deliberately rather than by accident.
+  A caller who had tuned it will find it doing what its name says for the first
+  time; the default of 1000 is unchanged and nothing needs to be reconfigured.
+
+  Two consequences worth knowing. An unroutable message published with the
+  mandatory flag used to arrive as a `PublishException` out of `BasicPublishAsync`
+  carrying `IsReturn`; with the client's tracking off, the `basic.return` arrives
+  on the return listener instead and is matched back to its publish **by message
+  id**, exactly as Java matches it. Every message this library publishes carries
+  one, because the envelope's id is always written to the AMQP `messageId`
+  property — a caller driving `ITransportConnection.SendAsync` directly with
+  `MessageId` left null gets a message reported as routed, which is the same
+  limitation Java has. And a publish whose caller cancels is now removed from the
+  pending map rather than left in it, so a cancelled batch leaks nothing.
+
 - **`IPublisher<T>.SendAllAsync` publishes the whole batch before it awaits any
   confirm, and a failure is now reported after the batch has finished rather than
   at the first bad answer.** It was a `foreach` that awaited each `SendAsync` in
