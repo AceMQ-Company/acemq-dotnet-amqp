@@ -142,6 +142,60 @@ public sealed class BatchPublishTests
     }
 
     [Fact]
+    public async Task RunsThePublishChainForEveryMessageBeforeAnyConfirmIsAwaited()
+    {
+        var broker = HeldConfirms.Registered();
+        using var mq = await AceMqConnection.ConnectAsync(broker.Url);
+
+        // Registered before the publisher exists: a publisher takes the interceptors
+        // present when it is created.
+        var chain = new CountingInterceptor();
+        mq.Intercept(chain);
+        var publisher = mq.Publisher<string>("orders", "order.placed");
+        var payloads = new[] { "one", "two", "three", "four", "five" };
+
+        var batch = publisher.SendAllAsync(payloads);
+        await Await(broker.WhenSent(payloads.Length), "every message to reach the broker");
+
+        // Once per message, and the whole chain ran before anything was confirmed.
+        // A loop that awaited each send in turn would be sitting on the first
+        // BeforePublish with four still to come.
+        Assert.Equal(payloads.Length, chain.Before);
+        Assert.Equal(0, chain.Confirms);
+
+        for (var i = 0; i < payloads.Length; i++) broker.Confirm(i, ConfirmResult.Ok(true));
+        var results = await Await(batch, "the batch to be confirmed");
+
+        Assert.Equal(payloads.Length, results.Count);
+        Assert.Equal(payloads.Length, chain.Confirms);
+        Assert.Equal(0, chain.Errors);
+    }
+
+    [Fact]
+    public async Task FailsOnlyTheMessageWhoseInterceptorRefusedIt()
+    {
+        var broker = HeldConfirms.Registered();
+        using var mq = await AceMqConnection.ConnectAsync(broker.Url);
+
+        mq.Intercept(new RefusesOne("three"));
+        var publisher = mq.Publisher<string>("orders", "order.placed");
+        var payloads = new[] { "one", "two", "three", "four", "five" };
+
+        var batch = publisher.SendAllAsync(payloads);
+
+        // Four, not five: the refused one never reached the broker, and the rest
+        // were not abandoned because of it.
+        await Await(broker.WhenSent(4), "the messages that were not refused");
+        for (var i = 0; i < 4; i++) broker.Confirm(i, ConfirmResult.Ok(true));
+
+        var failure = await Assert.ThrowsAsync<PublishFailedException>(
+            () => Await(batch, "the batch to fail"));
+
+        Assert.StartsWith("1 of 5 messages were not confirmed; 4 were.", failure.Message);
+        Assert.Contains("refusing three", failure.Message);
+    }
+
+    [Fact]
     public async Task RejectsANullBatch()
     {
         var broker = HeldConfirms.Registered();
@@ -149,6 +203,47 @@ public sealed class BatchPublishTests
         var publisher = mq.Publisher<string>("orders", "order.placed");
 
         await Assert.ThrowsAsync<ArgumentNullException>(() => publisher.SendAllAsync(null!));
+    }
+
+    /// <summary>Counts the three moments of the publish chain.</summary>
+    private sealed class CountingInterceptor : PublishInterceptor
+    {
+        private int _before;
+        private int _confirms;
+        private int _errors;
+
+        internal int Before => Volatile.Read(ref _before);
+        internal int Confirms => Volatile.Read(ref _confirms);
+        internal int Errors => Volatile.Read(ref _errors);
+
+        public override PublishContext BeforePublish(PublishContext context)
+        {
+            Interlocked.Increment(ref _before);
+            return context;
+        }
+
+        public override void AfterConfirm(PublishContext context, PublishResult result) =>
+            Interlocked.Increment(ref _confirms);
+
+        public override void OnError(PublishContext context, Exception failure) =>
+            Interlocked.Increment(ref _errors);
+    }
+
+    /// <summary>A policy gate that lets everything through but one payload.</summary>
+    private sealed class RefusesOne : PublishInterceptor
+    {
+        private readonly string _refused;
+        internal RefusesOne(string refused) => _refused = refused;
+
+        public override PublishContext BeforePublish(PublishContext context)
+        {
+            if (Equals(context.Payload, _refused))
+            {
+                throw new InvalidOperationException("refusing " + _refused);
+            }
+
+            return context;
+        }
     }
 
     private static async Task<T> Await<T>(Task<T> task, string what)

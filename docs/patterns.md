@@ -188,43 +188,22 @@ id is the idempotency key.
 
 ## Interceptors
 
-For the concerns that belong to every message rather than to one call site: a tenant
-header, an audit trail, a policy check on what goes out.
+For the concerns that belong to every message rather than to one call site — a
+tenant header, an audit trail, a policy check on what goes out — there is a seam
+around every publish and every handled message.
 
 ```csharp
 mq.Intercept(new TenantStamp(tenant));      // publishes
 mq.Intercept(new AuditTrail(audit));        // handled messages
 ```
 
-Inherit `PublishInterceptor` or `ConsumeInterceptor` and override what you care
-about — C# interfaces cannot carry default implementations on `netstandard2.0`, and
-VB cannot use them at all, so the base classes are what save you writing two empty
-methods.
+They are a mechanism rather than a pattern, and they have a page of their own:
+**[interceptors](interceptors.md)** — what each side can and cannot change, where
+the chain sits relative to the codec and the telemetry span, what throwing does in
+each of the six places, and how they behave in a batch publish.
 
-```csharp
-sealed class TenantStamp : PublishInterceptor
-{
-    public override PublishContext BeforePublish(PublishContext context) =>
-        context.WithEnvelope(/* the envelope with a header added */);
-}
-```
-
-**Only the envelope can be changed.** Not the payload, not the destination. An
-interceptor that could rewrite either would be able to send a message somewhere the
-caller never asked for — a surprising amount of power for something usually added to
-attach a header.
-
-Interceptors are taken when a publisher is created, so register them at start-up.
-One added later does not apply to publishers that already exist, which is deliberate:
-otherwise two identical publishers would behave differently for reasons nothing in
-the code shows.
-
-**An interceptor that throws after a confirm does not fail the publish.** The broker
-already has the message; reporting a failure would have the caller send it twice.
-`BeforePublish` is different — it runs before anything is sent, so a throw there does
-stop the publish, which is what makes a policy check possible.
-
-`Order` decides the sequence, lowest first.
+A pipeline is the alternative when the concern belongs to one handler rather than
+to every message on the connection.
 
 ## Routing slips
 

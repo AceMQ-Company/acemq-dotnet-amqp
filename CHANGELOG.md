@@ -8,6 +8,38 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **Interceptors have a documentation page of their own, `docs/interceptors.md`,
+  and the section in `docs/patterns.md` is now a pointer at it.** They were
+  described only as one section of a patterns catalogue, which is the wrong shelf
+  for a cross-cutting mechanism: somebody adding a tenant header to every message
+  is not reading about sagas and routing slips, and Python and Ruby have shipped a
+  page for this since their own docs were written. The new page says what each
+  side can and cannot change — the publish chain may replace the envelope and
+  nothing else, and the consume chain may change nothing at all — where each chain
+  sits relative to the codec and the telemetry span, what throwing does in each of
+  the six places it can be done, and what happens in a batch publish.
+
+  Three things it documents were true before and written down nowhere. An
+  interceptor rebuilding an envelope gets no copy constructor and no `SetHeader`,
+  so `Envelope.Of(...)` starts from the builder's defaults and silently drops every
+  header and field not carried across by hand; the page gives the full-copy idiom.
+  A consume interceptor that throws is not contained — unlike the publish side's
+  after-hooks, which are swallowed — so it escapes past the retry ladder to the
+  transport and becomes a plain redelivery that advances no attempt counter and
+  eventually gives up on nothing. And the `Ack` handed to `AfterHandle` is what the
+  handler asked for rather than what the consumer did with it, so a last attempt
+  that was dead-lettered is reported by an interceptor as a retry; Python's
+  `when_settled` and Ruby's `Settlement` close that gap and this library has no
+  equivalent, which the page says rather than works around.
+
+- **`BatchPublishTests` covers what interceptors do in a pipelined batch.** The
+  behaviour was a consequence of the rewrite below and nothing asserted it: the
+  chain runs once per message, every `BeforePublish` in the batch completes before
+  the first confirm is awaited, and a `BeforePublish` that throws fails that one
+  message and leaves the rest of the batch to be published and counted.
+
 ### Changed
 
 - **`IPublisher<T>.SendAllAsync` publishes the whole batch before it awaits any

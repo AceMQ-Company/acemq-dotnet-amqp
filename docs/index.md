@@ -61,8 +61,13 @@ otherwise have reached a release. See [VB.NET](vbnet.md).
 | Security | TLS verified by default, private CAs, client certificates, credential providers, and development certificates the library refuses unless told |
 | Reliability | retry policies with jitter, idempotency, drain before shutdown |
 | Metrics and tracing | the same metric names as Java; a trace crosses the broker and the language |
+| Interceptors | a seam around every publish and every handled message, for what belongs to all of them |
 | Transports | RabbitMQ, and an in-process broker for tests |
 | The envelope | identity, correlation, causation, attempt, origin — pinned by conformance tests |
+
+One of those is a mechanism rather than a feature: [interceptors](interceptors.md)
+are where a tenant header, an audit trail or a policy check on what may be
+published goes, instead of into every call site.
 
 ## Why the envelope came first
 

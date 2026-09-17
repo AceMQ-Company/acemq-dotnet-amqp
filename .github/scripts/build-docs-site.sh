@@ -152,6 +152,7 @@ NAV='<nav class="top">
       <a href="consuming.html">Consuming</a>
       <a href="topology.html">Exchanges, queues and bindings</a>
       <a href="envelope.html">The envelope</a>
+      <a href="interceptors.html">Interceptors</a>
       <a href="testing.html">Testing</a>
     </div>
   </div>
