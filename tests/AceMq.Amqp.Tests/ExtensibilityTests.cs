@@ -313,6 +313,135 @@ public sealed class ExtensibilityTests : IDisposable
         Assert.Equal(new[] { "before", "after:Accept" }, seen.Take(2).ToArray());
     }
 
+    /// <summary>
+    /// A consume interceptor that throws refuses the message, and the message is
+    /// dead-lettered with the reason on it.
+    /// </summary>
+    /// <remarks>
+    /// Up to this release the exception escaped the retry ladder entirely: it reached
+    /// the transport, which turned it into a bare <c>Ack.Retry</c>. No attempt
+    /// advanced — a requeue hands back the bytes the broker was given — so the same
+    /// message came round for ever with nothing counting it and nothing giving up on
+    /// it. Go dead-letters a refusal and counts it; this is that behaviour.
+    /// </remarks>
+    [Fact]
+    public async Task DeadLettersAMessageAConsumeInterceptorRefused()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        var later = new ConsumeRecorder(new ConcurrentQueue<string>());
+        mq.Intercept(new RefusesEverything());
+        mq.Intercept(later);
+        await mq.DeclareQueueAsync(_q);
+
+        var handled = 0;
+        using var consumer = await mq.ConsumeAsync<Order>(_q, _ =>
+        {
+            Interlocked.Increment(ref handled);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        await mq.Publisher<Order>("", _q).SendAsync(new Order { Id = "A-5", Total = 1m });
+
+        var dead = await mq.Transport.ReceiveAsync(
+            Naming.DeadLetterQueue(_q), TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        Assert.NotNull(dead);
+        Assert.Equal(
+            "an interceptor refused it: this message belongs to somebody else",
+            dead!.Headers[AceHeaders.Error].ToString());
+
+        // The handler never ran, and neither did the interceptor registered after the
+        // one that refused.
+        Assert.Equal(0, handled);
+        Assert.Empty(later.Seen);
+
+        // Republished and then acknowledged, so nothing is left going round.
+        Assert.Equal(0, await mq.MessageCountAsync(_q));
+    }
+
+    /// <summary>
+    /// A throw from <c>AfterHandle</c> cannot change what already happened.
+    /// </summary>
+    /// <remarks>
+    /// The worse of the two after-the-fact hooks: the handler has finished and
+    /// whatever it did is done. A retry would do it again and a dead-letter would
+    /// file a message that was handled perfectly well, so the disposition the handler
+    /// asked for stands.
+    /// </remarks>
+    [Fact]
+    public async Task DoesNotChangeTheOutcomeBecauseAnInterceptorThrewAfterTheHandler()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        mq.Intercept(new ThrowsAfterHandle());
+        await mq.DeclareQueueAsync(_q);
+
+        var handled = 0;
+        using var consumer = await mq.ConsumeAsync<Order>(_q, _ =>
+        {
+            Interlocked.Increment(ref handled);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        await mq.Publisher<Order>("", _q).SendAsync(new Order { Id = "A-6", Total = 1m });
+
+        await Eventually(() => Volatile.Read(ref handled) >= 1, "the handler to run");
+        await Task.Delay(200);
+
+        // Once, not once per redelivery, and nothing was set aside.
+        Assert.Equal(1, Volatile.Read(ref handled));
+        Assert.Equal(0, await mq.MessageCountAsync(_q));
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+    }
+
+    /// <summary>A throw from <c>OnError</c> does not replace the handler's failure.</summary>
+    [Fact]
+    public async Task KeepsTheHandlersFailureWhenOnErrorThrows()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        mq.Intercept(new ThrowsOnError());
+        await mq.DeclareQueueAsync(_q);
+
+        var attempts = new ConcurrentQueue<string>();
+        using var consumer = await mq.ConsumeAsync<Order>(
+            _q,
+            ConsumerOptions.Defaults().WithRetry(
+                RetryPolicy.Fixed(2, TimeSpan.FromMilliseconds(5))),
+            message =>
+            {
+                attempts.Enqueue(message.Envelope.Id);
+                throw new InvalidOperationException("the database is down");
+            });
+
+        await mq.Publisher<Order>("", _q).SendAsync(new Order { Id = "A-7", Total = 1m });
+
+        var dead = await mq.Transport.ReceiveAsync(
+            Naming.DeadLetterQueue(_q), TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        // The reason names what the handler could not do, not what the interceptor
+        // could not do about it.
+        Assert.NotNull(dead);
+        Assert.Contains("the database is down", dead!.Headers[AceHeaders.Error].ToString());
+        Assert.Equal(2, attempts.Count);
+    }
+
+    private sealed class RefusesEverything : ConsumeInterceptor
+    {
+        public override void BeforeHandle(ConsumeContext context) =>
+            throw new InvalidOperationException("this message belongs to somebody else");
+    }
+
+    private sealed class ThrowsAfterHandle : ConsumeInterceptor
+    {
+        public override void AfterHandle(ConsumeContext context, Ack ack) =>
+            throw new InvalidOperationException("the audit log is down");
+    }
+
+    private sealed class ThrowsOnError : ConsumeInterceptor
+    {
+        public override void OnError(ConsumeContext context, Exception failure) =>
+            throw new InvalidOperationException("the audit log is down too");
+    }
+
     private sealed class TenantStamp : PublishInterceptor
     {
         private readonly string _tenant;
@@ -345,6 +474,7 @@ public sealed class ExtensibilityTests : IDisposable
     {
         private readonly ConcurrentQueue<string> _seen;
         internal ConsumeRecorder(ConcurrentQueue<string> seen) => _seen = seen;
+        internal ConcurrentQueue<string> Seen => _seen;
         public override void BeforeHandle(ConsumeContext context) => _seen.Enqueue("before");
         public override void AfterHandle(ConsumeContext context, Ack ack) => _seen.Enqueue("after:" + ack.Kind);
     }

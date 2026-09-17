@@ -352,15 +352,54 @@ public sealed class AceMqConnection : IDisposable
                 // Continues the publisher's trace, which reaches here through the
                 // traceparent header the envelope already reserves -- including from
                 // a Java publisher, which writes the same header.
+                //
+                // Started before the interceptors rather than after, so a refusal
+                // below has a span to close and to tag with the outcome. Nothing
+                // about the handler's own timing changes: the clock still starts
+                // after the chain has run.
+                using var span = AceMqTelemetry.StartConsume(queue, envelope, delivery.Headers);
+
                 IConsumeInterceptor[] interceptors;
                 lock (_consumeInterceptors) interceptors = _consumeInterceptors.ToArray();
                 var interceptorContext = new ConsumeContext(queue, envelope, payload);
                 foreach (var interceptor in interceptors)
                 {
-                    interceptor.BeforeHandle(interceptorContext);
+                    try
+                    {
+                        interceptor.BeforeHandle(interceptorContext);
+                    }
+                    catch (Exception e)
+                    {
+                        // A refusal, and a first-class outcome rather than an
+                        // exception escaping into the transport. The handler has not
+                        // run and will not; the message is dead-lettered with the
+                        // reason on it and counted as dead_lettered, which is what Go
+                        // does and what the other three agree with. Retrying would be
+                        // pointless -- an interceptor that says no to this message
+                        // says no to it again -- and up to this release the exception
+                        // reached the transport and became a bare requeue: no attempt
+                        // advance, no dead-letter, no outcome recorded, and a
+                        // redelivery loop with nothing bounding it.
+                        var refused = await RefuseAsync(
+                                queue, ladder, delivery, envelope, e, span)
+                            .ConfigureAwait(false);
+
+                        // The claim is taken above, before the chain runs. A refused
+                        // message never reached a handler, so holding its key would
+                        // make a later replay of the dead letter look like a duplicate.
+                        if (options.Idempotency != null)
+                        {
+                            await options.Idempotency.ReleaseAsync(envelope.Id)
+                                .ConfigureAwait(false);
+                        }
+
+                        RecordConsume(
+                            queue, envelope, attempt, refused.Ack, refused.Outcome,
+                            TimeSpan.Zero, span);
+                        return refused.Ack;
+                    }
                 }
 
-                using var span = AceMqTelemetry.StartConsume(queue, envelope, delivery.Headers);
                 var clock = System.Diagnostics.Stopwatch.StartNew();
                 AceMqTelemetry.EnteredHandler();
                 Interlocked.Increment(ref _inFlightHandlers);
@@ -378,7 +417,8 @@ public sealed class AceMqConnection : IDisposable
                 {
                     foreach (var interceptor in interceptors)
                     {
-                        interceptor.OnError(interceptorContext, e);
+                        Tell(queue, envelope, interceptor, "OnError",
+                            () => interceptor.OnError(interceptorContext, e));
                     }
                     ack = options.RequeueOnFailure
                         ? Ack.Release()
@@ -392,7 +432,8 @@ public sealed class AceMqConnection : IDisposable
 
                 foreach (var interceptor in interceptors)
                 {
-                    interceptor.AfterHandle(interceptorContext, ack);
+                    Tell(queue, envelope, interceptor, "AfterHandle",
+                        () => interceptor.AfterHandle(interceptorContext, ack));
                 }
 
                 if (options.Idempotency != null)
@@ -429,6 +470,90 @@ public sealed class AceMqConnection : IDisposable
         var consumer = new MessageConsumer(subscription);
         lock (_owned) _owned.Add(consumer);
         return consumer;
+    }
+
+    /// <summary>
+    /// Dead-letters a message a consume interceptor refused.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Dead-lettered rather than retried, because an interceptor that says no to a
+    /// message will say no to it again and a retry ladder would only spend five
+    /// attempts finding that out. Counted as <c>dead_lettered</c> rather than
+    /// <c>rejected</c>, which is the one thing that separates this from
+    /// <see cref="AckKind.DeadLetter"/>: that is a decision a handler took about a
+    /// message it read, and this is the engine setting a message aside before
+    /// anything read it.
+    /// </para>
+    /// <para>
+    /// The reason is Go's, word for word — <c>an interceptor refused it: …</c> — so
+    /// an operator draining a dead-letter queue fed by services in two languages
+    /// reads one sentence rather than two.
+    /// </para>
+    /// </remarks>
+    private async Task<Settled> RefuseAsync(
+        string queue, RetryLadder ladder, InboundDelivery delivery, Envelope envelope,
+        Exception failure, System.Diagnostics.Activity? span)
+    {
+        var said = string.IsNullOrEmpty(failure.Message)
+            ? failure.GetType().Name
+            : failure.Message;
+        var reason = "an interceptor refused it: " + said;
+
+        AceMqDiagnostics.Report(
+            AceMqDiagnostics.DeadLettered, DiagnosticLevel.Warning,
+            reason, queue, ladder.DeadLetterQueue, envelope.Id, envelope.Attempt, failure);
+
+        AceMqTelemetry.MessageDeadLettered(span, ladder.DeadLetterQueue, reason);
+
+        var buried = await MoveAsync(
+                ladder.DeadLetterQueue, delivery, envelope.WithError(reason))
+            .ConfigureAwait(false);
+        return new Settled(buried, MetricNames.OutcomeDeadLettered);
+    }
+
+    /// <summary>
+    /// Tells an interceptor something that has already happened, and absorbs a throw.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IConsumeInterceptor.AfterHandle"/> is the worse of the two, and the
+    /// reason this exists. By the time it runs the handler has finished: rows are
+    /// written, an email is sent, a payment is taken. Turning a throw there into a
+    /// retry would run all of that a second time, and turning it into a dead-letter
+    /// would file a message that was handled perfectly well. Neither is an
+    /// improvement on a message that was already dealt with, so the disposition the
+    /// handler asked for stands and the exception is reported rather than acted on —
+    /// the same rule the publish side's <c>AfterConfirm</c> has always followed, for
+    /// the same reason.
+    /// </para>
+    /// <para>
+    /// <see cref="IConsumeInterceptor.OnError"/> is the same case one step earlier:
+    /// it is told the handler failed, and a throw from it must not replace the
+    /// failure the handler actually had.
+    /// </para>
+    /// <para>
+    /// <see cref="IConsumeInterceptor.BeforeHandle"/> is deliberately not routed
+    /// through here. Nothing has happened yet when it runs, so a refusal there is a
+    /// decision worth honouring — see <see cref="RefuseAsync"/>.
+    /// </para>
+    /// </remarks>
+    private static void Tell(
+        string queue, Envelope envelope, IConsumeInterceptor interceptor,
+        string moment, Action tell)
+    {
+        try
+        {
+            tell();
+        }
+        catch (Exception e)
+        {
+            AceMqDiagnostics.Report(
+                AceMqDiagnostics.InterceptorFailed, DiagnosticLevel.Warning,
+                $"{interceptor.GetType().Name}.{moment} threw, which cannot change what " +
+                $"already happened to this message: {e.Message}",
+                queue, null, envelope.Id, envelope.Attempt, e);
+        }
     }
 
     /// <summary>

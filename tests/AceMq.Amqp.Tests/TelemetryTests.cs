@@ -140,6 +140,46 @@ public sealed class TelemetryTests : IDisposable
             m.Name == MetricNames.ConsumeDuration && m.Tags[MetricNames.TagQueue] == _q);
     }
 
+    /// <summary>
+    /// A consume interceptor's refusal is counted as <c>dead_lettered</c>.
+    /// </summary>
+    /// <remarks>
+    /// The number Go records for the same refusal, and one that did not exist here at
+    /// all: the exception escaped into the transport, became a plain requeue and was
+    /// counted as nothing. A queue whose messages were all being refused looked
+    /// perfectly idle on every panel while the same message went round for ever.
+    /// </remarks>
+    [Fact]
+    public async Task CountsAMessageAnInterceptorRefusedAsDeadLettered()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        mq.Intercept(new Refuser());
+        await mq.DeclareQueueAsync(_q);
+
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q, _ => Task.FromResult(Ack.Accept()));
+        await mq.Publisher<string>("", _q).SendAsync("hello");
+
+        await Eventually(
+            () => Taken().Any(m => m.Name == MetricNames.ConsumeTotal
+                                   && m.Tags[MetricNames.TagQueue] == _q),
+            "the refusal to be counted");
+
+        var consumed = Taken().First(
+            m => m.Name == MetricNames.ConsumeTotal && m.Tags[MetricNames.TagQueue] == _q);
+        Assert.Equal(MetricNames.OutcomeDeadLettered, consumed.Tags[MetricNames.TagOutcome]);
+
+        // And it reaches the one counter an operator alerts on.
+        Assert.Contains(Taken(), m =>
+            m.Name == MetricNames.DeadLetteredTotal && m.Tags[MetricNames.TagQueue] == _q);
+    }
+
+    private sealed class Refuser : ConsumeInterceptor
+    {
+        public override void BeforeHandle(ConsumeContext context) =>
+            throw new InvalidOperationException("not for this process");
+    }
+
     [Fact]
     public async Task CarriesTheTraceFromThePublisherToTheConsumer()
     {

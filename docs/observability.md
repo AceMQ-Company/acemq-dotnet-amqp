@@ -43,8 +43,9 @@ publishes by outcome dropped every refusal.
 
 Consume outcomes are `acked`, `retried`, `rejected`, `dead_lettered` and `parked`.
 **`rejected` is a handler's own decision — `Ack.DeadLetter`, or a release — and
-`dead_lettered` is the engine giving up when a `RetryPolicy` runs out of attempts.**
-Both messages end in the same dead-letter queue; only the word keeps them apart, and
+`dead_lettered` is the engine giving up — a `RetryPolicy` out of attempts, or a
+consume interceptor refusing the message before the handler ran.** Both messages
+end in the same dead-letter queue; only the word keeps them apart, and
 the difference is the only question the two counts are ever asked: an unprocessable
 message is a producer problem, an exhausted policy is usually a dependency that is
 down. **`parked` is a message nothing could read** — `Ack.Park`, or a body that will

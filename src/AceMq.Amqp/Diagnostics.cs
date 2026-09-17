@@ -152,6 +152,19 @@ public static class AceMqDiagnostics
     /// <summary>A broker wait was asked for and no rung existed to spend it in.</summary>
     public const string RungMissing = "acemq.retry.rung.missing";
 
+    /// <summary>
+    /// An interceptor threw somewhere the exception could not be allowed to matter.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IConsumeInterceptor.AfterHandle"/> and
+    /// <see cref="IConsumeInterceptor.OnError"/> are told what already happened. The
+    /// handler has run, the message is on its way somewhere, and letting a failure
+    /// there change the outcome would undo work that is already done. The exception
+    /// is swallowed and reported here instead — which is the only record it left,
+    /// and the reason this event exists.
+    /// </remarks>
+    public const string InterceptorFailed = "acemq.interceptor.failed";
+
     /// <summary>A saga step failed and the steps before it are being undone.</summary>
     public const string SagaCompensating = "acemq.saga.compensating";
 

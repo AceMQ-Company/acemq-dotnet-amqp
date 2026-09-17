@@ -123,17 +123,20 @@ a slip nor can disturb one.
 
 ## What a consume interceptor can change
 
-Nothing. `BeforeHandle` returns `void` and `ConsumeContext` — `Queue`, `Envelope`,
-`Payload` — is read-only throughout. On this side the mechanism observes; it does
-not intercept.
+Nothing about the message. `BeforeHandle` returns `void` and `ConsumeContext` —
+`Queue`, `Envelope`, `Payload` — is read-only throughout.
 
-That is worth saying plainly, because it rules out the things people arrive
-looking for: a header added on the way in so the handler and any dead letter both
-carry it, a payload decrypted or redacted before the handler sees it, a filter
-that swallows a message without running the handler. None of those can be written
-as a consume interceptor here. Python and Ruby can do all three; this library
-cannot, and a [pipeline](patterns.md#pipelines) around the one handler that needs
-it is the way to get there today.
+What it *can* do is refuse the message: throwing from `BeforeHandle` stops the
+handler running and dead-letters the delivery with the reason on it, which is
+[described below](#throwing-means-different-things-in-different-places) and is
+the same thing a Go consume interceptor does by returning an error.
+
+That still rules out two of the three things people arrive looking for: a header
+added on the way in so the handler and any dead letter both carry it, and a
+payload decrypted or redacted before the handler sees it. Neither can be written
+as a consume interceptor here. Python and Ruby can do both; this library cannot,
+and a [pipeline](patterns.md#pipelines) around the one handler that needs it is
+the way to get there today.
 
 ## Where each chain sits
 
@@ -155,16 +158,18 @@ metric.
 On a consume:
 
 ```
-decode  →  idempotency claim  →  BeforeHandle  →  span starts  →  handler
-                                                  →  OnError (it threw)
-                                                  →  AfterHandle  →  settle
+decode  →  idempotency claim  →  span starts  →  BeforeHandle  →  handler
+                                                 (or refuse)   →  OnError (it threw)
+                                                               →  AfterHandle  →  settle
 ```
 
-The same asymmetry, and a sharper one: the consume span is started **after** the
-body has been decoded and after `BeforeHandle` has run, so an interceptor on this
-side cannot enrich the consume span either, and decode time is in neither the span
-nor `acemq.consume.duration`. If you are adding an interceptor to measure how long
-a message takes, what you will measure is the handler and not the delivery. See
+The consume span is started **after** the body has been decoded and **before** the
+chain runs, so an interceptor on this side runs inside it — a refusal has a span
+to close and tag `dead_lettered`, which is why it is started there. Decode time is
+in neither the span nor `acemq.consume.duration`, and `acemq.consume.duration`
+still starts after the chain has run: time spent in `BeforeHandle` is not counted
+as time the handler took. If you are adding an interceptor to measure how long a
+message takes, what you will measure is the handler and not the delivery. See
 [metrics and tracing](observability.md#tracing) for what is measured instead.
 
 Two deliveries never reach the chain at all:
@@ -207,16 +212,43 @@ already has the message; reporting a failure would have the caller send it a
 second time. An interceptor that must not lose an audit record has to make that
 record durable itself.
 
-**From anywhere in a consume interceptor it is not contained.** `BeforeHandle`,
-`AfterHandle` and `OnError` are called without a `try`, so an exception escapes
-past the retry ladder to the transport, which nacks the delivery for a plain
-redelivery a few seconds later. No attempt counter is advanced, no outcome is
-recorded, nothing is dead-lettered — so an interceptor that always throws is an
-infinite redelivery loop rather than a message that eventually gives up. A
-throwing `AfterHandle` is the worse half: the handler has already run and its
-effects have already happened, and the message comes back to be handled again.
+**From `BeforeHandle` it refuses the message, which is dead-lettered.** The
+handler does not run, interceptors registered after the one that threw do not run,
+and the message goes to `{queue}.dlq` with the reason on its envelope:
 
-Keep the consume side's bodies inside a `try` of your own if they can fail.
+```
+an interceptor refused it: tenant "beta" is not served by this process
+```
+
+Dead-lettered rather than retried, because an interceptor that says no to a
+message will say no to it again and a retry ladder would only spend its attempts
+finding that out. It is counted as `dead_lettered` on `acemq.consume.total` and
+reaches `acemq.messages.dead.lettered.total` like any other give-up, and the
+`acemq.message.dead.lettered` [diagnostic event](observability.md) carries the
+exception. That is Go's behaviour, in Go's words, so an operator draining a
+dead-letter queue fed by services in two languages reads one sentence rather than
+two.
+
+Up to 0.6.0 this was the one hole in the ladder: the exception was not caught at
+all, so it reached the transport, which turned it into a bare requeue. No attempt
+counter advanced — a requeue hands back the bytes the broker was given — nothing
+was recorded and nothing gave up, so an interceptor that always threw was an
+infinite redelivery loop that no panel could see.
+
+**From `AfterHandle` or `OnError` on a consume it is swallowed**, the same as
+`AfterConfirm` on the publish side and for the same reason. `AfterHandle` is the
+case worth spelling out: by the time it runs the handler has finished and whatever
+it did is done — rows written, an email sent, a payment taken. Retrying would do
+all of that a second time and dead-lettering would file a message that was handled
+perfectly well, so **the disposition the handler asked for stands** and the
+delivery is settled exactly as it would have been. `OnError` is the same case one
+step earlier: a throw from it must not replace the failure the handler actually
+had, which is the one the message is dead-lettered or retried with.
+
+Neither is silent. Both report `acemq.interceptor.failed` through
+`AceMqDiagnostics` at warning level, naming the interceptor and the moment, and
+that report is the only record the exception leaves — so an interceptor that must
+not lose an audit record has to make that record durable itself.
 
 **`AceFatalException` from the handler skips `OnError`.** It is converted straight
 to a dead-letter, because it means an attempt that cannot be fixed by another

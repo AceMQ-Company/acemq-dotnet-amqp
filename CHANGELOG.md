@@ -25,12 +25,13 @@ While the version is `0.x` the public API may change in any release.
   interceptor rebuilding an envelope gets no copy constructor and no `SetHeader`,
   so `Envelope.Of(...)` starts from the builder's defaults and silently drops every
   header and field not carried across by hand; the page gives the full-copy idiom.
-  A consume interceptor that throws is not contained — unlike the publish side's
-  after-hooks, which are swallowed — so it escapes past the retry ladder to the
-  transport and becomes a plain redelivery that advances no attempt counter and
-  eventually gives up on nothing. And the `Ack` handed to `AfterHandle` is what the
-  handler asked for rather than what the consumer did with it, so a last attempt
-  that was dead-lettered is reported by an interceptor as a retry; Python's
+  A consume interceptor that throws was not contained — unlike the publish side's
+  after-hooks, which are swallowed — so it escaped past the retry ladder to the
+  transport and became a plain redelivery that advanced no attempt counter and
+  eventually gave up on nothing; the entry under **Changed** below is what closed
+  that, and the page describes the behaviour as it now is. And the `Ack` handed to
+  `AfterHandle` is what the handler asked for rather than what the consumer did
+  with it, so a last attempt that was dead-lettered is reported as a retry; Python's
   `when_settled` and Ruby's `Settlement` close that gap and this library has no
   equivalent, which the page says rather than works around.
 
@@ -41,6 +42,64 @@ While the version is `0.x` the public API may change in any release.
   message and leaves the rest of the batch to be published and counted.
 
 ### Changed
+
+- **A consume interceptor that throws from `BeforeHandle` now refuses the message,
+  and the message is dead-lettered. This changes what happens to a message.** The
+  three consume hooks were called with no `try` at all, so an exception from one
+  went straight past the retry ladder to the transport — which has no vocabulary
+  for it and turned it into a bare `Ack.Retry`. Nothing about that was a decision:
+  the attempt counter did not advance, because a requeue hands back the bytes the
+  broker was given; nothing was dead-lettered, because the ladder never saw it;
+  no outcome reached `acemq.consume.total` or the span; and the same message came
+  back a few seconds later to be refused again, for ever. A queue whose every
+  message was being refused looked perfectly idle on every panel.
+
+  A refusal is now a first-class outcome, and it is Go's, down to the wording. The
+  handler does not run, interceptors registered after the one that threw do not
+  run, and the message is republished to `{queue}.dlq` with
+
+  ```
+  an interceptor refused it: tenant "beta" is not served by this process
+  ```
+
+  on `x-acemq-error`. It is counted `dead_lettered` on `acemq.consume.total`,
+  reaches `acemq.messages.dead.lettered.total`, tags the span `dead_lettered` and
+  raises the `acemq.message.dead.lettered` diagnostic event with the exception
+  attached. Dead-lettered rather than retried because an interceptor that says no
+  to a message will say no to it again, and a ladder would only spend its attempts
+  finding that out. An idempotency claim taken before the chain ran is released, so
+  a later replay of that dead letter is not mistaken for a duplicate.
+
+  **`AfterHandle` and `OnError` go the other way: a throw from either is swallowed,
+  and the disposition the handler asked for stands.** `AfterHandle` is the case
+  that had to be decided explicitly, because it is the worse one — by the time it
+  runs the handler has finished and whatever it did is done. Rows are written, an
+  email is sent, a payment is taken. Turning that into a retry would do all of it
+  again, and turning it into a dead-letter would file a message that was handled
+  perfectly well; neither is an improvement on a message that has already been
+  dealt with. So the delivery settles exactly as it would have, which is the same
+  rule the publish side's `AfterConfirm` has always followed. `OnError` is the same
+  case one step earlier: it is told the handler failed, and a throw from it must
+  not replace the failure the message is actually retried or dead-lettered with.
+
+  Neither is silent. Both report the new `AceMqDiagnostics.InterceptorFailed`
+  event — `acemq.interceptor.failed` — at warning level, naming the interceptor and
+  which moment threw, with the exception attached. That report is the only record
+  the exception leaves, so an interceptor that must not lose an audit record still
+  has to make that record durable itself.
+
+  **What a caller must do about it:** an interceptor that was throwing from
+  `BeforeHandle` as a way of rejecting a message was, until now, asking for an
+  endless redelivery. It now dead-letters that message, which is almost certainly
+  what was wanted — but if something downstream was relying on the message coming
+  back round, it will not. An interceptor that threw from `AfterHandle` by accident
+  was silently causing every message it touched to be handled repeatedly; that
+  stops, and the throws appear on `acemq.interceptor.failed` instead.
+
+  The consume span now starts **before** the interceptor chain rather than after
+  it, so a refusal has a span to close and to tag. `acemq.consume.duration` is
+  unaffected: its clock still starts after the chain has run, so time spent in
+  `BeforeHandle` is not counted as time the handler took.
 
 - **The RabbitMQ transport no longer holds its publish lock while it waits for a
   confirm, so batch publishing finally buys the throughput it has always claimed
