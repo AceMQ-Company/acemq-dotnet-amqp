@@ -41,7 +41,7 @@ these do — four of them, in order, each ending with something that runs, and c
 retries, dead-lettering, idempotency, the outbox and observability against a real
 broker.
 
-The [interop harness](../../acemq-amqp-libraries/scripts/dotnet/interop) is the other
-thing worth seeing: a Java service publishes, this library consumes, and every
-envelope field is checked. It is not in this repository because it needs the Java
-library built alongside it.
+The interop harness is the other thing worth seeing: a Java service publishes, this
+library consumes, and every envelope field is checked. It is not in this repository,
+and not linked from it either, because it needs the Java library checked out and
+built alongside this one.

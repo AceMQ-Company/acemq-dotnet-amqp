@@ -10,6 +10,40 @@ While the version is `0.x` the public API may change in any release.
 
 ### Added
 
+- **The documentation build now fails on a link that does not resolve, anchors
+  included.** Nothing checked before, which is how the other libraries in this
+  family each published a dead link at least once. Every internal `href` on a
+  rendered page must land on a file the site actually contains, and every
+  `#fragment` must match an `id` on the page it points at — the second half is the
+  one that matters, because a renamed heading leaves a link that still returns 200
+  and drops the reader at the top of the page instead of the section they asked
+  for. Same-page links are checked the same way; `#section` is the commonest form
+  and the first casualty of a rename. Links that climb out of `site/` are refused
+  outright rather than resolved against the disk, because `../README.md` is written
+  by somebody reading `docs/` on GitHub and the site has no such file. External
+  schemes are left alone, and so is the DocFX reference under `apidocs/`: its own
+  anchors are that tool's business, though a link from a prose page into it is
+  still checked to land somewhere real.
+
+  It lives in `.github/scripts/build-docs-site.sh` rather than in the docs
+  workflow, so that a local build says exactly what CI says. Put in the workflow it
+  would only ever speak after a push.
+
+  On its first run the rendered site was clean: 23 pages, 730 anchors, nothing
+  dangling. The same sweep over the repository's other markdown was not: the
+  interop harness in `examples/README.md` was linked as
+  `../../acemq-amqp-libraries/scripts/dotnet/interop`, a path into the private
+  development workspace that resolves nowhere in a clone and was a 404 for every
+  reader it ever had. The sentence now describes the harness without pretending
+  there is somewhere to click.
+
+  There is no badge check here, unlike the Ruby library's version of this pass.
+  That one exists because YARD renders whatever it finds as `README*` as the API
+  reference's index unless argued out of it, and that is how six shields.io images
+  reached a published page. DocFX has no equivalent default — `etc/apidocs/docfx.json`
+  names its content file by file — and pandoc renders `docs/*.md` and nothing else,
+  so no tool here can pick up the README on its own.
+
 - **Interceptors have a documentation page of their own, `docs/interceptors.md`,
   and the section in `docs/patterns.md` is now a pointer at it.** They were
   described only as one section of a patterns catalogue, which is the wrong shelf

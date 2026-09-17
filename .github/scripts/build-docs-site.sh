@@ -252,6 +252,93 @@ else
   exit 1
 fi
 
+# A published page linking to a 404 is a failure this site family has had before,
+# and it went unnoticed because nothing checked. Cheap to check, so it is checked.
+#
+# This runs here rather than in the docs workflow so that a local build says the
+# same thing CI does. The sibling repositories that put the equivalent in
+# .github/workflows/docs.yml only learn about a dead link after a push.
+#
+# There is no badge check here, unlike the Ruby library's version of this pass.
+# That check exists because YARD renders whatever it finds as README* as the API
+# reference's index unless told otherwise, and this repository's README opens with
+# six shields.io images; the tool's default is what put them on a published page.
+# DocFX has no such default: etc/apidocs/docfx.json names its content explicitly --
+# api/**.yml, api/index.md, toc.yml and index.md -- so the front page is
+# etc/apidocs/index.md and nothing else can drift into it. Pandoc likewise renders
+# docs/*.md and nothing else. A badge could only reach this site by somebody
+# pasting one into a page on purpose, which is a different problem from a tool
+# quietly picking up the wrong file.
+python3 - <<'PY'
+import os, re, sys
+
+SITE = "site"
+# The rendered prose pages. The API reference under apidocs/ is DocFX's output:
+# its own links and anchors are that tool's homework, not this script's. Links
+# *into* it from these pages are still checked -- that a navigation entry lands
+# on a file that exists is exactly the failure this repository has had.
+pages = sorted(f for f in os.listdir(SITE) if f.endswith(".html"))
+APIDOCS = os.path.join(SITE, "apidocs") + os.sep
+
+_ids = {}
+def ids(path):
+    if path not in _ids:
+        body = open(path, encoding="utf-8", errors="replace").read()
+        _ids[path] = set(re.findall(r'\bid="([^"]+)"', body))
+    return _ids[path]
+
+broken, dangling, anchors = [], [], 0
+for page in pages:
+    body = open(os.path.join(SITE, page), encoding="utf-8", errors="replace").read()
+    for href in re.findall(r'href="([^"]+)"', body):
+        if href.startswith(("http://", "https://", "mailto:")):
+            continue
+        target, _, fragment = href.partition("#")
+        # No target means the link is to a section of the page it is written on.
+        path = os.path.join(SITE, target) if target else os.path.join(SITE, page)
+        if target:
+            # A link that climbs out of site/ is unservable however it resolves
+            # on this disk: ../README.md is the usual way in, written by somebody
+            # reading docs/ on GitHub, where the repository root is one level up
+            # and the site is not. Refused before the existence check, which
+            # would otherwise pass it whenever the file happens to sit there.
+            if os.path.relpath(path, SITE).startswith(os.pardir):
+                broken.append(f"{page} -> {href}")
+                continue
+            if not os.path.exists(path):
+                broken.append(f"{page} -> {href}")
+                continue
+            if os.path.isdir(path):
+                path = os.path.join(path, "index.html")
+                if not os.path.exists(path):
+                    broken.append(f"{page} -> {href}")
+                    continue
+        if not fragment or path.startswith(APIDOCS):
+            continue
+        # A dead anchor on a live page is a 200 that lands in the wrong place, so
+        # a file-existence check cannot see it: rename a heading and pandoc
+        # renames its id with it, leaving every link written against the old
+        # spelling silently pointing at the top of the page. Same-page links are
+        # checked too -- href="#section" is the commonest form and the one most
+        # often left behind by a rename.
+        anchors += 1
+        if fragment not in ids(path):
+            dangling.append(f"{page} -> {href}")
+
+if broken:
+    print("::error::the site links to pages that do not exist:")
+    for b in broken:
+        print("  " + b)
+if dangling:
+    print("::error::the site links to anchors that do not exist:")
+    for d in dangling:
+        print("  " + d)
+if broken or dangling:
+    sys.exit(1)
+print(f"{len(pages)} pages, every internal link resolves "
+      f"and all {anchors} anchors exist")
+PY
+
 # Jekyll would otherwise skip javadoc's underscore-prefixed resources.
 touch "$OUT/.nojekyll"
 
