@@ -39,15 +39,26 @@ While the version is `0.x` the public API may change in any release.
   `docs/serialization.md` gains a **Schema resolution** section carrying the
   cross-language wording the other four libraries also carry, with the rule, the
   five-language table and the pointer at the fixture, and a .NET closing on the
-  three calls that decide it.
+  three calls that decide it. That table was reproduced verbatim from Java and
+  arrived carrying Java's stale .NET row — "Always | The codec is constructed with
+  a schema", written before the opt-out existed and contradicted by the .NET prose
+  directly beneath it. It now reads "By default", and names the two calls that
+  leave this library somewhere other than its default. The Go, Java, Python and
+  Ruby rows are unchanged.
 
-  One note for whoever regenerates the fixture. Its entry for this library reads
-  "the codec is constructed with a schema, so there is always one to resolve onto",
-  and its entry for Java claims Java "is the only one of the five that shows both
-  columns". Both were written before `WithoutReaderSchema()` landed. The column is
-  still right as this library's default — that is asserted — but "always" is now
-  "unless asked otherwise", and the tests below it are .NET showing both columns.
-  Nothing about the decoded values differs from what the fixture records.
+  The note this entry used to carry for whoever regenerates the fixture has been
+  answered. Its entry for this library read "the codec is constructed with a
+  schema, so there is always one to resolve onto", and its entry for Java claimed
+  Java "is the only one of the five that shows both columns" — both written before
+  `WithoutReaderSchema()` landed. Java has regenerated the fixture and this library
+  carries the new copy. The correction is prose only: the two cases, their bodies,
+  their schema ids and both columns' values are unchanged, so the conformance tests
+  pass untouched. This library's `why` now reads "there is always one to resolve
+  onto -- unless the caller declines it", names `Registered(registry, schema,
+  readerSchema)` and `WithoutReaderSchema()`, and ends "resolved is .NET's default,
+  not the only answer it has". The `resolved` column is still this library's and
+  still asserted; what changed is that the fixture no longer calls it the only
+  answer.
 
 - **The documentation build now fails on a link that does not resolve, anchors
   included.** Nothing checked before, which is how the other libraries in this
@@ -82,6 +93,30 @@ While the version is `0.x` the public API may change in any release.
   reached a published page. DocFX has no equivalent default — `etc/apidocs/docfx.json`
   names its content file by file — and pandoc renders `docs/*.md` and nothing else,
   so no tool here can pick up the README on its own.
+
+- **The documentation build now also checks the links in `docs/*.md` themselves,
+  before it renders anything.** The check above reads the rendered site, and the
+  build rewrites `page.md` to `page.html` on the way there, so by the time that
+  check runs the difference between a link written correctly and one written as
+  `.html` has been erased — both arrive as `page.html`, and both pass. It is not a
+  gap in how thoroughly the site is checked; it is a question no site-scoped check
+  can be asked. Java found this the expensive way, with 75 cross-page links written
+  as `.html`: correct on the published site, 404 for everyone reading `docs/` on
+  GitHub, and invisible to a full link-and-anchor pass over the rendered output.
+
+  So the source is checked on its own terms. Every `](target)` in `docs/*.md` that
+  is not external, `mailto:` or a bare `#fragment` must exist as a file inside
+  `docs/`. A `.html` target is reported as "a docs page link belongs in .md" rather
+  than as a missing file, because that is what it is and the fix is different.
+  `apidocs/` is exempt: DocFX writes that reference as HTML and it is `.html` in
+  the repository and on the site alike, so a link into it is right as written.
+
+  It runs first in the script, needing neither pandoc nor docfx — a bad link is
+  cheapest to find before a minute of rendering, and the build now stops before
+  `site/` is created rather than after. On its first run `docs/` was clean: 23
+  source pages, 66 internal links, every one resolving. This library had been
+  writing them as `.md` throughout, which is why the site check never had anything
+  to hide — but nothing had been enforcing it.
 
 - **Interceptors have a documentation page of their own, `docs/interceptors.md`,
   and the section in `docs/patterns.md` is now a pointer at it.** They were
