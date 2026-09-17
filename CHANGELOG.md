@@ -43,6 +43,58 @@ While the version is `0.x` the public API may change in any release.
 
 ### Changed
 
+- **Avro schema resolution has a name and an opt-out. `AvroCodec.ReaderSchema`,
+  `Registered(registry, schema, readerSchema)` and `WithoutReaderSchema()` are
+  new; the default is unchanged, and the reason it is unchanged is worth stating.**
+  A registered codec resolved every message onto the schema it was built with, and
+  did it unconditionally: the schema went in as the thing the codec *writes*, came
+  out as the thing every message is *read as*, and nothing named the second job or
+  let a caller decline it. A consumer that wanted to see exactly what a producer
+  sent — a bridge, an inspector, something draining a dead-letter queue full of
+  versions it was never compiled against — could not ask for it at any price.
+
+  The concept is now called the reader schema, which is what it is called in the
+  other four: Java's `registered(registry, readerSchema)`, Python's
+  `reader_schema`, Ruby's `reader_schema:` and Go's `ReaderSchema`. It is readable
+  as `AvroCodec.ReaderSchema`, and there are three ways to set it.
+
+  ```csharp
+  // Resolve onto the schema this codec writes. The default, unchanged.
+  AvroCodec.Registered(registry, schemaJson);
+
+  // Resolve onto a different one, for a service that publishes one version and
+  // consumes another. Only `schema` is registered. Java's two-argument form.
+  AvroCodec.Registered(registry, publishedJson, consumedJson);
+
+  // Do not resolve at all: read every message with the shape its writer gave it.
+  // ReaderSchema is null. Java's and Go's behaviour when no reader schema is given.
+  AvroCodec.Registered(registry, schemaJson).WithoutReaderSchema();
+  ```
+
+  **The default is deliberately not a behaviour change, and the five do not agree
+  on it.** Java and Go read with the writer's shape unless a reader schema is
+  asked for; Python and Ruby resolve onto the codec's own schema unless
+  `reader_schema` says otherwise, which is exactly what this library has always
+  done. There is no default .NET can take that makes all five the same, so
+  changing it would have traded agreement with two libraries for agreement with
+  two others and broken every existing caller on the way past. The naming converges
+  — which was the part that could converge — and the capability that was missing is
+  there.
+
+  **What a caller must write:** nothing, to keep what they have.
+  `AvroCodec.Registered(registry, schema)` resolves onto `schema` exactly as
+  before, and `AvroCodec.Of(schema)` is untouched — a fixed codec has no framing
+  and so no writer's schema to read with, and `WithoutReaderSchema()` on one throws
+  saying so rather than quietly doing nothing. To get the behaviour that was not
+  available before, add `.WithoutReaderSchema()`.
+
+  One internal change comes with it: the reflection cache that maps a plain class
+  onto a schema is now kept per schema rather than per type. It had to be — with
+  resolution off, a type is read against a different schema for every version on
+  the queue, and one cache mapped onto one schema would map the class onto fields
+  it does not have. Nothing about the default path changes; the cache it uses is
+  loaded from the same schema it always was.
+
 - **A consume interceptor that throws from `BeforeHandle` now refuses the message,
   and the message is dead-lettered. This changes what happens to a message.** The
   three consume hooks were called with no `try` at all, so an exception from one

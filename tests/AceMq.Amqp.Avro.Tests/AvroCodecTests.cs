@@ -16,6 +16,7 @@ using System.Data.Common;
 using System.Text;
 using AceMq.Amqp;
 using Microsoft.Data.Sqlite;
+using AvroSchema = global::Avro.Schema;
 
 namespace AceMq.Amqp.Avro.Tests;
 
@@ -49,6 +50,9 @@ public sealed class AvroCodecTests : IDisposable
         {""name"":""orderId"",""type"":""string""},
         {""name"":""totalCents"",""type"":""long""},
         {""name"":""tenant"",""type"":""string"",""default"":""""}]}";
+
+    /// <summary>V1 as Avro renders it back, for comparing a parsed schema against.</summary>
+    private static readonly string V1Parsed = AvroSchema.Parse(V1).ToString();
 
     private readonly string _db = "Data Source=file:" + Guid.NewGuid().ToString("N") + "?mode=memory&cache=shared";
     private SqliteConnection? _keepAlive;
@@ -189,6 +193,88 @@ public sealed class AvroCodecTests : IDisposable
         var second = codec.Encode(AnOrder());
 
         Assert.Equal(first.Take(5), second.Take(5));
+    }
+
+    // ---- the reader schema -----------------------------------------------
+
+    [Fact]
+    public void ResolvesOntoTheCodecsOwnSchemaUnlessToldOtherwise()
+    {
+        // The default, and the same default Python's reader_schema and Ruby's
+        // reader_schema: have. The name is what changed here, not the behaviour.
+        var registry = Registry();
+        var codec = AvroCodec.Registered(registry, V1);
+
+        Assert.NotNull(codec.ReaderSchema);
+        Assert.Equal(codec.Schema.ToString(), codec.ReaderSchema!.ToString());
+    }
+
+    [Fact]
+    public void ReadsOntoASchemaOtherThanTheOneItWrites()
+    {
+        // A service that publishes one version and consumes another. Java spells this
+        // registered(registry, readerSchema); only `schema` is registered.
+        var registry = Registry();
+
+        var producer = AvroCodec.Registered(registry, V2);
+        var wire = producer.Encode(new OrderPlacedV2
+        {
+            orderId = "A-1", totalCents = 4250, tenant = "acme",
+        });
+
+        var consumer = AvroCodec.Registered(registry, V2, V1);
+        Assert.Equal(V1Parsed, consumer.ReaderSchema!.ToString());
+
+        var back = (OrderPlaced)consumer.Decode(wire, typeof(OrderPlaced));
+        Assert.Equal("A-1", back.orderId);
+        Assert.Equal(4250, back.totalCents);
+    }
+
+    [Fact]
+    public void ReadsWithTheWritersShapeWhenResolutionIsDeclined()
+    {
+        // The opt-out. A message written as V2 arrives as V2, fields and all, even
+        // though this codec writes V1 -- which is what a bridge or a dead-letter
+        // drainer wants and what no amount of configuration could ask for before.
+        var registry = Registry();
+
+        var producer = AvroCodec.Registered(registry, V2);
+        var wire = producer.Encode(new OrderPlacedV2
+        {
+            orderId = "A-1", totalCents = 4250, tenant = "acme",
+        });
+
+        var asWritten = AvroCodec.Registered(registry, V1).WithoutReaderSchema();
+        Assert.Null(asWritten.ReaderSchema);
+
+        var back = (OrderPlacedV2)asWritten.Decode(wire, typeof(OrderPlacedV2));
+        Assert.Equal("A-1", back.orderId);
+        Assert.Equal("acme", back.tenant);
+    }
+
+    [Fact]
+    public void LeavesTheCodecItWasAskedOfAlone()
+    {
+        // A new codec, not a mutation: the one already handed to a connection keeps
+        // resolving.
+        var registry = Registry();
+        var resolving = AvroCodec.Registered(registry, V1);
+        var asWritten = resolving.WithoutReaderSchema();
+
+        Assert.NotNull(resolving.ReaderSchema);
+        Assert.Null(asWritten.ReaderSchema);
+        Assert.True(asWritten.IsRegistered);
+        Assert.Equal(resolving.Schema.ToString(), asWritten.Schema.ToString());
+    }
+
+    [Fact]
+    public void RefusesToDeclineResolutionOnAFixedSchemaCodec()
+    {
+        // Nothing is framed, so there is no writer's schema to read with and the
+        // codec's own is the only one there is. Saying so beats quietly doing
+        // nothing under a name that promises something.
+        var error = Assert.Throws<AceFatalException>(() => AvroCodec.Of(V1).WithoutReaderSchema());
+        Assert.Contains("no writer's schema to read with", error.Message);
     }
 
     [Fact]

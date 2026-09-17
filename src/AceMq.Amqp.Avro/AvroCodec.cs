@@ -51,6 +51,20 @@ namespace AceMq.Amqp.Avro;
 /// Avro body — the layout Confluent's clients use, and the same bytes the Java
 /// library writes. Messages written here can be read by either.
 /// </para>
+/// <para>
+/// <strong>The reader schema.</strong> Resolution has two halves: the schema the
+/// writer used, which comes off the registry, and the schema this consumer was
+/// written against, which is <see cref="ReaderSchema"/>. Given both, Avro reconciles
+/// them — a field the writer added is skipped and a field the writer never wrote is
+/// filled in from the reader schema's default — so the handler sees the shape it was
+/// compiled against whichever version produced the message. By default the reader
+/// schema is the one this codec was built with, which is what Python's
+/// <c>reader_schema</c> and Ruby's <c>reader_schema:</c> also default to.
+/// <see cref="Registered(ISchemaRegistry, Schema, Schema)"/> names a different one,
+/// which is Java's <c>registered(registry, readerSchema)</c>, and
+/// <see cref="WithoutReaderSchema"/> turns resolution off altogether so every message
+/// is read with the shape its writer gave it.
+/// </para>
 /// </remarks>
 public sealed class AvroCodec : ICodec
 {
@@ -64,13 +78,26 @@ public sealed class AvroCodec : ICodec
     private const int FrameSize = 5;
 
     private readonly Schema _schema;
+    private readonly Schema? _readerSchema;
     private readonly ISchemaRegistry? _registry;
-    private readonly ClassCache _cache = new ClassCache();
-    private readonly Dictionary<Type, bool> _loaded = new Dictionary<Type, bool>();
 
-    private AvroCodec(Schema schema, ISchemaRegistry? registry)
+    /// <summary>
+    /// One reflection cache per type and schema it was mapped onto.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by the schema as well as the type, because there is now more than one
+    /// schema a type can be read against: the codec's own, a reader schema given
+    /// explicitly, or — with resolution off — whatever the writer used, which is a
+    /// different schema for every version on the queue. One cache mapped onto one
+    /// schema and reused for all of them would map a class onto fields it does not
+    /// have.
+    /// </remarks>
+    private readonly Dictionary<string, ClassCache> _caches = new Dictionary<string, ClassCache>();
+
+    private AvroCodec(Schema schema, Schema? readerSchema, ISchemaRegistry? registry)
     {
         _schema = schema ?? throw new ArgumentNullException(nameof(schema));
+        _readerSchema = readerSchema;
         _registry = registry;
     }
 
@@ -80,7 +107,7 @@ public sealed class AvroCodec : ICodec
     /// Otherwise a producer adding a field silently changes what older consumers
     /// read.
     /// </remarks>
-    public static AvroCodec Of(Schema schema) => new AvroCodec(schema, null);
+    public static AvroCodec Of(Schema schema) => new AvroCodec(schema, schema, null);
 
     /// <summary>One schema, parsed from its JSON.</summary>
     public static AvroCodec Of(string schemaJson) =>
@@ -90,7 +117,8 @@ public sealed class AvroCodec : ICodec
     /// Writes a schema identifier into each message, and resolves it on the way back.
     /// </summary>
     /// <param name="registry">Where schemas are registered and looked up.</param>
-    /// <param name="schema">The schema this codec writes, and reads into.</param>
+    /// <param name="schema">The schema this codec writes, and the reader schema every
+    /// message is resolved onto unless one of the two calls below says otherwise.</param>
     /// <remarks>
     /// The registry has to be shared across processes for this to mean anything. An
     /// <see cref="InMemorySchemaRegistry"/> issues ids per process, so a message
@@ -98,13 +126,92 @@ public sealed class AvroCodec : ICodec
     /// use <c>DbSchemaRegistry</c> or your own.
     /// </remarks>
     public static AvroCodec Registered(ISchemaRegistry registry, Schema schema) =>
-        new AvroCodec(schema, registry ?? throw new ArgumentNullException(nameof(registry)));
+        new AvroCodec(schema, schema, registry ?? throw new ArgumentNullException(nameof(registry)));
 
     public static AvroCodec Registered(ISchemaRegistry registry, string schemaJson) =>
         Registered(registry, Schema.Parse(schemaJson ?? throw new ArgumentNullException(nameof(schemaJson))));
 
+    /// <summary>
+    /// As <see cref="Registered(ISchemaRegistry, Schema)"/>, but reading every message
+    /// against a schema other than the one it writes.
+    /// </summary>
+    /// <param name="registry">Where schemas are registered and looked up.</param>
+    /// <param name="schema">The schema this codec writes. Only this one is registered.</param>
+    /// <param name="readerSchema">The schema this consumer was written against, which
+    /// every message is resolved onto.</param>
+    /// <remarks>
+    /// For a service that publishes one version and consumes another. Java spells this
+    /// <c>registered(registry, readerSchema)</c>, Python <c>reader_schema=</c>, Ruby
+    /// <c>reader_schema:</c> and Go <c>ReaderSchema</c>; it is the same concept under
+    /// the same name in all five.
+    /// </remarks>
+    public static AvroCodec Registered(
+        ISchemaRegistry registry, Schema schema, Schema readerSchema) =>
+        new AvroCodec(
+            schema,
+            readerSchema ?? throw new ArgumentNullException(nameof(readerSchema)),
+            registry ?? throw new ArgumentNullException(nameof(registry)));
+
+    public static AvroCodec Registered(
+        ISchemaRegistry registry, string schemaJson, string readerSchemaJson) =>
+        Registered(
+            registry,
+            Schema.Parse(schemaJson ?? throw new ArgumentNullException(nameof(schemaJson))),
+            Schema.Parse(readerSchemaJson ?? throw new ArgumentNullException(nameof(readerSchemaJson))));
+
+    /// <summary>
+    /// The same codec with resolution switched off: every message is read with the
+    /// shape its writer gave it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The opt-out, and the reason <see cref="ReaderSchema"/> is nullable. Resolution
+    /// is the right default and is on without being asked for, but it is a choice, and
+    /// until now it was one a caller could not decline: whatever schema the codec was
+    /// built with was imposed on every message, so a consumer that wanted to see
+    /// exactly what a producer sent — a bridge, an inspector, a dead-letter drainer
+    /// reading versions it was never compiled against — had no way to ask for it.
+    /// Java and Go have always let a registered codec read without a reader schema;
+    /// this is that.
+    /// </para>
+    /// <para>
+    /// What it costs is the thing resolution buys. A field the writer added arrives
+    /// rather than being skipped, and a field the writer has not started sending is
+    /// absent rather than taking the reader schema's default — so the target type has
+    /// to match what the writer actually wrote, version by version.
+    /// </para>
+    /// </remarks>
+    /// <returns>A codec reading with the writer's schema. This one is unchanged.</returns>
+    /// <exception cref="AceFatalException">
+    /// on a fixed-schema codec, which has no writer schema to read with: nothing is
+    /// framed, so the only schema on hand is the codec's own.
+    /// </exception>
+    public AvroCodec WithoutReaderSchema()
+    {
+        if (_registry == null)
+        {
+            throw new AceFatalException(
+                "a fixed-schema codec has no writer's schema to read with: an unframed " +
+                "message carries no identifier, so the schema this codec was built with " +
+                "is the only one there is. Build it with Registered(...) to read what " +
+                "each writer actually wrote.");
+        }
+        return new AvroCodec(_schema, null, _registry);
+    }
+
     /// <summary>The schema this codec writes.</summary>
     public Schema Schema => _schema;
+
+    /// <summary>
+    /// The schema every message is resolved onto, or null when resolution is off.
+    /// </summary>
+    /// <remarks>
+    /// The same schema as <see cref="Schema"/> unless
+    /// <see cref="Registered(ISchemaRegistry, Schema, Schema)"/> named a different one,
+    /// and null after <see cref="WithoutReaderSchema"/>, which reads every message with
+    /// the writer's own shape instead.
+    /// </remarks>
+    public Schema? ReaderSchema => _readerSchema;
 
     /// <summary>Whether each message carries a schema identifier.</summary>
     public bool IsRegistered => _registry != null;
@@ -207,39 +314,53 @@ public sealed class AvroCodec : ICodec
         {
             return new GenericDatumWriter<object>(_schema);
         }
-        return new ReflectWriterAdapter(type, _schema, Cache(type));
-    }
-
-    private DatumReader<object> ReaderFor(Type type, Schema writerSchema)
-    {
-        if (typeof(ISpecificRecord).IsAssignableFrom(type))
-        {
-            return new SpecificDatumReader<object>(writerSchema, _schema);
-        }
-        if (typeof(GenericRecord).IsAssignableFrom(type))
-        {
-            return new GenericDatumReader<object>(writerSchema, _schema);
-        }
-        return new ReflectReaderAdapter(type, writerSchema, _schema, Cache(type));
+        return new ReflectWriterAdapter(type, _schema, Cache(type, _schema));
     }
 
     /// <summary>
-    /// The reflection cache, loaded once per type.
+    /// The reader for a message, given the schema its writer used.
+    /// </summary>
+    /// <remarks>
+    /// The reader schema is <see cref="ReaderSchema"/>, and the writer's own when
+    /// that is null. Handing Avro the same schema twice is what "no resolution"
+    /// means to it: there is nothing to reconcile, so the bytes are read exactly as
+    /// they were written.
+    /// </remarks>
+    private DatumReader<object> ReaderFor(Type type, Schema writerSchema)
+    {
+        var readerSchema = _readerSchema ?? writerSchema;
+
+        if (typeof(ISpecificRecord).IsAssignableFrom(type))
+        {
+            return new SpecificDatumReader<object>(writerSchema, readerSchema);
+        }
+        if (typeof(GenericRecord).IsAssignableFrom(type))
+        {
+            return new GenericDatumReader<object>(writerSchema, readerSchema);
+        }
+        return new ReflectReaderAdapter(
+            type, writerSchema, readerSchema, Cache(type, readerSchema));
+    }
+
+    /// <summary>
+    /// The reflection cache for one type read against one schema, loaded once.
     /// </summary>
     /// <remarks>
     /// Loading it maps the class's members onto the schema's fields. Doing that per
     /// message would put reflection on the hot path for a result that never changes.
     /// </remarks>
-    private ClassCache Cache(Type type)
+    private ClassCache Cache(Type type, Schema schema)
     {
-        lock (_loaded)
+        var key = type.AssemblyQualifiedName + " " + schema;
+        lock (_caches)
         {
-            if (!_loaded.ContainsKey(type))
+            if (!_caches.TryGetValue(key, out var cache))
             {
-                _cache.LoadClassCache(type, _schema);
-                _loaded[type] = true;
+                cache = new ClassCache();
+                cache.LoadClassCache(type, schema);
+                _caches[key] = cache;
             }
-            return _cache;
+            return cache;
         }
     }
 
@@ -278,8 +399,12 @@ public sealed class AvroCodec : ICodec
         public object Read(object reuse, Decoder decoder) => _reader.Read(reuse, decoder);
     }
 
-    public override string ToString() =>
-        _registry != null
-            ? $"AvroCodec[registered, {SubjectOf(_schema)}]"
-            : $"AvroCodec[fixed, {SubjectOf(_schema)}]";
+    public override string ToString()
+    {
+        if (_registry == null) return $"AvroCodec[fixed, {SubjectOf(_schema)}]";
+        var reading = _readerSchema == null
+            ? "as written"
+            : $"onto {SubjectOf(_readerSchema)}";
+        return $"AvroCodec[registered, {SubjectOf(_schema)}, reading {reading}]";
+    }
 }
