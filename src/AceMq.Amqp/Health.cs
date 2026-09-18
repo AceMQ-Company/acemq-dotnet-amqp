@@ -19,6 +19,27 @@ using System.Linq;
 namespace AceMq.Amqp;
 
 /// <summary>Whether something is working.</summary>
+/// <remarks>
+/// <para>
+/// <b>The name collides with <c>Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus</c></b>,
+/// and the collision has a sharp edge worth knowing about. Inside a namespace that is
+/// itself under <c>AceMq.Amqp</c> — <c>AceMq.Amqp.Hosting</c>, say — the enclosing
+/// namespace beats a file-level <c>using HealthStatus = …</c> alias, so an unqualified
+/// <c>HealthStatus</c> resolves to this one however the file aliases it. Code outside
+/// <c>AceMq.Amqp.*</c> is unaffected: there the alias wins as written.
+/// </para>
+/// <para>
+/// Alias both, or alias this one and leave the framework's bare:
+/// <code>
+/// using AceHealthStatus = AceMq.Amqp.HealthStatus;
+/// using HealthStatus = Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus;
+/// </code>
+/// The two are not interchangeable in any case: this one is Up/Degraded/Down, the
+/// framework's is Healthy/Degraded/Unhealthy, and the mapping between them is a
+/// decision rather than a rename — see <see cref="AceMqConnection.Health"/> on why a
+/// blocked connection is not Degraded here.
+/// </para>
+/// </remarks>
 public enum HealthStatus
 {
     Up,

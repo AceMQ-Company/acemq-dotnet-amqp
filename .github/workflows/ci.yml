@@ -153,6 +153,7 @@ jobs:
         ports:
           - 5672:5672
         options: >-
+          --name acemq-ci-rabbit
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
           --health-timeout 5s
@@ -173,6 +174,13 @@ jobs:
       - name: Test against RabbitMQ
         env:
           ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
+          # How the suite reaches rabbitmqctl, which AMQP offers no equivalent of and
+          # which the blocked-connection test needs: it drops the memory high
+          # watermark until the broker really blocks the connection, asserts what the
+          # health report says about it, and puts the watermark back. The service
+          # container is given a fixed --name above so this line can address it; a
+          # test that could only assert on a flag it set itself would prove nothing.
+          ACEMQ_TEST_RABBITMQCTL: docker exec acemq-ci-rabbit rabbitmqctl
         run: >
           dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
           --configuration Release --verbosity normal

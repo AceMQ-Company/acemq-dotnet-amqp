@@ -230,9 +230,16 @@ using var actuator = AceMqActuator.Start(mq);
 Namespaced so they cannot collide with an application's own `/metrics` or `/health`.
 Port 9464 by default, the OpenTelemetry Prometheus convention.
 
-`/acemq-health` answers **503 when the connection is closed or the broker has blocked
-it**, so a Kubernetes probe or a load balancer reads the status code without parsing
-the body.
+`/acemq-health` answers **503 only when something is down** — in practice, a connection
+that is not open — so a Kubernetes probe or a load balancer reads the status code
+without parsing the body.
+
+A connection the broker has **blocked** answers **200, with `blocked` and
+`blockedReason` in the body**. Blocking is the broker protecting itself under memory or
+disk pressure; failing the probe for it gets the application restarted into the same
+blocked broker, having thrown away whatever it was holding. Alert on the body, not on
+the status code. The Java library's Spring Boot health indicator reports it the same
+way, for the same reason.
 
 No ASP.NET Core, no OpenTelemetry, no beta package — it reads the meter through
 `MeterListener`, which is part of the runtime.

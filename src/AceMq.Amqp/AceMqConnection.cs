@@ -964,9 +964,30 @@ public sealed class AceMqConnection : IDisposable
     /// The health of the connection and everything registered with it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The worst report wins. Ordered queues register themselves, so a halted
     /// partition shows up here — which matters, because a halted partition is a
     /// consumer that has stopped without the connection or the process noticing.
+    /// </para>
+    /// <para>
+    /// Down means the connection is not open. <b>A broker applying back pressure is
+    /// reported as up, with the reason</b>, and that is a deliberate choice: a blocked
+    /// connection is the broker protecting itself, usually from disk or memory
+    /// pressure, and an application that fails its own health check for it is an
+    /// application an orchestrator restarts into the same blocked broker, having
+    /// thrown away whatever it was holding. The Java library's Spring Boot health
+    /// indicator reports it the same way, for the same reason, and
+    /// <c>acemq-go-amqp/docs/lifecycle.md</c> documents the trap.
+    /// </para>
+    /// <para>
+    /// Up to 0.6.0 this reported <see cref="HealthStatus.Degraded"/> for a blocked
+    /// connection. Because <see cref="AggregateHealth"/> takes the worst report, that
+    /// reading overruled any more careful one a caller had composed alongside it. A
+    /// caller that wants the old reading back can produce it from
+    /// <see cref="IsBlocked"/> and <see cref="BlockedReason"/> in an
+    /// <see cref="IHealthContributor"/> of its own — where it is that application's
+    /// policy rather than this library's, and where it can be registered or not.
+    /// </para>
     /// </remarks>
     public AggregateHealth Health()
     {
@@ -984,7 +1005,7 @@ public sealed class AceMqConnection : IDisposable
         if (BlockedReason != null) connection["blockedReason"] = BlockedReason;
         reports.Add(new HealthReport(
             "connection",
-            !IsOpen ? HealthStatus.Down : IsBlocked ? HealthStatus.Degraded : HealthStatus.Up,
+            IsOpen ? HealthStatus.Up : HealthStatus.Down,
             connection));
 
         List<IHealthContributor> contributors;

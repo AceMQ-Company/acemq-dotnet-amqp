@@ -175,3 +175,69 @@ A halted partition reports **Degraded, not Down**, and the actuator answers 200 
 it. The other partitions are still working, and a process that reports itself down
 gets restarted — which loses the held message and fixes nothing. Down is reserved
 for a connection that is actually closed.
+
+### A blocked connection is Up, with the reason
+
+RabbitMQ blocks a connection when it is low on memory or disk. The `connection` report
+says **Up**, with `blocked` and `blockedReason` among its details:
+
+```csharp
+var connection = mq.Health().Reports.Single(r => r.Name == "connection");
+connection.Status                          // Up
+connection.Details["blocked"]              // "true"
+connection.Details["blockedReason"]        // "low on memory"
+```
+
+Back pressure is the broker protecting itself. An application that fails its own health
+check for it is an application an orchestrator restarts into the same blocked broker,
+having thrown away whatever it was holding — and a fleet doing that together stops
+draining the queues at the moment the broker most needs them drained. Java's Spring
+Boot health indicator reports it the same way, and `acemq-go-amqp`'s lifecycle guide
+documents the same trap.
+
+This changed in 0.7.0; before it, the connection report said Degraded. Because an
+aggregate takes the **worst** report, that reading overruled any more careful one a
+caller composed alongside it, and callers were reconstructing the connection report by
+hand to get out of its way. To get the old reading back, make it your own policy:
+
+```csharp
+sealed class BlockedIsDegraded : IHealthContributor
+{
+    private readonly AceMqConnection _mq;
+    public BlockedIsDegraded(AceMqConnection mq) => _mq = mq;
+
+    public string Name => "broker-pressure";
+
+    public HealthReport Report() =>
+        _mq.IsBlocked
+            ? new HealthReport(Name, HealthStatus.Degraded,
+                new Dictionary<string, string> { ["reason"] = _mq.BlockedReason ?? "" })
+            : HealthReport.Up(Name);
+}
+
+mq.RegisterHealth(new BlockedIsDegraded(mq));
+```
+
+Registered, it is one component's opinion that a reader can see the name of, rather
+than a verdict on the connection itself that nothing can get out from under.
+
+### `HealthStatus` collides with the framework's
+
+`AceMq.Amqp.HealthStatus` and
+`Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus` share a name, and the
+collision has a sharp edge. **Inside a namespace that is itself under `AceMq.Amqp`**
+— `AceMq.Amqp.Hosting`, say — the enclosing namespace beats a file-level `using`
+alias, so an unqualified `HealthStatus` resolves to this library's however the file
+aliases it. Outside `AceMq.Amqp.*` the alias wins as written and there is nothing to
+think about.
+
+Alias both, or alias this one and leave the framework's bare:
+
+```csharp
+using AceHealthStatus = AceMq.Amqp.HealthStatus;
+using HealthStatus = Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus;
+```
+
+They are not interchangeable in any case: Up/Degraded/Down against
+Healthy/Degraded/Unhealthy, and the mapping between them is a decision — see above for
+why blocked is not Degraded here.

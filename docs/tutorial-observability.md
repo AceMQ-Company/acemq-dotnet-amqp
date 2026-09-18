@@ -58,11 +58,16 @@ curl -s localhost:9464/acemq-health
 ```
 
 ```json
-{"status":"UP","inFlight":0,"components":{"connection":{"status":"UP","open":"true","blocked":"false","transport":"rabbitmq","inFlight":"0"}}}
+{"status":"UP","inFlight":0,"components":{"connection":{"status":"UP","open":"true","blocked":"false","transport":"rabbitmq","inFlight":"0","held":"0"}}}
 ```
 
 Stop the broker and ask again: `503`, and `"status":"DOWN"`. A Kubernetes probe reads
 the status code without parsing anything.
+
+A broker that has run low on memory or disk blocks the connection instead, and that
+reports **UP with `blocked` and `blockedReason` set**. It is a real incident and worth
+an alert; it is not worth a restart, because the replacement connects to the same
+blocked broker having dropped whatever this instance was holding.
 
 Ordered queues register themselves here, so a halted partition shows up — which
 matters, because a halted partition is a consumer that stopped without the connection

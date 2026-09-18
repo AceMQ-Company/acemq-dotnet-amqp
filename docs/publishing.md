@@ -150,3 +150,7 @@ if (mq.IsBlocked) Console.WriteLine(mq.BlockedReason);
 ```
 
 A publish attempted on a blocked connection throws `ConnectionBlockedException`.
+
+`mq.Health()` reports a blocked connection as **Up, with the reason on it** — back
+pressure is worth an alert and is not worth a restart. See
+[a blocked connection is Up, with the reason](reliability.md#a-blocked-connection-is-up-with-the-reason).
