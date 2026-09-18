@@ -353,8 +353,125 @@ public sealed class ReliabilityTests : IDisposable
 
         Assert.True(drained);
         Assert.Equal(0, mq.InFlight);
+        Assert.Equal(0, mq.Held);
         Assert.Equal(1, finished);
         Assert.True(mq.IsConsumingPaused);
+    }
+
+    [Fact]
+    public async Task CountsADeliveryHeldAtThePauseGateSeparatelyFromOneInAHandler()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var handled = new ConcurrentQueue<string>();
+        using var consumer = await mq.ConsumeAsync<string>(_q, m =>
+        {
+            handled.Enqueue(m.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        mq.PauseConsuming();
+        await mq.Publisher<string>("", _q).SendAsync("held");
+
+        // Fetched and waiting, which is not the same as being in a handler. InFlight
+        // is incremented past this gate, so it alone reports nothing at all here --
+        // which is how a drain used to answer true over an unhandled message.
+        await Eventually(() => mq.Held == 1, "the delivery to reach the pause gate");
+        Assert.Equal(0, mq.InFlight);
+
+        mq.ResumeConsuming();
+        await Eventually(() => handled.Count == 1, "the held message after resuming");
+        Assert.Equal(0, mq.Held);
+    }
+
+    [Fact]
+    public async Task ADrainThatSucceedsCanStillHaveLeftAMessageUnhandled()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var handled = new ConcurrentQueue<string>();
+        using var consumer = await mq.ConsumeAsync<string>(_q, m =>
+        {
+            handled.Enqueue(m.Payload);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        mq.PauseConsuming();
+        await mq.Publisher<string>("", _q).SendAsync("held");
+        await Eventually(() => mq.Held == 1, "the delivery to reach the pause gate");
+
+        // True, and honestly so: every handler finished, because none started. What
+        // it does not mean is that every message the broker sent was handled -- one
+        // is sitting at the gate, fetched and untouched. That message is not lost; it
+        // was never acknowledged, so it goes back. But a caller deciding whether the
+        // shutdown was clean needs to be told, and Held is what tells it.
+        Assert.True(await mq.DrainConsumersAsync(TimeSpan.FromMilliseconds(200)));
+        Assert.Equal(0, mq.InFlight);
+        Assert.Equal(1, mq.Held);
+        Assert.Empty(handled);
+    }
+
+    [Fact]
+    public async Task CancellingADrainAbandonsTheWaitAndNotTheMessages()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<string>(_q, async _ =>
+        {
+            started.TrySetResult(true);
+            await release.Task;
+            return Ack.Accept();
+        });
+
+        await mq.Publisher<string>("", _q).SendAsync("slow");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var cancel = new CancellationTokenSource();
+        var drain = mq.DrainConsumersAsync(TimeSpan.FromMinutes(5), cancel.Token);
+        cancel.CancelAfter(TimeSpan.FromMilliseconds(100));
+
+        // Throws rather than returning false, because the two are different events:
+        // false is this connection saying it was given long enough, and a caller that
+        // cannot tell them apart logs the wrong one.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => drain);
+
+        // The wait was abandoned. The work was not: the handler is still running, it
+        // was never interrupted, and consuming stays paused rather than handing more
+        // messages to a process that is leaving.
+        Assert.Equal(1, mq.InFlight);
+        Assert.True(mq.IsConsumingPaused);
+
+        release.TrySetResult(true);
+        await Eventually(() => mq.InFlight == 0, "the handler to finish anyway");
+    }
+
+    [Fact]
+    public async Task DrainsToCompletionWhenTheTokenIsNeverCancelled()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var finished = 0;
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<string>(_q, async _ =>
+        {
+            started.TrySetResult(true);
+            await Task.Delay(200);
+            Interlocked.Increment(ref finished);
+            return Ack.Accept();
+        });
+
+        await mq.Publisher<string>("", _q).SendAsync("slow");
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        using var cancel = new CancellationTokenSource();
+        Assert.True(await mq.DrainConsumersAsync(TimeSpan.FromSeconds(5), cancel.Token));
+        Assert.Equal(1, finished);
     }
 
     [Fact]

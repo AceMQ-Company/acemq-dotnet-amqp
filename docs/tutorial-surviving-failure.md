@@ -136,6 +136,17 @@ Drain stops new messages being handed over and waits for the ones in progress. I
 returns `false` rather than throwing when it runs out of time — shutting down anyway
 is a legitimate choice, and you need to know which one you are making.
 
+Under an orchestrator, pass its token and let it bound the wait:
+
+```csharp
+var drained = await mq.DrainConsumersAsync(TimeSpan.FromSeconds(30), stoppingToken);
+```
+
+Cancelling gives you your deadline back; it does not cancel the handlers, which run on
+to their own ends. And `true` means every handler finished, which is not quite the same
+as every message being handled — `mq.Held` is the rest of that answer. See
+[shutting down](reliability.md#shutting-down).
+
 ## What you have
 
 Bounded retries, a dead-letter queue that exists, a way to put messages back, and a

@@ -52,6 +52,11 @@ public sealed class AceMqConnection : IDisposable
     // connections in one process must be drainable independently; waiting on the
     // global number makes draining one block on the other's traffic.
     private long _inFlightHandlers;
+
+    // Deliveries fetched from the broker that are sitting at the pause gate: past
+    // the decode, not yet in a handler. Counted separately from the handlers
+    // because the two mean different things to a drain -- see Held.
+    private long _heldDeliveries;
     private bool _disposed;
 
     private AceMqConnection(
@@ -321,12 +326,27 @@ public sealed class AceMqConnection : IDisposable
                 // Held here rather than rejected, so a paused consumer keeps its
                 // place in the queue and resumes with the same message instead of
                 // cycling it to the back.
+                //
+                // Counted while it waits, because InFlight is incremented past this
+                // gate and so reports nothing about a delivery stuck at it. One
+                // sitting here has been fetched and not handled, which is a different
+                // fact from a handler still running and is worth a caller being able
+                // to see -- see Held.
                 var paused = _consumingPaused;
                 if (paused != null)
                 {
-                    var resumed = await Task.WhenAny(paused.Task, Task.Delay(TimeSpan.FromSeconds(30)))
-                        .ConfigureAwait(false);
-                    if (resumed != paused.Task) return Ack.Release();
+                    Interlocked.Increment(ref _heldDeliveries);
+                    try
+                    {
+                        var resumed = await Task
+                            .WhenAny(paused.Task, Task.Delay(TimeSpan.FromSeconds(30)))
+                            .ConfigureAwait(false);
+                        if (resumed != paused.Task) return Ack.Release();
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _heldDeliveries);
+                    }
                 }
 
                 // Read off the wire, not counted here. A retry republishes with this
@@ -896,7 +916,44 @@ public sealed class AceMqConnection : IDisposable
     public bool IsPublishingPaused => _publishingPaused;
 
     /// <summary>Messages currently inside a handler on this connection.</summary>
+    /// <remarks>
+    /// Inside a handler, precisely. A delivery the broker has already sent that is
+    /// waiting at the pause gate is not counted here — it is counted by
+    /// <see cref="Held"/>, because the two mean different things when something is
+    /// deciding whether it is safe to shut down.
+    /// </remarks>
     public long InFlight => Interlocked.Read(ref _inFlightHandlers);
+
+    /// <summary>
+    /// Deliveries fetched from the broker that are waiting at the pause gate.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Zero unless <see cref="PauseConsuming"/> has been called. While paused, a
+    /// delivery that arrives is decoded and then held here rather than rejected, so
+    /// that resuming hands over the same message instead of cycling it to the back of
+    /// the queue. Nothing is lost either way — it was never acknowledged, so it is
+    /// redelivered here on resume or to another instance — but it has been fetched
+    /// and it has not been handled, and <see cref="InFlight"/> is incremented past
+    /// this gate and so says nothing about it.
+    /// </para>
+    /// <para>
+    /// Which is what this exists to say. <see cref="DrainConsumersAsync(TimeSpan)"/>
+    /// returning true means <em>every handler finished</em>, not <em>every message the
+    /// broker sent was handled</em>; the second number is this one, and before 0.7.0
+    /// there was no way to read it.
+    /// </para>
+    /// <para>
+    /// How many can accumulate is bounded by the transport's dispatch concurrency
+    /// rather than by the prefetch: the rest of a prefetch window stays in the
+    /// client's buffer undecoded. The other libraries answer this differently — Go
+    /// runs every fetched delivery through a handler, so a Go drain is bounded by the
+    /// prefetch instead; Python nacks the unstarted ones with requeue. All three end
+    /// with the message back on the broker and no half-done work; they differ in what
+    /// the shutdown costs and in what it claims. This one now claims the truth.
+    /// </para>
+    /// </remarks>
+    public long Held => Interlocked.Read(ref _heldDeliveries);
 
     /// <summary>
     /// Pauses consuming and waits for handlers already running to finish.
@@ -908,14 +965,58 @@ public sealed class AceMqConnection : IDisposable
     /// come back, but any side effect already applied has happened twice by the time
     /// they do. Draining first turns a rolling deploy into an orderly handover.
     /// </remarks>
-    public async Task<bool> DrainConsumersAsync(TimeSpan timeout)
+    public Task<bool> DrainConsumersAsync(TimeSpan timeout) =>
+        DrainConsumersAsync(timeout, CancellationToken.None);
+
+    /// <summary>
+    /// Pauses consuming and waits for handlers already running to finish, or until
+    /// the token is cancelled.
+    /// </summary>
+    /// <param name="timeout">How long to wait before giving up and answering false.</param>
+    /// <param name="cancellationToken">
+    /// Abandons the wait. It does not abandon the messages — see the remarks.
+    /// </param>
+    /// <returns>
+    /// True when every handler finished within the timeout; false otherwise. It does
+    /// not mean every message the broker sent was handled — read <see cref="Held"/>
+    /// for that.
+    /// </returns>
+    /// <exception cref="OperationCanceledException">The token was cancelled.</exception>
+    /// <remarks>
+    /// <para>
+    /// A drain is the operation an orchestrator bounds, so it takes the bound rather
+    /// than making every caller race it from outside. An overload rather than an
+    /// optional argument: the existing call still binds, and Visual Basic resolves
+    /// optional arguments differently enough that the audit rejects them.
+    /// </para>
+    /// <para>
+    /// <b>Cancelling abandons the wait, not the work.</b> Handlers still running are
+    /// not interrupted — nothing here can interrupt them — and consuming stays paused,
+    /// because resuming on the way out hands more messages to a process that is
+    /// leaving. What cancellation buys back is the caller's own deadline;
+    /// <see cref="InFlight"/> and <see cref="Held"/> then say what was left behind,
+    /// and those messages are unacknowledged, so the broker redelivers them.
+    /// </para>
+    /// <para>
+    /// Cancellation throws and the timeout returns false, deliberately: they are
+    /// different events. False is this connection's own answer — it was given long
+    /// enough and the handlers did not finish. Cancellation is the caller changing its
+    /// mind, and a caller that cannot tell the two apart logs the wrong one.
+    /// </para>
+    /// </remarks>
+    public async Task<bool> DrainConsumersAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         PauseConsuming();
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             if (InFlight == 0) return true;
-            await Task.Delay(25).ConfigureAwait(false);
+
+            // Cancellable, so the caller's deadline is honoured within a poll rather
+            // than at the end of the timeout it was given.
+            await Task.Delay(25, cancellationToken).ConfigureAwait(false);
         }
         return InFlight == 0;
     }
@@ -999,6 +1100,7 @@ public sealed class AceMqConnection : IDisposable
             ["blocked"] = IsBlocked ? "true" : "false",
             ["transport"] = TransportName,
             ["inFlight"] = InFlight.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["held"] = Held.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
         if (IsConsumingPaused) connection["consuming"] = "paused";
         if (IsPublishingPaused) connection["publishing"] = "paused";

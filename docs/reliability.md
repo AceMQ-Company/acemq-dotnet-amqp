@@ -145,16 +145,46 @@ returns **false** if they did not finish in time, rather than throwing — shutt
 down anyway is a legitimate choice, and the caller needs to know which one it is
 making.
 
+An orchestrator's deadline is not this timeout, so there is an overload that takes
+the orchestrator's token:
+
+```csharp
+await mq.DrainConsumersAsync(TimeSpan.FromSeconds(30), stoppingToken);
+```
+
+**Cancelling abandons the wait, not the work.** Handlers already running are not
+interrupted — nothing here can interrupt them — and consuming stays paused, because
+resuming on the way out hands more messages to a process that is leaving. Cancellation
+throws `OperationCanceledException` where the timeout returns `false`, deliberately:
+`false` is the library saying it was given long enough, cancellation is the caller
+changing its mind, and a caller that cannot tell them apart logs the wrong one.
+
 ```csharp
 mq.PauseConsuming();     // stop taking new work; nothing is lost
 mq.ResumeConsuming();    // the same message is handed over again
 mq.PausePublishing();    // further publishes throw PublishingPausedException
 mq.InFlight              // messages inside a handler right now
+mq.Held                  // fetched, waiting at the pause gate, never handled
 ```
 
 Pausing loses nothing. A message the broker has delivered but which was never handed
 to a handler stays unacknowledged, so it is redelivered — to this consumer when it
 resumes, or to another instance.
+
+### What a successful drain does and does not mean
+
+`true` means **every handler finished**. It does not mean every message the broker
+sent was handled: a delivery that arrived while paused is decoded and then held at the
+pause gate, and `InFlight` counts handlers, which that delivery never reached. `Held`
+is the number sitting there. Nothing is lost either way — none of them was
+acknowledged, so the broker redelivers them and no work was half done — but a caller
+deciding whether a shutdown was clean should read both.
+
+How many can pile up is bounded by the transport's dispatch concurrency, not by the
+prefetch: the rest of a prefetch window stays in the client's buffer undecoded. The
+other libraries differ here. Go runs every fetched delivery through a handler, so a Go
+drain is bounded by the **prefetch** and can be much longer; Python nacks the unstarted
+ones with requeue. All three end with the message back on the broker.
 
 ## Health
 
