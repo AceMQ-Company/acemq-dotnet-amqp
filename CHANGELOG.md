@@ -8,6 +8,119 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **`Health()` reports a blocked connection as `Up`, with the reason, where it used
+  to report `Degraded`. This is a behaviour change to a published API.** The
+  `connection` report's status is now `Down` when the connection is not open and `Up`
+  otherwise; `blocked` and `blockedReason` stay in its details, unchanged, and the
+  actuator still answers 200 as it did before.
+
+  RabbitMQ blocks a connection when it is low on memory or disk. That is the broker
+  protecting itself, and an application that fails its own health check for it is an
+  application an orchestrator restarts into the same blocked broker, having thrown
+  away whatever it was holding — a fleet doing that together stops draining the
+  queues at the moment the broker most needs them drained. Java's Spring Boot health
+  indicator has always reported it as up with the reason, and
+  `acemq-go-amqp/docs/lifecycle.md` documents the same trap; this brings .NET into
+  line with both.
+
+  The sharp part was not the reading itself but that nothing could get out from under
+  it. `AggregateHealth` takes the **worst** report, so the built-in `connection`
+  report overruled any more careful answer a caller composed beside it —
+  `acemq-dotnet-amqp-hosting` ended up rebuilding the connection report from
+  `IsOpen`/`IsBlocked`/`BlockedReason` and filtering the library's own out of the
+  aggregate, which is not something a downstream package should have to do.
+
+  **If you want the old reading**, make it your own policy rather than the library's,
+  by registering a contributor that says so:
+
+  ```csharp
+  sealed class BlockedIsDegraded : IHealthContributor
+  {
+      private readonly AceMqConnection _mq;
+      public BlockedIsDegraded(AceMqConnection mq) => _mq = mq;
+      public string Name => "broker-pressure";
+      public HealthReport Report() =>
+          _mq.IsBlocked
+              ? new HealthReport(Name, HealthStatus.Degraded,
+                  new Dictionary<string, string> { ["reason"] = _mq.BlockedReason ?? "" })
+              : HealthReport.Up(Name);
+  }
+
+  mq.RegisterHealth(new BlockedIsDegraded(mq));
+  ```
+
+  Registered, it is one named component's opinion, which a reader can see the source
+  of and a caller can choose not to register. `docs/reliability.md` carries this, and
+  `docs/observability.md` no longer claims `/acemq-health` answers 503 for a blocked
+  connection — it never did, and the page was describing an intention rather than the
+  code.
+
+  Asserted against a broker that is really blocked, in
+  `tests/AceMq.Amqp.RabbitMq.Tests/BlockedConnectionTests.cs`: it drops the memory
+  high watermark with `rabbitmqctl` until RabbitMQ raises the alarm, publishes so the
+  connection is one the broker blocks, waits for `connection.blocked` to arrive, and
+  puts the watermark back. A test that sets a flag and asserts on the flag proves the
+  flag is readable and nothing else. It reaches `rabbitmqctl` through
+  `ACEMQ_TEST_RABBITMQCTL`, a command prefix — `docker exec <container> rabbitmqctl`,
+  or just `rabbitmqctl` — and fails rather than skipping when it is unset. CI names
+  the service container and sets it.
+
+### Added
+
+- **`DrainConsumersAsync` takes a `CancellationToken`.** A drain is exactly the
+  operation an orchestrator bounds, and the old signature took only its own timeout,
+  so every caller had to race it from outside and cancel out from underneath it —
+  which is what `acemq-dotnet-amqp-hosting` was doing. An overload rather than an
+  optional argument: the existing one-argument call still binds, and the VB audit
+  rejects optional arguments because VB resolves them differently.
+
+  **Cancelling abandons the wait, not the work.** Handlers already running are not
+  interrupted — nothing here can interrupt them — and consuming stays paused, because
+  resuming on the way out hands more messages to a process that is leaving. What the
+  caller gets back is its own deadline; `InFlight` and `Held` then say what was left
+  behind, and those messages are unacknowledged, so the broker redelivers them.
+
+  Cancellation throws `OperationCanceledException` where the timeout returns `false`,
+  deliberately: `false` is this connection saying it was given long enough and the
+  handlers did not finish, cancellation is the caller changing its mind, and a caller
+  that cannot tell the two apart logs the wrong one.
+
+- **`Held`: deliveries fetched from the broker and waiting at the pause gate.**
+  `InFlight` is incremented *after* that gate, so a delivery that arrived while paused
+  — decoded, held so that resuming hands over the same message rather than cycling it
+  to the back of the queue — was counted by nothing. A drain could therefore answer
+  `true` with messages sitting fetched and unhandled.
+
+  **What happens to those messages is unchanged, deliberately.** Nothing is lost
+  today: a held delivery was never acknowledged, so it is redelivered here on resume
+  or to another instance, and no work on it was half done. Go answers this differently
+  — it runs every fetched delivery through a handler, which makes a drain bounded by
+  the *prefetch* rather than by the dispatch concurrency, a cost its own lifecycle
+  guide calls invisible until a deployment starts timing out. Python nacks the
+  unstarted ones with requeue, which is where .NET already ends up, and doing it
+  eagerly during a drain would have the broker redeliver into a consumer that is still
+  subscribed — a ping-pong for the whole shutdown window, bought for nothing. So the
+  defect here is the *report*, and the report is what changed.
+
+  `DrainConsumersAsync` returning `true` means **every handler finished**. It does not
+  mean every message the broker sent was handled; `Held` is the rest of that answer,
+  and it is in the health report's `connection` details as `held` alongside `inFlight`.
+
+### Documentation
+
+- **`AceMq.Amqp.HealthStatus` collides with
+  `Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus`, and the collision has
+  a sharp edge inside `AceMq.Amqp.*`.** In a namespace nested under `AceMq.Amqp` the
+  enclosing namespace beats a file-level `using HealthStatus = …` alias, so an
+  unqualified `HealthStatus` resolves to this library's however the file aliases it.
+  Code outside `AceMq.Amqp.*` is unaffected — there the alias wins as written — but
+  `acemq-dotnet-amqp-hosting` lives under that prefix and hit it. Noted on the enum
+  and in `docs/reliability.md`, with the two-alias form that works and the reminder
+  that the two enums are not interchangeable anyway: Up/Degraded/Down against
+  Healthy/Degraded/Unhealthy, with a mapping that is a decision rather than a rename.
+
 ## [0.6.0] - 2026-09-17
 
 ### Added
