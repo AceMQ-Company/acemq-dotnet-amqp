@@ -140,9 +140,18 @@ jobs:
           # CLI. The test refuses to skip when this is missing, which is why the
           # release failed rather than quietly proving nothing.
           ACEMQ_TEST_RABBITMQCTL: docker exec acemq-ci-rabbit rabbitmqctl
+        # --no-build, like the test steps above it. Without it this step rebuilds,
+        # and a rebuild here does not carry -p:Version — so the assemblies get
+        # restamped from Directory.Build.props, and the Pack step below, which
+        # packs with --no-build, ships those. The nuspec and the file name would
+        # still say the tag's version while the assemblies inside said the tree's.
+        # It has never shown because the props is kept in step with the tag by
+        # hand, but that is exactly the coupling taking the version from the tag
+        # is meant to remove: a workflow_dispatch naming a version the tree does
+        # not declare would publish a mismatch, silently.
         run: >
           dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
-          --configuration Release --verbosity normal
+          --configuration Release --no-build --verbosity normal
 
       - name: Pack
         env:

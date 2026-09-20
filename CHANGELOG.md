@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The release could have published packages whose assemblies carried a
+  different version from the package.** The release builds with
+  `-p:Version=$VERSION` taken from the tag, then packs with `--no-build` so that
+  exactly those assemblies ship. Between the two, the RabbitMQ test step rebuilt
+  — it was the one test step without `--no-build` — and a rebuild there does not
+  carry `-p:Version`, so the assemblies were restamped from
+  `Directory.Build.props` and packed in that state. The nuspec and the file name
+  said the tag's version; the assemblies inside said the tree's.
+
+  It has never actually shipped a mismatch, because the props is bumped to match
+  the tag by hand as part of preparing a release. That is the coupling taking
+  the version from the tag exists to remove, though: a `workflow_dispatch`
+  naming a version the tree does not declare — which is exactly how 0.7.0 was
+  re-run after its first attempt failed — would have published one, with nothing
+  reporting it.
+
 ## [0.7.0] - 2026-09-20
 
 ### Changed
