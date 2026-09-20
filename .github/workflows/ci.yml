@@ -7,10 +7,9 @@
 # case-insensitivity rule that C# does not have.
 name: ci
 
+# Manual only. push and pull_request were removed so that a commit no longer
+# starts a run — nothing here verifies a change unless a person asks it to.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
