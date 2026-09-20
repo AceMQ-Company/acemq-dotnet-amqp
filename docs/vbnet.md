@@ -124,7 +124,7 @@ batch failure, the envelope's `Claim` and the Avro reader schema.
 
 The audit had to happen **before the API freezes**. Afterwards every correction is a
 breaking change, and the whole point of the constraint is that it costs a week now
-instead of a major version later. It has been done: as of 0.6.0 the public surface
+instead of a major version later. It has been done: as of 0.7.0 the public surface
 is clean against all twelve rules.
 
 ## Runnable example

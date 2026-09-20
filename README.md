@@ -3,7 +3,7 @@
 [![ci](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/ci.yml)
 [![release](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml/badge.svg)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/release.yml)
 [![authorship guard](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml/badge.svg?branch=main)](https://github.com/AceMQ-Company/acemq-dotnet-amqp/actions/workflows/attribution-guard.yml)
-[![version](https://img.shields.io/badge/version-0.6.0-blue)](https://acemq.org/nuget/)
+[![version](https://img.shields.io/badge/version-0.7.0-blue)](https://acemq.org/nuget/)
 [![packages](https://img.shields.io/badge/packages-acemq.org%2Fnuget-blue)](https://acemq.org/nuget/)
 [![docs](https://img.shields.io/badge/docs-acemq.org-blue)](https://acemq.org/acemq-dotnet-amqp/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
@@ -431,7 +431,7 @@ interface members, async streams, and a member colliding by case with an *inheri
 one rather than a sibling. It now covers constructors, properties and fields as well
 as methods; constructors were missed entirely, so a `Span<T>` in a public
 constructor was invisible to the check meant to find it. **The public surface is
-clean against all twelve**, including everything added in 0.6.0.
+clean against all twelve**, including everything added in 0.7.0.
 
 Every rule self-checks against a type written to trip it, and the audit fails if any
 rule does not fire: a check that never fires is indistinguishable from a check that
