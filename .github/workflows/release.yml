@@ -50,7 +50,13 @@ jobs:
         image: rabbitmq:4-management
         ports:
           - 5672:5672
+        # The fixed --name is what ACEMQ_TEST_RABBITMQCTL addresses below, and it
+        # matches ci.yml. Without it the blocked-connection test cannot reach the
+        # broker's CLI, and that test fails rather than skipping — deliberately,
+        # since a skip is how the whole class of blocked-broker defects stayed
+        # invisible. The release ran without it once and failed here.
         options: >-
+          --name acemq-ci-rabbit
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
           --health-timeout 5s
@@ -127,6 +133,13 @@ jobs:
       - name: Test against RabbitMQ
         env:
           ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
+          # The same line ci.yml carries. The blocked-connection test drops the
+          # memory high watermark until the broker really blocks the connection,
+          # asserts what the health report says, and puts the watermark back —
+          # AMQP offers no way to do that, so it goes through the container's
+          # CLI. The test refuses to skip when this is missing, which is why the
+          # release failed rather than quietly proving nothing.
+          ACEMQ_TEST_RABBITMQCTL: docker exec acemq-ci-rabbit rabbitmqctl
         run: >
           dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
           --configuration Release --verbosity normal
