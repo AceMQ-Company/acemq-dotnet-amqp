@@ -8,6 +8,8 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-21
+
 ### Fixed
 
 - **The release could have published packages whose assemblies carried a
