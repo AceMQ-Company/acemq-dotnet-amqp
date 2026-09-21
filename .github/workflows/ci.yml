@@ -181,9 +181,77 @@ jobs:
           # container is given a fixed --name above so this line can address it; a
           # test that could only assert on a flag it set itself would prove nothing.
           ACEMQ_TEST_RABBITMQCTL: docker exec acemq-ci-rabbit rabbitmqctl
+        # The trx exists for the step below and for nothing else. The console
+        # summary is written for a person reading the log; the trx is the runner's
+        # own record of what it did, and that is what gets judged.
         run: >
           dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
           --configuration Release --verbosity normal
+          --logger "trx;LogFileName=rabbitmq.trx"
+          --results-directory "$RUNNER_TEMP/trx"
+
+      - name: Check nothing skipped
+        # A skipped test reads as a pass. Python carried seven TLS tests that had
+        # never once executed, reported as "53 passed, 7 skipped" and a green tick,
+        # for the entire life of that job -- nothing failed, so nobody looked. Go and
+        # Python both fail their build on a skip now; this is the .NET half of that.
+        #
+        # Guarded here and in the tls job below, and on the release's own run of this
+        # same suite. Those three are the steps that run with a broker in front of
+        # them, so every test they collect is meant to execute and a skip is a hole.
+        # The build job's suites are exempt on purpose: they run with no broker at
+        # all, by design -- anything needing one lives in its own project precisely
+        # so it cannot pretend to have run -- so a skip there would be a statement
+        # about the runner rather than about the library.
+        #
+        # The trx rather than the console summary, for two reasons. `dotnet test`
+        # prints a "Skipped:" line only when the count is not zero, so grepping the
+        # log is a check on the absence of a line: it cannot tell a clean run from a
+        # run whose summary never appeared, and the summary's shape has already
+        # changed once between SDK versions. And the trx names the tests that did not
+        # run, which is the thing that was missing in Python -- seven tests nobody
+        # could name without going back to the logs.
+        #
+        # Counters/@notExecuted is not the field to read, however much it sounds like
+        # it. A skipped xUnit test leaves it at zero; the skip shows up only as
+        # total > executed and as a result element carrying outcome="NotExecuted".
+        # That was established by making a test skip on purpose and reading what the
+        # runner wrote, not by reading the schema.
+        run: |
+          trx="$RUNNER_TEMP/trx/rabbitmq.trx"
+          if [ ! -f "$trx" ]; then
+            echo "::error::no test report at $trx, so this suite did not run"
+            exit 1
+          fi
+          skipped=$(grep -o 'testName="[^"]*"[^>]*outcome="NotExecuted"' "$trx" || true)
+          if [ -n "$skipped" ]; then
+            echo "::error::a test skipped while the broker was running"
+            printf '%s\n' "$skipped" | sed 's/testName="\([^"]*\)".*/  \1/'
+            exit 1
+          fi
+          counters=$(grep -o '<Counters [^/]*/>' "$trx" || true)
+          total=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]total="\([0-9]*\)".*/\1/p')
+          ran=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]executed="\([0-9]*\)".*/\1/p')
+          if [ -z "$total" ] || [ -z "$ran" ]; then
+            echo "::error::$trx carries no result summary"
+            exit 1
+          fi
+          # The same thing said a second way, because a skip that never reaches a
+          # result element -- a whole class dropped at discovery, say -- still leaves
+          # these two numbers apart.
+          if [ "$total" != "$ran" ]; then
+            echo "::error::$total tests were collected but only $ran of them ran"
+            exit 1
+          fi
+          # A suite that quietly shrinks is the same defect arriving by a different
+          # road: nothing skips, nothing fails, and half the tests are simply no
+          # longer there. Raise this when tests are added; lower it only when one is
+          # deliberately removed.
+          if [ "$ran" -lt 24 ]; then
+            echo "::error::only $ran tests ran; this suite has 24"
+            exit 1
+          fi
+          echo "$ran broker tests ran and none skipped"
 
   tls:
     # TLS against a broker with a privately issued certificate. Started with
@@ -245,3 +313,42 @@ jobs:
         run: >
           dotnet test tests/AceMq.Amqp.Tls.Tests/AceMq.Amqp.Tls.Tests.csproj
           --configuration Release --verbosity normal
+          --logger "trx;LogFileName=tls.trx"
+          --results-directory "$RUNNER_TEMP/trx"
+
+      - name: Check nothing skipped
+        # The reasoning, and why the trx rather than the console, is written out over
+        # the integration job's copy of this step. It matters more here than anywhere
+        # else in the file: the tests worth having in this suite are the ones that
+        # assert a refusal -- an unknown authority rejected, a development
+        # certificate refused -- and a verification that is not happening looks
+        # exactly like one that is, right up until somebody checks that it still says
+        # no. Python's seven silent tests were TLS tests, for the same reason.
+        run: |
+          trx="$RUNNER_TEMP/trx/tls.trx"
+          if [ ! -f "$trx" ]; then
+            echo "::error::no test report at $trx, so this suite did not run"
+            exit 1
+          fi
+          skipped=$(grep -o 'testName="[^"]*"[^>]*outcome="NotExecuted"' "$trx" || true)
+          if [ -n "$skipped" ]; then
+            echo "::error::a test skipped while the TLS broker was running"
+            printf '%s\n' "$skipped" | sed 's/testName="\([^"]*\)".*/  \1/'
+            exit 1
+          fi
+          counters=$(grep -o '<Counters [^/]*/>' "$trx" || true)
+          total=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]total="\([0-9]*\)".*/\1/p')
+          ran=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]executed="\([0-9]*\)".*/\1/p')
+          if [ -z "$total" ] || [ -z "$ran" ]; then
+            echo "::error::$trx carries no result summary"
+            exit 1
+          fi
+          if [ "$total" != "$ran" ]; then
+            echo "::error::$total tests were collected but only $ran of them ran"
+            exit 1
+          fi
+          if [ "$ran" -lt 9 ]; then
+            echo "::error::only $ran tests ran; this suite has 9"
+            exit 1
+          fi
+          echo "$ran TLS tests ran and none skipped"

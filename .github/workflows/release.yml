@@ -149,9 +149,62 @@ jobs:
         # hand, but that is exactly the coupling taking the version from the tag
         # is meant to remove: a workflow_dispatch naming a version the tree does
         # not declare would publish a mismatch, silently.
+        #
+        # The trx is for the step below. A logger writes a report; it does not build
+        # anything, so --no-build above stays the only thing deciding what gets run.
         run: >
           dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
           --configuration Release --no-build --verbosity normal
+          --logger "trx;LogFileName=rabbitmq.trx"
+          --results-directory "$RUNNER_TEMP/trx"
+
+      - name: Check nothing skipped
+        # A skipped test reads as a pass, and a release is the worst place for that:
+        # the artifact is permanent once it reaches the feed, because somebody's
+        # lockfile already has it, and "the integration suite was green" is what the
+        # decision to publish rests on. Python shipped seven TLS tests that had never
+        # executed, reported as "53 passed, 7 skipped" and a green tick, for the
+        # whole life of that job.
+        #
+        # This is the only step in this workflow with a broker in front of it, so it
+        # is the only one guarded. Test and "Test the codecs" above run against no
+        # broker at all -- everything needing one is in this project by design -- so
+        # a skip there would say something about the runner rather than about what is
+        # being published.
+        #
+        # The trx rather than the console summary, and specifically not
+        # Counters/@notExecuted: a skipped xUnit test leaves that at zero and shows
+        # up only as total > executed and as a result element with
+        # outcome="NotExecuted". The full reasoning is written out in ci.yml, which
+        # carries the same check on the same suite.
+        run: |
+          trx="$RUNNER_TEMP/trx/rabbitmq.trx"
+          if [ ! -f "$trx" ]; then
+            echo "::error::no test report at $trx, so this suite did not run"
+            exit 1
+          fi
+          skipped=$(grep -o 'testName="[^"]*"[^>]*outcome="NotExecuted"' "$trx" || true)
+          if [ -n "$skipped" ]; then
+            echo "::error::a test skipped while the broker was running; not publishing"
+            printf '%s\n' "$skipped" | sed 's/testName="\([^"]*\)".*/  \1/'
+            exit 1
+          fi
+          counters=$(grep -o '<Counters [^/]*/>' "$trx" || true)
+          total=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]total="\([0-9]*\)".*/\1/p')
+          ran=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]executed="\([0-9]*\)".*/\1/p')
+          if [ -z "$total" ] || [ -z "$ran" ]; then
+            echo "::error::$trx carries no result summary"
+            exit 1
+          fi
+          if [ "$total" != "$ran" ]; then
+            echo "::error::$total tests were collected but only $ran of them ran"
+            exit 1
+          fi
+          if [ "$ran" -lt 24 ]; then
+            echo "::error::only $ran tests ran; this suite has 24"
+            exit 1
+          fi
+          echo "$ran broker tests ran and none skipped"
 
       - name: Pack
         env:
