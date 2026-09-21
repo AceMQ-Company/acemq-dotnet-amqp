@@ -253,10 +253,130 @@ jobs:
           fi
           echo "$ran broker tests ran and none skipped"
 
+  compatibility:
+    name: integration tests on RabbitMQ 3.13
+    # "Works with RabbitMQ 3.13" was a claim nothing checked: the integration job
+    # above and the release's own run of the same suite both pin rabbitmq:4, so the
+    # only broker this library had ever been tested against was the current major.
+    # 3.13 is the version most production estates are actually on, and the one an
+    # upgrade is being planned away from rather than towards -- which is exactly when
+    # somebody needs to know whether the client still behaves.
+    #
+    # A separate job rather than a matrix dimension on the integration job, which is
+    # the shape that would otherwise be obvious here because that job carries no
+    # matrix at all. Two reasons. The check name is the first: a matrix renames the
+    # existing check from "integration" to "integration (rabbitmq:4-management)", and
+    # anything naming the old one -- branch protection above all -- stops matching a
+    # check that no longer exists. Renaming a required check while adding coverage is
+    # a poor trade. The second is that the two runs are not the same claim and will
+    # not have the same lifetime: the 4.x run says the library works, this one says it
+    # has not yet dropped the previous major, and the day 3.13 goes out of support
+    # this job gets deleted whole. A deleted job is a visible diff; a deleted matrix
+    # row is a one-line change nobody reads.
+    #
+    # The plaintext suite only, and not the TLS suite below. The TLS suite was run
+    # against a 3.13 broker by hand before this job was written and all nine tests
+    # pass, so this is a choice about what is worth repeating rather than a gap: eight
+    # of those nine assert on the client's own certificate verification -- an unknown
+    # authority refused, a development certificate refused, a chain that does not
+    # reach the trusted root refused -- and that code runs before the broker has said
+    # a word about its version, so it cannot branch on one. The ninth proves a
+    # handshake completes, which tests the runner's OpenSSL and the broker's Erlang
+    # TLS terminator rather than anything in this library. What genuinely did change
+    # between the two majors is on the AMQP 0-9-1 side the suite below covers:
+    # queue-type defaults, dead-letter republishing, basic.get replay, the stream
+    # consumer arguments, and the shape of the memory alarm.
+    runs-on: ubuntu-latest
+    services:
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports:
+          - 5672:5672
+        options: >-
+          --name acemq-ci-rabbit-313
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target. The
+          # 10 SDK can build net8.0 by downloading the targeting pack from NuGet,
+          # which works until the day it does not; installing the SDK that carries
+          # it makes the build depend on the runner rather than on a fetch.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Test against RabbitMQ 3.13
+        env:
+          ACEMQ_TEST_AMQP_URL: amqp://guest:guest@localhost:5672
+          # The same mechanism the 4.x job uses, pointed at this job's container: the
+          # blocked-connection test drops the memory high watermark through rabbitmqctl
+          # because AMQP offers no way to ask a broker to block you. The --name above
+          # is what this line addresses, and it differs from the 4.x job's name so that
+          # neither job can be read as reaching into the other's broker.
+          ACEMQ_TEST_RABBITMQCTL: docker exec acemq-ci-rabbit-313 rabbitmqctl
+        run: >
+          dotnet test tests/AceMq.Amqp.RabbitMq.Tests/AceMq.Amqp.RabbitMq.Tests.csproj
+          --configuration Release --verbosity normal
+          --logger "trx;LogFileName=rabbitmq-3.13.trx"
+          --results-directory "$RUNNER_TEMP/trx"
+
+      - name: Check nothing skipped
+        # Why the trx rather than the console summary, and why Counters/@notExecuted is
+        # the wrong field to read, is written out over the integration job's copy of
+        # this step. The guard matters more here than there: this job exists for no
+        # other purpose than to prove the suite passes against 3.13, so a test that
+        # quietly stopped running would leave the entire compatibility claim resting on
+        # a green tick and nothing else. The obvious way for that to happen is somebody
+        # reaching for a conditional skip the first time a test misbehaves on the older
+        # broker, which is precisely the outcome worth reporting rather than hiding.
+        run: |
+          trx="$RUNNER_TEMP/trx/rabbitmq-3.13.trx"
+          if [ ! -f "$trx" ]; then
+            echo "::error::no test report at $trx, so this suite did not run"
+            exit 1
+          fi
+          skipped=$(grep -o 'testName="[^"]*"[^>]*outcome="NotExecuted"' "$trx" || true)
+          if [ -n "$skipped" ]; then
+            echo "::error::a test skipped while the 3.13 broker was running"
+            printf '%s\n' "$skipped" | sed 's/testName="\([^"]*\)".*/  \1/'
+            exit 1
+          fi
+          counters=$(grep -o '<Counters [^/]*/>' "$trx" || true)
+          total=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]total="\([0-9]*\)".*/\1/p')
+          ran=$(printf '%s' "$counters" | sed -n 's/.*[[:space:]]executed="\([0-9]*\)".*/\1/p')
+          if [ -z "$total" ] || [ -z "$ran" ]; then
+            echo "::error::$trx carries no result summary"
+            exit 1
+          fi
+          if [ "$total" != "$ran" ]; then
+            echo "::error::$total tests were collected but only $ran of them ran"
+            exit 1
+          fi
+          # The same floor as the 4.x job, because both brokers run the whole suite:
+          # 24 collected, 24 executed, nothing skipped on either. That was measured on
+          # a real 3.13.7 container before this job was committed, not assumed from the
+          # other job's number. Keeping the two floors equal is the point -- the day
+          # 3.13 can only manage 23, the honest response is to work out which test that
+          # is and say so, not to lower this line until the job goes green again.
+          if [ "$ran" -lt 24 ]; then
+            echo "::error::only $ran tests ran; this suite has 24"
+            exit 1
+          fi
+          echo "$ran broker tests ran on 3.13 and none skipped"
+
   tls:
     # TLS against a broker with a privately issued certificate. Started with
     # docker run rather than as a service, because the certificates have to be
     # generated first and a service container starts before any step runs.
+    #
+    # Against rabbitmq:4 only. The compatibility job above says why running this
+    # suite on 3.13 as well would buy nothing that job does not already buy.
     #
     # No skip path, deliberately: this is the most security-sensitive code in the
     # library, and a suite that quietly does nothing when the broker is absent
