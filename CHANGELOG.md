@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-21
+
+### Changed
+
+- **RabbitMQ 3.13 is now tested rather than assumed.** CI runs the integration
+  suite twice on every push, once against 4.x and once against 3.13. Nothing in
+  the library changed: the same twenty-four tests pass on both, including the
+  stream reads, the dead-letter republish and the cross-language queue
+  declaration. 3.13 is where most production estates still are.
+
+  The TLS suite stays on 4.x, deliberately. Eight of its nine tests assert what
+  *this* library does with a certificate it does not trust, and that code runs
+  before the broker has said anything about its version, so it cannot branch on
+  one. The ninth proves a handshake completes; it was run against 3.13 by hand
+  to confirm this is a choice rather than a gap.
+- The README's version badge said 0.7.0 while 0.7.1 was released. Nothing keeps
+  it in step here the way the Java release rewrites its own documented version.
+
 ## [0.7.1] - 2026-09-21
 
 ### Fixed
