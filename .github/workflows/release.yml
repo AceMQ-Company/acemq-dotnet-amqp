@@ -265,13 +265,20 @@ jobs:
           FEED="https://acemq.org/nuget"
           INDEX="$FEED/v3/flatcontainer/acemq.amqp/$VERSION/acemq.amqp.$VERSION.nupkg"
           echo "Waiting for GitHub Pages to serve $VERSION"
-          for attempt in $(seq 1 20); do
+          # Forty attempts at thirty seconds is twenty minutes, up from five.
+          # The NuGet feed and the Maven feed are the same Pages site under two
+          # paths, and on 21 September 2026 that site took twenty-five minutes
+          # to serve a new commit. A sibling repository's release waited five,
+          # gave up, and announced a package that was on the feed and restorable
+          # as a release that had not finished. Pages usually rebuilds in a few
+          # seconds, so this costs nothing except on the day it matters.
+          for attempt in $(seq 1 40); do
             # -L because the organisation has a custom domain and every github.io
             # URL answers with a redirect. NuGet follows it; a bare curl does not.
             code=$(curl -sL -o /dev/null -w '%{http_code}' "$INDEX")
             [ "$code" = "200" ] && break
             echo "  attempt $attempt: HTTP $code"
-            sleep 15
+            sleep 30
           done
           if [ "$code" != "200" ]; then
             echo "::error::$VERSION was pushed but is not being served at $INDEX"
