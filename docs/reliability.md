@@ -140,6 +140,13 @@ twice by the time it does.
 await using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
 ```
 
+Visual Basic has neither `await using` nor the ability to `Await` a `ValueTask`, so
+the same work is on `CloseAsync` — the name the other four libraries use:
+
+```vb
+Await mq.CloseAsync()
+```
+
 That spends up to `AceMqConnection.DefaultDrainTimeout` — twenty seconds, the same
 figure Java and Ruby use, chosen to fit inside Kubernetes' default
 `terminationGracePeriodSeconds` of 30 — pausing consumption and waiting for the

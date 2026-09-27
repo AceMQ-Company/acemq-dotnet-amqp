@@ -23,7 +23,15 @@ While the version is `0.x` the public API may change in any release.
   `Dispose` is unchanged, and now says in its own documentation what it does not do.
   A caller who wants to know whether everything finished still calls
   `DrainConsumersAsync` and reads the answer; a teardown has nobody to report it to,
-  so `DisposeAsync` discards it.
+  so the drain's result is discarded there.
+
+- **`CloseAsync()`**, which is the same work under the name the other four libraries
+  use and returning a `Task`. `IAsyncDisposable.DisposeAsync` is implemented
+  explicitly and delegates to it, because Visual Basic can neither await a
+  `ValueTask` nor write `await using` — and this library's own VB audit refuses a
+  public member half the supported languages cannot call. It caught this on the first
+  push; `await using` binds to the explicit implementation regardless, so C# loses
+  nothing.
 
 ## [0.7.3] - 2026-09-27
 

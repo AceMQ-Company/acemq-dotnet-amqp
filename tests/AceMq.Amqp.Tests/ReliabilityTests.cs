@@ -395,12 +395,18 @@ public sealed class ReliabilityTests : IDisposable
         // tidy-up into the exception somebody debugs. `await using` inside a method
         // whose caller also disposes is ordinary, and so is disposing then awaiting.
         var mq = await AceMqConnection.ConnectAsync(_url);
-        await mq.DisposeAsync();
-        await mq.DisposeAsync();
+        await mq.CloseAsync();
+        await mq.CloseAsync();
+
+        // And the interface the language feature binds to, which is implemented
+        // explicitly so the public surface stays callable from Visual Basic.
+        var viaInterface = await AceMqConnection.ConnectAsync(_url);
+        await ((IAsyncDisposable)viaInterface).DisposeAsync();
+        await ((IAsyncDisposable)viaInterface).DisposeAsync();
 
         var other = await AceMqConnection.ConnectAsync(_url);
         other.Dispose();
-        await other.DisposeAsync();
+        await other.CloseAsync();
     }
 
     [Fact]

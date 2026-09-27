@@ -35,8 +35,9 @@ namespace AceMq.Amqp;
 /// file descriptors under load.
 /// </para>
 /// <para>
-/// <b>Prefer <c>await using</c>.</b> <see cref="DisposeAsync"/> drains the consumers
-/// first — handlers already running are finished and their messages settled — while
+/// <b>Prefer <c>await using</c></b> (or <see cref="CloseAsync"/> from Visual Basic,
+/// which has neither <c>await using</c> nor the ability to await a <c>ValueTask</c>).
+/// Both drain the consumers first — handlers already running are finished and their messages settled — while
 /// <see cref="Dispose"/> cannot wait for anything and so leaves every message being
 /// handled unacknowledged, for the broker to redeliver to somebody else. Java, Go,
 /// Python and Ruby all wait on the way out; this is how .NET spells it.
@@ -45,7 +46,8 @@ namespace AceMq.Amqp;
 public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 {
     /// <summary>
-    /// How long <see cref="DisposeAsync"/> waits for handlers already running.
+    /// How long <see cref="CloseAsync"/> and <c>await using</c> wait for handlers
+    /// already running.
     /// </summary>
     /// <remarks>
     /// Twenty seconds, because the number it has to fit inside is usually Kubernetes'
@@ -1555,7 +1557,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// can wait for an <c>async</c> handler without risking the deadlock that blocking
     /// on one in a <c>using</c> block invites, so this does not try.
     /// <para>
-    /// Use <see cref="DisposeAsync"/> — <c>await using</c> — or call
+    /// Use <c>await using</c> — or <see cref="CloseAsync"/> — or call
     /// <see cref="DrainConsumersAsync(TimeSpan)"/> yourself when you want the answer
     /// to "did everything finish?" rather than only the tidy-up.
     /// </para>
@@ -1576,6 +1578,20 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// <summary>Drains the consumers, then closes the connection.</summary>
     /// <remarks>
     /// <para>
+    /// The same work <c>await using</c> does, under the name the other four libraries
+    /// use — Java and Ruby and Python call it <c>close</c>, Go calls it <c>Close</c> —
+    /// and returning a <see cref="Task"/> so Visual Basic can <c>Await</c> it. VB
+    /// cannot await a <c>ValueTask</c> and has no <c>await using</c>, so
+    /// <c>IAsyncDisposable.DisposeAsync</c> is implemented explicitly and delegates
+    /// here: C# gets the language feature, VB gets a method it can call, and both run
+    /// the same code.
+    /// </para>
+    /// </remarks>
+    public Task CloseAsync() => DrainThenDisposeAsync();
+
+    /// <summary>Drains the consumers, then closes the connection.</summary>
+    /// <remarks>
+    /// <para>
     /// Consuming is paused, handlers already running are given
     /// <see cref="DefaultDrainTimeout"/> to finish, and then everything is torn down.
     /// A message being worked on is therefore settled by the handler that had it
@@ -1591,8 +1607,18 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// <see cref="DrainConsumersAsync(TimeSpan)"/> first and reads the answer — this
     /// discards it, because a teardown has nobody to report to.
     /// </para>
+    /// <para>
+    /// Implemented explicitly, so the public surface offers <see cref="CloseAsync"/>
+    /// returning a <see cref="Task"/> instead. Visual Basic can neither await a
+    /// <c>ValueTask</c> nor write <c>await using</c>, and this library's public API is
+    /// audited for exactly that: a member only C# can call is a member half the
+    /// supported languages cannot use. <c>await using</c> binds to this regardless of
+    /// the explicit implementation, so nothing is lost on the C# side.
+    /// </para>
     /// </remarks>
-    public async ValueTask DisposeAsync()
+    ValueTask IAsyncDisposable.DisposeAsync() => new ValueTask(DrainThenDisposeAsync());
+
+    private async Task DrainThenDisposeAsync()
     {
         if (_disposed) return;
 
