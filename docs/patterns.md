@@ -186,6 +186,39 @@ Delivery is **at least once**. A relay that publishes and then dies before marki
 the record will publish again, so consumers must tolerate duplicates — the envelope's
 id is the idempotency key.
 
+### A record the broker will never take
+
+A publish that fails releases its lease and counts the attempt, so the next pass
+tries again. That is right while there is any chance of success and wrong for a
+record the broker will *never* take — an exchange somebody deleted, a payload a
+policy will always refuse. Such a record was claimed on every pass for ever,
+spending a place in every batch and a publish attempt on a message that cannot go
+anywhere.
+
+So there is a ceiling. After ten failures — the same ten Python, Go and Ruby use —
+a store stops offering the record, and keeps it:
+
+```csharp
+var store = new DbOutboxStore(Connect, "acemq_outbox", "@", maxAttempts: 10);
+...
+foreach (var stuck in await store.RetiredAsync())
+{
+    logger.LogError("nobody could publish {Id}: {Why}", stuck.Id, stuck.LastError);
+}
+```
+
+The record is **kept, not deleted**. One nothing could publish is evidence: somebody
+has to read it, fix whatever refuses it, and release it by putting its `attempts`
+back to zero. Deleting it would be the silent loss this pattern exists to prevent,
+reached from another direction. `PendingCountAsync` still counts it — it is a message
+somebody is owed — and `RetiredAsync` (or `Retired()` on the in-memory store) is the
+only thing that says which records nothing is trying any more. Graph
+`acemq.outbox.total` tagged `failed` and read `RetiredAsync` when it climbs.
+
+A **custom** `IOutboxStore` is unaffected: the ceiling lives in the store, not in
+the relay, so one written before this keeps retrying for ever. Implementing it means
+leaving records at the limit out of `ClaimBatchAsync`.
+
 ## Interceptors
 
 For the concerns that belong to every message rather than to one call site — a

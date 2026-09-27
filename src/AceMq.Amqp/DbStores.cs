@@ -53,6 +53,7 @@ public sealed class DbOutboxStore : IOutboxStore
     private readonly ConnectionSupplier _connections;
     private readonly string _table;
     private readonly string _prefix;
+    private readonly int _maxAttempts;
 
     public DbOutboxStore(ConnectionSupplier connections)
         : this(connections, "acemq_outbox", "@") { }
@@ -62,10 +63,29 @@ public sealed class DbOutboxStore : IOutboxStore
     /// <c>:</c> for Oracle, and either for PostgreSQL depending on the provider.
     /// </remarks>
     public DbOutboxStore(ConnectionSupplier connections, string table, string parameterPrefix)
+        : this(connections, table, parameterPrefix, InMemoryOutboxStore.DefaultMaxAttempts) { }
+
+    /// <param name="connections">Where a connection to the database comes from.</param>
+    /// <param name="table">The table the records live in.</param>
+    /// <param name="parameterPrefix">
+    /// <c>@</c> for SQL Server and SQLite, <c>:</c> for Oracle, and either for
+    /// PostgreSQL depending on the provider.
+    /// </param>
+    /// <param name="maxAttempts">
+    /// Failures before a record stops being offered to a relay. See
+    /// <see cref="InMemoryOutboxStore.DefaultMaxAttempts"/>.
+    /// </param>
+    public DbOutboxStore(
+        ConnectionSupplier connections, string table, string parameterPrefix, int maxAttempts)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _table = table ?? throw new ArgumentNullException(nameof(table));
         _prefix = parameterPrefix ?? throw new ArgumentNullException(nameof(parameterPrefix));
+        if (maxAttempts < 1)
+        {
+            throw new ArgumentException("must be at least 1", nameof(maxAttempts));
+        }
+        _maxAttempts = maxAttempts;
     }
 
     /// <summary>The table this store expects, in standard SQL.</summary>
@@ -138,15 +158,21 @@ VALUES ({P("id")}, {P("exchange")}, {P("routingKey")}, {P("type")}, {P("payload"
         // which not every provider supports. The claim is conditional on the lease
         // still being free, so two relays racing for the same row cannot both win:
         // the second one updates zero rows and drops it.
+        // `attempts < maxAttempts` is what stops a record the broker will never take
+        // being claimed on every pass for ever. The column was written from the first
+        // version and read by nothing, so a poison row spent a place in every batch
+        // and a publish attempt, indefinitely.
         var select = $@"SELECT id, exchange, routing_key, type, payload, correlation_id,
        causation_id, created_at, attempts, last_error
 FROM {_table}
-WHERE published = 0 AND (leased_until IS NULL OR leased_until <= {P("now")})
+WHERE published = 0 AND attempts < {P("maxAttempts")}
+  AND (leased_until IS NULL OR leased_until <= {P("now")})
 ORDER BY created_at";
 
         var candidates = new List<OutboxRecord>();
         using (var command = Command(connection, select, null))
         {
+            Add(command, "maxAttempts", _maxAttempts);
             Add(command, "now", now.UtcDateTime);
             using var reader = command.ExecuteReader();
             while (reader.Read() && candidates.Count < batchSize * 2)
@@ -198,12 +224,51 @@ WHERE id = {P("id")}",
         await ExecuteAsync(command).ConfigureAwait(false);
     }
 
+    /// <summary>How many records are unpublished, retired ones included.</summary>
+    /// <remarks>
+    /// A retired record is still a message somebody is owed, so leaving it out would
+    /// make a stuck outbox read as an empty one. <see cref="RetiredAsync"/> says which
+    /// of them nothing is trying any more.
+    /// </remarks>
     public Task<long> PendingCountAsync()
     {
         using var connection = Open();
         using var command = Command(connection, $"SELECT COUNT(*) FROM {_table} WHERE published = 0", null);
         return Task.FromResult(Convert.ToInt64(
             command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>Records a relay has stopped trying.</summary>
+    /// <remarks>
+    /// <para>
+    /// Nothing else surfaces them: <see cref="ClaimBatchAsync"/> exists to skip them,
+    /// so without this they are invisible to everything but a hand-written query. Each
+    /// carries its <see cref="OutboxRecord.LastError"/>, which is the broker's own
+    /// reason for refusing it.
+    /// </para>
+    /// <para>
+    /// Releasing one is a matter of putting its <c>attempts</c> back to zero, once
+    /// whatever refused it has been fixed. The record is kept rather than deleted
+    /// precisely so that is possible.
+    /// </para>
+    /// </remarks>
+    public Task<IReadOnlyList<OutboxRecord>> RetiredAsync()
+    {
+        using var connection = Open();
+        using var command = Command(
+            connection,
+            $@"SELECT id, exchange, routing_key, type, payload, correlation_id,
+       causation_id, created_at, attempts, last_error
+FROM {_table}
+WHERE published = 0 AND attempts >= {P("maxAttempts")}
+ORDER BY created_at",
+            null);
+        Add(command, "maxAttempts", _maxAttempts);
+
+        var retired = new List<OutboxRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) retired.Add(Read(reader));
+        return Task.FromResult<IReadOnlyList<OutboxRecord>>(retired);
     }
 
     private string P(string name) => _prefix + name;

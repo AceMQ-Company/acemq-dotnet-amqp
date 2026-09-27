@@ -66,6 +66,13 @@ queue depth anywhere** — nothing else in this list can see it. It is measured 
 when the row was committed, not from when the relay claimed it: the claim is part of
 the answer to "how long has somebody been owed this", not the start of it.
 
+`acemq.outbox.total` tagged `failed` is the other half of that. A record the broker
+refuses ten times stops being offered so it cannot spend a place in every batch for
+ever, and at that point it stops raising this counter too — the series goes quiet
+rather than climbing. `RetiredAsync()` on the store lists the records nothing is
+trying any more, each with the broker's own reason on it; see
+[the outbox](patterns.md#a-record-the-broker-will-never-take).
+
 `acemq.request.duration` exists because neither of the spans that already covered a
 request/reply call was the thing the caller waited for. The publish is timed and the
 reply's delivery is timed; the round trip was the gap between them, and a gap is not

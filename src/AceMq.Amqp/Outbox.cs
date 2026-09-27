@@ -112,6 +112,16 @@ public interface IOutboxStore
     /// Takes up to <paramref name="batchSize"/> unpublished records and holds them
     /// for <paramref name="lease"/>, so two relays do not publish the same message.
     /// </summary>
+    /// <remarks>
+    /// A record that has failed too many times should not be offered. A record the
+    /// broker will never take — an exchange somebody deleted, a payload a policy
+    /// will always refuse — is otherwise claimed on every pass for ever, spending a
+    /// place in every batch and a publish attempt on a message that cannot go
+    /// anywhere. Both stores here stop offering one after
+    /// <see cref="InMemoryOutboxStore.DefaultMaxAttempts"/> failures and keep it for
+    /// somebody to look at; a store written before that was so is unaffected and
+    /// keeps retrying for ever.
+    /// </remarks>
     Task<IReadOnlyList<OutboxRecord>> ClaimBatchAsync(int batchSize, TimeSpan lease);
 
     Task MarkPublishedAsync(string id);
@@ -130,8 +140,33 @@ public interface IOutboxStore
 /// </remarks>
 public sealed class InMemoryOutboxStore : IOutboxStore
 {
+    /// <summary>
+    /// How many failures a record takes before it stops being offered to a relay.
+    /// </summary>
+    /// <remarks>
+    /// The same ten Python, Go and Ruby use, so a record that is stuck is stuck
+    /// after the same number of tries in all of them.
+    /// </remarks>
+    public const int DefaultMaxAttempts = 10;
+
     private readonly object _lock = new object();
     private readonly List<Entry> _entries = new List<Entry>();
+    private readonly int _maxAttempts;
+
+    public InMemoryOutboxStore() : this(DefaultMaxAttempts) { }
+
+    /// <param name="maxAttempts">
+    /// Failures before a record is left alone. Worth shortening in a test that wants
+    /// to watch a record retire; worth leaving alone otherwise.
+    /// </param>
+    public InMemoryOutboxStore(int maxAttempts)
+    {
+        if (maxAttempts < 1)
+        {
+            throw new ArgumentException("must be at least 1", nameof(maxAttempts));
+        }
+        _maxAttempts = maxAttempts;
+    }
 
     public Task AddAsync(OutboxRecord record)
     {
@@ -145,7 +180,11 @@ public sealed class InMemoryOutboxStore : IOutboxStore
         lock (_lock)
         {
             var claimed = _entries
-                .Where(e => !e.Published && e.LeasedUntil <= now)
+                // A record that has run out of attempts is not offered. Without this
+                // one the broker will never take is claimed on every pass for ever,
+                // spending a place in every batch on a message that cannot go
+                // anywhere.
+                .Where(e => !e.Published && e.LeasedUntil <= now && e.Record.Attempts < _maxAttempts)
                 .OrderBy(e => e.Record.CreatedAt)
                 .Take(batchSize)
                 .ToList();
@@ -188,9 +227,36 @@ public sealed class InMemoryOutboxStore : IOutboxStore
     }
 
     /// <summary>Everything still unpublished, for a test to assert on.</summary>
+    /// <remarks>Retired records included: they are unpublished and still owed.</remarks>
     public IReadOnlyList<OutboxRecord> Pending()
     {
         lock (_lock) return _entries.Where(e => !e.Published).Select(e => e.Record).ToArray();
+    }
+
+    /// <summary>Records a relay has stopped trying.</summary>
+    /// <remarks>
+    /// <para>
+    /// Nothing else surfaces them: <see cref="ClaimBatchAsync"/> exists to skip them,
+    /// so without this they are invisible.
+    /// </para>
+    /// <para>
+    /// They are kept rather than deleted. A record nothing could publish is evidence:
+    /// somebody has to be able to read it, fix whatever refuses it and release it,
+    /// and throwing it away would be the silent loss this pattern exists to prevent
+    /// arrived at from another direction. <see cref="OutboxRecord.LastError"/> is the
+    /// broker's own reason.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<OutboxRecord> Retired()
+    {
+        lock (_lock)
+        {
+            return _entries
+                .Where(e => !e.Published && e.Record.Attempts >= _maxAttempts)
+                .OrderBy(e => e.Record.CreatedAt)
+                .Select(e => e.Record)
+                .ToArray();
+        }
     }
 
     private sealed class Entry

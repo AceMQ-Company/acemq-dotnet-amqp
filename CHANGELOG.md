@@ -8,6 +8,49 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-27
+
+### Fixed
+
+- **A record the broker will never take is no longer retried for ever.** A failed
+  publish releases the record's lease and counts the attempt, so the next pass tries
+  again — right while there is any chance of success, and wrong for an exchange
+  somebody deleted or a payload a policy will always refuse. Nothing read the count:
+  `attempts` was written from the first version and used by no query, so a poison
+  record was claimed on every pass indefinitely, spending a place in every batch and
+  a publish attempt on a message that cannot go anywhere.
+
+  Both stores now stop offering a record after `maxAttempts` failures — ten by
+  default, which is what Python, Go and Ruby use, so a record that is stuck is stuck
+  after the same number of tries in all four.
+
+  The record is **kept, not deleted**. One nothing could publish is evidence:
+  somebody has to read it, fix whatever refuses it, and release it by putting its
+  `attempts` back to zero. `RetiredAsync()` on `DbOutboxStore` and `Retired()` on
+  `InMemoryOutboxStore` list them, because `ClaimBatchAsync` exists to skip them and
+  nothing else would surface them. `PendingCountAsync` still counts them: a retired
+  record is a message somebody is owed, and leaving it out would make a stuck outbox
+  read as an empty one.
+
+  **No migration.** The table has carried `attempts` and `last_error` since the
+  first version — this is the release that reads them.
+
+### Added
+
+- `InMemoryOutboxStore(int maxAttempts)` and
+  `DbOutboxStore(ConnectionSupplier, string, string, int maxAttempts)`, plus
+  `InMemoryOutboxStore.DefaultMaxAttempts`, `InMemoryOutboxStore.Retired()` and
+  `DbOutboxStore.RetiredAsync()`. A maximum below one is refused: a store that
+  retires a record before trying it once publishes nothing at all.
+
+### Changed
+
+- The ceiling lives in the store rather than in the relay, so a custom
+  `IOutboxStore` is unaffected and keeps retrying for ever. `IOutboxStore` gained no
+  member — adding one would stop every custom store compiling. Implementing the
+  ceiling means leaving records at the limit out of `ClaimBatchAsync`, which the
+  interface's own documentation now says.
+
 ## [0.7.2] - 2026-09-21
 
 ### Changed
