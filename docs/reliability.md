@@ -131,19 +131,33 @@ broker actually produces.
 
 ## Shutting down
 
-Disposing the connection while handlers are mid-flight abandons their work. The
-messages were never acknowledged so they come back — but any side effect already
-applied has happened twice by the time they do.
+**`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` cannot wait
+for an `async` handler and so abandons it mid-flight. The message was never
+acknowledged so it comes back — but any side effect already applied has happened
+twice by the time it does.
 
 ```csharp
-await mq.DrainConsumersAsync(TimeSpan.FromSeconds(30));
+await using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
+```
+
+That spends up to `AceMqConnection.DefaultDrainTimeout` — twenty seconds, the same
+figure Java and Ruby use, chosen to fit inside Kubernetes' default
+`terminationGracePeriodSeconds` of 30 — pausing consumption and waiting for the
+handlers already running. Java, Go, Python and Ruby all wait on the way out, and
+this is how .NET spells it.
+
+Drain explicitly when you want the answer rather than only the tidy-up:
+
+```csharp
+bool finished = await mq.DrainConsumersAsync(TimeSpan.FromSeconds(30));
 mq.Dispose();
 ```
 
 Drain stops new messages being handed over and waits for the ones in progress. It
 returns **false** if they did not finish in time, rather than throwing — shutting
 down anyway is a legitimate choice, and the caller needs to know which one it is
-making.
+making. `DisposeAsync` discards that answer, because a teardown has nobody to report
+it to; if you want it logged, drain first as above.
 
 An orchestrator's deadline is not this timeout, so there is an overload that takes
 the orchestrator's token:

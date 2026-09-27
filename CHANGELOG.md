@@ -8,6 +8,23 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-27
+
+### Added
+
+- **`await using` now drains.** `AceMqConnection` implements `IAsyncDisposable`:
+  `DisposeAsync` pauses consumption, gives the handlers already running
+  `AceMqConnection.DefaultDrainTimeout` — twenty seconds, the figure Java and Ruby
+  use — and then closes. `Dispose` could never wait for an `async` handler, so it
+  abandoned one mid-flight: the side effects had happened, the message was never
+  acknowledged, and the broker handed it to somebody else. Java, Go, Python and Ruby
+  all wait on the way out, and .NET was the one library of the five that did not.
+
+  `Dispose` is unchanged, and now says in its own documentation what it does not do.
+  A caller who wants to know whether everything finished still calls
+  `DrainConsumersAsync` and reads the answer; a teardown has nobody to report it to,
+  so `DisposeAsync` discards it.
+
 ## [0.7.3] - 2026-09-27
 
 ### Fixed

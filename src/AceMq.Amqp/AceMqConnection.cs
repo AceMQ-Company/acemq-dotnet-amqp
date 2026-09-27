@@ -34,9 +34,27 @@ namespace AceMq.Amqp;
 /// message turns a cheap publish into a TCP handshake and a broker that runs out of
 /// file descriptors under load.
 /// </para>
+/// <para>
+/// <b>Prefer <c>await using</c>.</b> <see cref="DisposeAsync"/> drains the consumers
+/// first — handlers already running are finished and their messages settled — while
+/// <see cref="Dispose"/> cannot wait for anything and so leaves every message being
+/// handled unacknowledged, for the broker to redeliver to somebody else. Java, Go,
+/// Python and Ruby all wait on the way out; this is how .NET spells it.
+/// </para>
 /// </remarks>
-public sealed class AceMqConnection : IDisposable
+public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 {
+    /// <summary>
+    /// How long <see cref="DisposeAsync"/> waits for handlers already running.
+    /// </summary>
+    /// <remarks>
+    /// Twenty seconds, because the number it has to fit inside is usually Kubernetes'
+    /// default <c>terminationGracePeriodSeconds</c> of 30 — and it is the same twenty
+    /// Java and Ruby use, so a polyglot estate has one number to reason about rather
+    /// than three.
+    /// </remarks>
+    public static readonly TimeSpan DefaultDrainTimeout = TimeSpan.FromSeconds(20);
+
     private readonly ITransportConnection _connection;
     private readonly ConnectionConfig _config;
     private readonly ICodec _codec;
@@ -1528,6 +1546,20 @@ public sealed class AceMqConnection : IDisposable
         if (!_connection.IsOpen) throw new TransportException("the connection is closed");
     }
 
+    /// <summary>Closes the connection without waiting for anything.</summary>
+    /// <remarks>
+    /// <b>This does not drain.</b> A handler still running when this is called keeps
+    /// running against a connection that is going away, and its message was never
+    /// acknowledged — so the broker redelivers it to another consumer, which is a
+    /// duplicate rather than a loss and is still work done twice. Nothing synchronous
+    /// can wait for an <c>async</c> handler without risking the deadlock that blocking
+    /// on one in a <c>using</c> block invites, so this does not try.
+    /// <para>
+    /// Use <see cref="DisposeAsync"/> — <c>await using</c> — or call
+    /// <see cref="DrainConsumersAsync(TimeSpan)"/> yourself when you want the answer
+    /// to "did everything finish?" rather than only the tidy-up.
+    /// </para>
+    /// </remarks>
     public void Dispose()
     {
         if (_disposed) return;
@@ -1539,5 +1571,41 @@ public sealed class AceMqConnection : IDisposable
         }
         _connection.Dispose();
         _inFlight.Dispose();
+    }
+
+    /// <summary>Drains the consumers, then closes the connection.</summary>
+    /// <remarks>
+    /// <para>
+    /// Consuming is paused, handlers already running are given
+    /// <see cref="DefaultDrainTimeout"/> to finish, and then everything is torn down.
+    /// A message being worked on is therefore settled by the handler that had it
+    /// rather than abandoned for the broker to hand to somebody else — which is what
+    /// Java's <c>close(budget)</c>, Ruby's <c>close(timeout:)</c>, Python's
+    /// <c>close()</c> and Go's <c>Consumer.Close</c> all do, and what
+    /// <see cref="Dispose"/> cannot.
+    /// </para>
+    /// <para>
+    /// A budget that runs out is not an error here: the drain returns false, the
+    /// connection closes, and the unfinished messages are redelivered. A caller that
+    /// needs to know whether everything finished calls
+    /// <see cref="DrainConsumersAsync(TimeSpan)"/> first and reads the answer — this
+    /// discards it, because a teardown has nobody to report to.
+    /// </para>
+    /// </remarks>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+
+        // The tear-down is in a finally, so a drain that fails for any reason still
+        // closes the connection: the caller has said it is done with it, and nothing
+        // else is going to close it.
+        try
+        {
+            await DrainConsumersAsync(DefaultDrainTimeout).ConfigureAwait(false);
+        }
+        finally
+        {
+            Dispose();
+        }
     }
 }

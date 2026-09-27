@@ -359,6 +359,51 @@ public sealed class ReliabilityTests : IDisposable
     }
 
     [Fact]
+    public async Task AwaitUsingDrainsWithoutBeingAsked()
+    {
+        // The reason DisposeAsync exists. `using` cannot wait for an async handler, so
+        // it abandons one mid-flight: the side effects have happened, the message was
+        // never acknowledged, and the broker hands it to somebody else. Java, Go,
+        // Python and Ruby all wait on the way out; `await using` is how .NET says it.
+        var finished = 0;
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await using (var mq = await AceMqConnection.ConnectAsync(_url))
+        {
+            await mq.DeclareQueueAsync(_q);
+            using var consumer = await mq.ConsumeAsync<string>(_q, async _ =>
+            {
+                started.TrySetResult(true);
+                await Task.Delay(200);
+                Interlocked.Increment(ref finished);
+                return Ack.Accept();
+            });
+
+            await mq.Publisher<string>("", _q).SendAsync("slow");
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // Leaving the block is the whole test: nothing here waits for the handler.
+        }
+
+        Assert.Equal(1, finished);
+    }
+
+    [Fact]
+    public async Task DisposeAsyncIsSafeTwiceAndAfterDispose()
+    {
+        // A teardown path that throws on a second call is a teardown path that turns a
+        // tidy-up into the exception somebody debugs. `await using` inside a method
+        // whose caller also disposes is ordinary, and so is disposing then awaiting.
+        var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DisposeAsync();
+        await mq.DisposeAsync();
+
+        var other = await AceMqConnection.ConnectAsync(_url);
+        other.Dispose();
+        await other.DisposeAsync();
+    }
+
+    [Fact]
     public async Task CountsADeliveryHeldAtThePauseGateSeparatelyFromOneInAHandler()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);
