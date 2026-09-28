@@ -41,6 +41,16 @@ namespace AceMq.Amqp;
 public interface IIdempotencyStore
 {
     /// <summary>Takes the message. False when it is already claimed or confirmed.</summary>
+    /// <remarks>
+    /// <b>A claim is a lease, not a fact.</b> An implementation must let a claim
+    /// nobody confirmed be taken over after a while, because the alternative is
+    /// losing work: nothing runs when a process is killed, so a claim with no expiry
+    /// left behind by a handler that died suppresses the redelivery — the thing
+    /// at-least-once delivery exists for — until the retention window ends. Both
+    /// stores here honour an unconfirmed claim for
+    /// <see cref="InMemoryIdempotencyStore.DefaultClaimTimeout"/> and then allow it
+    /// to be retaken, which is what Java, Go, Python and Ruby do.
+    /// </remarks>
     Task<bool> ClaimAsync(string messageId);
 
     /// <summary>Records that handling finished.</summary>
@@ -61,8 +71,22 @@ public interface IIdempotencyStore
 /// </remarks>
 public sealed class InMemoryIdempotencyStore : IIdempotencyStore
 {
+    /// <summary>
+    /// How long a claim nobody confirmed is honoured before another consumer may
+    /// take it.
+    /// </summary>
+    /// <remarks>
+    /// Five minutes, which is what Java, Go, Python and Ruby use, so a message that
+    /// is stuck is stuck for the same length of time whichever library was holding
+    /// it. It must comfortably exceed the longest a handler can take, or a slow
+    /// handler's message is handed to a second consumer while the first is still
+    /// working on it.
+    /// </remarks>
+    public static readonly TimeSpan DefaultClaimTimeout = TimeSpan.FromMinutes(5);
+
     private readonly TimeSpan _retention;
     private readonly int _maxEntries;
+    private readonly TimeSpan _claimTimeout;
     private readonly object _lock = new object();
     private readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
     private long _evictions;
@@ -70,10 +94,24 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
     public InMemoryIdempotencyStore(TimeSpan retention) : this(retention, 100_000) { }
 
     public InMemoryIdempotencyStore(TimeSpan retention, int maxEntries)
+        : this(retention, maxEntries, DefaultClaimTimeout) { }
+
+    /// <param name="retention">how long a confirmed message is remembered</param>
+    /// <param name="maxEntries">how many entries are held before the oldest are dropped</param>
+    /// <param name="claimTimeout">
+    /// how long an unconfirmed claim is honoured. Worth shortening in a test that
+    /// wants to watch a claim expire; worth leaving alone otherwise.
+    /// </param>
+    public InMemoryIdempotencyStore(TimeSpan retention, int maxEntries, TimeSpan claimTimeout)
     {
         if (maxEntries < 1) throw new ArgumentException("must be at least 1", nameof(maxEntries));
+        if (claimTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentException("must be positive", nameof(claimTimeout));
+        }
         _retention = retention;
         _maxEntries = maxEntries;
+        _claimTimeout = claimTimeout;
     }
 
     /// <summary>
@@ -87,17 +125,29 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
     public static InMemoryIdempotencyStore ForOneDay() =>
         new InMemoryIdempotencyStore(TimeSpan.FromDays(1));
 
+    /// <inheritdoc/>
     public Task<bool> ClaimAsync(string messageId)
     {
         if (messageId == null) throw new ArgumentNullException(nameof(messageId));
+        var now = DateTimeOffset.UtcNow;
         lock (_lock)
         {
             Evict();
             if (_entries.TryGetValue(messageId, out var existing) && !existing.Expired(_retention))
             {
-                return Task.FromResult(false);
+                // Confirmed is done, and stays done for the retention window.
+                if (existing.Confirmed) return Task.FromResult(false);
+
+                // An unconfirmed claim inside its window belongs to whoever took it.
+                if (now - existing.At <= _claimTimeout) return Task.FromResult(false);
+
+                // Outside the window: whoever held it is not coming back — nothing
+                // runs when a process is killed, so no Release was ever called — and
+                // the work still has to happen. Falling through retakes the claim,
+                // which is what stops a crash mid-handler suppressing the redelivery
+                // for the whole retention window.
             }
-            _entries[messageId] = new Entry(DateTimeOffset.UtcNow, confirmed: false);
+            _entries[messageId] = new Entry(now, confirmed: false);
             return Task.FromResult(true);
         }
     }

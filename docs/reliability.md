@@ -129,6 +129,37 @@ Retention is the window duplicates are caught in. Too short and a redelivery aft
 long outage is handled twice; too long and the store grows. A day covers what a
 broker actually produces.
 
+### A claim is a lease, not a fact
+
+A handler that throws releases its claim, so an ordinary failure is retried. A
+handler whose **process dies** releases nothing — nothing runs when a process is
+killed — so the claim has to expire on its own:
+
+```csharp
+var store = new DbIdempotencyStore(() => new SqlConnection(connectionString),
+                                   TimeSpan.FromDays(1),      // retention
+                                   "acemq_idempotency", "@",
+                                   TimeSpan.FromMinutes(5));  // the claim window
+```
+
+Five minutes by default — `InMemoryIdempotencyStore.DefaultClaimTimeout`, the same
+figure Java, Go, Python and Ruby use, so a message that is stuck is stuck for the
+same length of time whichever library was holding it. **Set it comfortably above
+your slowest handler**, or a slow handler's message is handed to a second consumer
+while the first is still working on it.
+
+Taking over a stale claim is a conditional `UPDATE`, so the database does the mutual
+exclusion there too: two consumers that both find a claim expired cannot both
+proceed, because the second updates zero rows. A **confirmed** message is never
+retaken — that would hand out completed work again, which is the duplicate the store
+exists to stop.
+
+Until 0.7.5 there was no claim window: a row meant "somebody has this", whoever left
+it and whenever, and the only expiry was retention. A consumer killed mid-handler
+therefore suppressed that message's redelivery for a day, and the work never
+happened — not a duplicate, which this pattern may produce, but a silent loss, in
+the pattern that exists to prevent exactly that.
+
 ## Shutting down
 
 **`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` cannot wait

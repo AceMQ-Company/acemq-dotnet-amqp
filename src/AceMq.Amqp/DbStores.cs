@@ -332,10 +332,19 @@ ORDER BY created_at",
 /// An idempotency store kept in a database.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Unlike the in-memory one, this deduplicates across instances and across
 /// restarts, which is what is needed when more than one consumer reads the same
 /// queue. The claim is an insert, so the database's primary key does the mutual
 /// exclusion: two consumers racing for the same message, one insert succeeds.
+/// </para>
+/// <para>
+/// <b>The claim is a lease.</b> An unconfirmed claim is honoured for
+/// <see cref="InMemoryIdempotencyStore.DefaultClaimTimeout"/> and may then be
+/// retaken, because a consumer killed mid-handler runs nothing on the way out: the
+/// row it left behind would otherwise suppress the redelivery for the whole
+/// retention window, and the work would never happen.
+/// </para>
 /// </remarks>
 public sealed class DbIdempotencyStore : IIdempotencyStore
 {
@@ -343,17 +352,40 @@ public sealed class DbIdempotencyStore : IIdempotencyStore
     private readonly string _table;
     private readonly string _prefix;
     private readonly TimeSpan _retention;
+    private readonly TimeSpan _claimTimeout;
 
     public DbIdempotencyStore(ConnectionSupplier connections, TimeSpan retention)
         : this(connections, retention, "acemq_idempotency", "@") { }
 
     public DbIdempotencyStore(
         ConnectionSupplier connections, TimeSpan retention, string table, string parameterPrefix)
+        : this(connections, retention, table, parameterPrefix,
+            InMemoryIdempotencyStore.DefaultClaimTimeout) { }
+
+    /// <param name="connections">where a connection to the database comes from</param>
+    /// <param name="retention">how long a confirmed message is remembered</param>
+    /// <param name="table">the table the rows live in</param>
+    /// <param name="parameterPrefix">
+    /// <c>@</c> for SQL Server and SQLite, <c>:</c> for Oracle, and either for
+    /// PostgreSQL depending on the provider.
+    /// </param>
+    /// <param name="claimTimeout">
+    /// how long an unconfirmed claim is honoured before another consumer may take it.
+    /// See <see cref="InMemoryIdempotencyStore.DefaultClaimTimeout"/>.
+    /// </param>
+    public DbIdempotencyStore(
+        ConnectionSupplier connections, TimeSpan retention, string table, string parameterPrefix,
+        TimeSpan claimTimeout)
     {
         _connections = connections ?? throw new ArgumentNullException(nameof(connections));
         _retention = retention;
         _table = table ?? throw new ArgumentNullException(nameof(table));
         _prefix = parameterPrefix ?? throw new ArgumentNullException(nameof(parameterPrefix));
+        if (claimTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentException("must be positive", nameof(claimTimeout));
+        }
+        _claimTimeout = claimTimeout;
     }
 
     /// <summary>The table this store expects.</summary>
@@ -365,9 +397,11 @@ public sealed class DbIdempotencyStore : IIdempotencyStore
 );
 CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
 
+    /// <inheritdoc/>
     public Task<bool> ClaimAsync(string messageId)
     {
         if (messageId == null) throw new ArgumentNullException(nameof(messageId));
+        var now = DateTime.UtcNow;
         using var connection = Open();
         Evict(connection);
 
@@ -378,17 +412,42 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
                 $"INSERT INTO {_table} (message_id, claimed_at, confirmed) " +
                 $"VALUES ({_prefix}id, {_prefix}at, 0)";
             Add(command, "id", messageId);
-            Add(command, "at", DateTime.UtcNow);
+            Add(command, "at", now);
             command.ExecuteNonQuery();
             return Task.FromResult(true);
         }
         catch (DbException)
         {
-            // The primary key rejected it, so somebody else has the claim. This is
-            // the mutual exclusion, and it is the database's rather than ours --
-            // a select-then-insert would have a window between the two.
-            return Task.FromResult(false);
+            // The primary key rejected it, so a row is already there. This is the
+            // mutual exclusion, and it is the database's rather than ours -- a
+            // select-then-insert would have a window between the two.
+            //
+            // But a row is not necessarily a claim somebody still holds. Taking it
+            // over is conditional and atomic: only an unconfirmed row whose claim has
+            // run out is updated, so two consumers racing to steal the same stale
+            // claim cannot both win -- the second updates zero rows.
+            return Task.FromResult(StealStaleClaim(connection, messageId, now));
         }
+    }
+
+    /// <summary>Takes over a claim whose holder never came back.</summary>
+    /// <remarks>
+    /// The lease is what a fact cannot do. A consumer that dies holding a message
+    /// would otherwise have recorded it as handled without handling it, and the
+    /// redelivery — the thing at-least-once delivery is <em>for</em> — would be
+    /// skipped. Nothing runs when a process is killed, so no
+    /// <see cref="ReleaseAsync"/> is ever called for it.
+    /// </remarks>
+    private bool StealStaleClaim(DbConnection connection, string messageId, DateTime now)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"UPDATE {_table} SET claimed_at = {_prefix}at " +
+            $"WHERE message_id = {_prefix}id AND confirmed = 0 AND claimed_at < {_prefix}before";
+        Add(command, "at", now);
+        Add(command, "id", messageId);
+        Add(command, "before", now - _claimTimeout);
+        return command.ExecuteNonQuery() == 1;
     }
 
     public Task ConfirmAsync(string messageId)

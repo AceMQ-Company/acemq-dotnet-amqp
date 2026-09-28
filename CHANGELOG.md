@@ -8,6 +8,45 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-09-27
+
+### Fixed
+
+- **A consumer killed mid-handler no longer suppresses the redelivery.** The claim an
+  idempotency store takes was a fact rather than a lease: a row meant "somebody has
+  this message", whoever left it and whenever. A handler that *throws* releases its
+  claim, so an ordinary failure was always retried — but nothing runs when a process
+  is killed, so a consumer that died holding a message left a claim nothing would
+  ever release. The only expiry was retention, which is the duplicate-catching window
+  and is meant to be long: a day, in this library's own documentation. So the
+  redelivery of that message was refused for a day and the work never happened.
+
+  Not a duplicate, which this pattern is allowed to produce — a silent loss, in the
+  pattern that exists to prevent exactly that. Java, Go, Python and Ruby all honour
+  an unconfirmed claim for five minutes and then let another consumer take it over;
+  .NET was the last of the five without it, and it is the same defect Go fixed in its
+  0.8.0.
+
+  An unconfirmed claim is now honoured for `claimTimeout` — five minutes by default,
+  the family's figure — and may then be retaken. Taking one over is a conditional
+  `UPDATE`, so two consumers that both find a claim expired cannot both proceed. A
+  confirmed message is never retaken, because handing out completed work again is the
+  duplicate the store exists to stop.
+
+  **No migration.** The table has carried `claimed_at` and `confirmed` since the
+  first version — this is the release that reads them as a lease.
+
+### Added
+
+- `InMemoryIdempotencyStore.DefaultClaimTimeout`, and constructors taking a
+  `claimTimeout` on `InMemoryIdempotencyStore` and `DbIdempotencyStore`. A window of
+  zero or less is refused: a lease that has already expired hands every message to
+  every consumer, which deduplicates nothing.
+
+- `IIdempotencyStore.ClaimAsync` now documents the lease as part of the contract, so
+  a custom store knows it is expected to expire an unconfirmed claim rather than
+  holding it for ever.
+
 ## [0.7.4] - 2026-09-27
 
 ### Added
