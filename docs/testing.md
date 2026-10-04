@@ -111,8 +111,10 @@ machine, too long and the suite takes minutes.
 **Create the source with `RunContinuationsAsynchronously`.** Without it,
 `TrySetResult` inside the handler resumes the awaiting test *on the client's consumer
 dispatch thread*. Anything the test then does that the dispatch thread itself has to
-service — disposing the consumer, for one — blocks that thread against itself, and
-the test hangs rather than failing:
+service blocks that thread against itself, and the test hangs rather than failing.
+(Closing the connection or the consumer from there is safe since 0.7.7: it returns at
+once and finishes on the thread pool. Waiting synchronously on the next delivery is
+not.)
 
 ```csharp
 var arrived = new TaskCompletionSource<IMessage<OrderPlaced>>(

@@ -82,6 +82,14 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     private long _heldDeliveries;
     private bool _disposed;
 
+    // Whose handler the current code is running in, if anyone's: through every await
+    // of the handler, and -- the thread-static half -- through a continuation the
+    // handler's synchronous part resumes inline, which runs on the handler's thread
+    // but in its awaiter's context. A close from either place must not wait for the
+    // handler to return, because the handler is waiting for the close. See Dispose.
+    private static readonly AsyncLocal<AceMqConnection?> Handling = new AsyncLocal<AceMqConnection?>();
+    [ThreadStatic] private static AceMqConnection? _dispatching;
+
     private AceMqConnection(
         ITransportConnection connection, ConnectionConfig config, ICodec codec, ITransport transport)
     {
@@ -452,7 +460,19 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                 Ack ack;
                 try
                 {
-                    ack = await handler(message).ConfigureAwait(false);
+                    Handling.Value = this;
+                    var outer = _dispatching;
+                    _dispatching = this;
+                    Task<Ack> running;
+                    try
+                    {
+                        running = handler(message);
+                    }
+                    finally
+                    {
+                        _dispatching = outer;
+                    }
+                    ack = await running.ConfigureAwait(false);
                 }
                 catch (AceFatalException e)
                 {
@@ -1041,16 +1061,20 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         PauseConsuming();
+
+        // Called from one of this connection's own handlers, that handler is in flight
+        // until this returns, so waiting for it would only run out the timeout.
+        var self = Handling.Value == this ? 1 : 0;
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
-            if (InFlight == 0) return true;
+            if (InFlight <= self) return true;
 
             // Cancellable, so the caller's deadline is honoured within a poll rather
             // than at the end of the timeout it was given.
             await Task.Delay(25, cancellationToken).ConfigureAwait(false);
         }
-        return InFlight == 0;
+        return InFlight <= self;
     }
 
     /// <summary>
@@ -1582,6 +1606,12 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// nothing is lost or dead-lettered.
     /// </para>
     /// <para>
+    /// <b>Called from inside one of this connection's handlers, it returns at once</b>
+    /// and finishes closing on the thread pool, in the same order. Waiting there would
+    /// wait for the handler that is doing the waiting: before 0.7.7 that blocked for
+    /// 45 to 50 seconds, until the client's own timeouts gave up.
+    /// </para>
+    /// <para>
     /// Use <c>await using</c> — or <see cref="CloseAsync"/> — or call
     /// <see cref="DrainConsumersAsync(TimeSpan)"/> yourself when you want the answer
     /// to "did everything finish?" rather than only the tidy-up.
@@ -1591,6 +1621,16 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        if (Handling.Value == this || _dispatching == this)
+        {
+            _ = Task.Run(TearDown);
+            return;
+        }
+        TearDown();
+    }
+
+    private void TearDown()
+    {
         lock (_owned)
         {
             foreach (var d in _owned) d.Dispose();

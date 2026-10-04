@@ -475,6 +475,118 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// Disposing the connection from inside one of its own handlers returns at once.
+    /// </summary>
+    /// <remarks>
+    /// Before 0.7.7 this blocked for 45 to 50 seconds: the client closes a connection
+    /// only once every handler has returned, and this one could not return until the
+    /// close did. It ended only when the client's own timeouts gave up.
+    /// </remarks>
+    [Fact]
+    public async Task DisposeFromInsideAHandlerReturnsPromptly()
+    {
+        var elapsed = await CloseFromInsideAHandler((mq, _) =>
+        {
+            mq.Dispose();
+            return Task.CompletedTask;
+        });
+        Assert.True(elapsed < TimeSpan.FromSeconds(3), $"dispose took {elapsed}");
+    }
+
+    /// <summary>
+    /// <c>CloseAsync</c> from inside a handler neither drains against itself nor
+    /// waits on the close that waits for it.
+    /// </summary>
+    [Fact]
+    public async Task CloseAsyncFromInsideAHandlerReturnsPromptly()
+    {
+        var elapsed = await CloseFromInsideAHandler((mq, _) => mq.CloseAsync());
+        Assert.True(elapsed < TimeSpan.FromSeconds(3), $"close took {elapsed}");
+    }
+
+    /// <summary>
+    /// The shape the drain probe found: code outside the handler awaits a signal the
+    /// handler sets, the continuation runs synchronously on the consumer's thread,
+    /// and that continuation disposes.
+    /// </summary>
+    [Fact]
+    public async Task DisposeFromASynchronousContinuationOfAHandlerReturnsPromptly()
+    {
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        for (var i = 0; i < 2; i++) await publisher.SendAsync(new OrderPlaced { OrderId = $"S-{i}" });
+
+        var consumer = await AceMqConnection.ConnectAsync(_url);
+        // Deliberately without RunContinuationsAsynchronously.
+        var started = new TaskCompletionSource<bool>();
+        var onTheDispatchThread = false;
+        var handlerThread = -1;
+
+        // Waiting before anything is consumed, so the handler's signal resumes this
+        // continuation inline rather than finding it already finished.
+        var disposed = Task.Run(async () =>
+        {
+            await started.Task;
+            onTheDispatchThread = Thread.CurrentThread.ManagedThreadId == handlerThread;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            consumer.Dispose();
+            return clock.Elapsed;
+        });
+        await Task.Delay(100);
+
+        await consumer.ConsumeAsync<OrderPlaced>(Queue, ConsumerOptions.Prefetch(1), async _ =>
+        {
+            handlerThread = Thread.CurrentThread.ManagedThreadId;
+            started.TrySetResult(true);
+            await Task.Delay(200);
+            return Ack.Accept();
+        });
+
+        var elapsed = await disposed.WaitAsync(TimeSpan.FromSeconds(120));
+        Assert.True(onTheDispatchThread, "the continuation did not run inline in the handler");
+        _output.WriteLine($"dispose took {elapsed.TotalMilliseconds:F0} ms");
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(3), $"dispose took {elapsed}");
+        await AssertNothingLost();
+    }
+
+    /// <summary>
+    /// Two messages, prefetch 1; the first handler closes the connection it runs on
+    /// and reports how long the close took.
+    /// </summary>
+    private async Task<TimeSpan> CloseFromInsideAHandler(Func<AceMqConnection, IMessage<OrderPlaced>, Task> close)
+    {
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        for (var i = 0; i < 2; i++) await publisher.SendAsync(new OrderPlaced { OrderId = $"H-{i}" });
+
+        var consumer = await AceMqConnection.ConnectAsync(_url);
+        var took = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await consumer.ConsumeAsync<OrderPlaced>(Queue, ConsumerOptions.Prefetch(1), async message =>
+        {
+            if (took.Task.IsCompleted) return Ack.Accept();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            await close(consumer, message);
+            took.TrySetResult(clock.Elapsed);
+            return Ack.Accept();
+        });
+
+        var elapsed = await took.Task.WaitAsync(TimeSpan.FromSeconds(120));
+        _output.WriteLine($"close took {elapsed.TotalMilliseconds:F0} ms");
+        await AssertNothingLost();
+        return elapsed;
+    }
+
+    /// <summary>
+    /// The second message is back on the queue — the first may be too, if its
+    /// acknowledgement lost the race with the close — and nothing was dead-lettered.
+    /// </summary>
+    private async Task AssertNothingLost()
+    {
+        await Eventually(async () => await _mq.MessageCountAsync(Queue) >= 1, "the unhandled one back");
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.DeadLetterQueue(Queue)));
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.ParkedQueue(Queue)));
+    }
+
+    /// <summary>
     /// Pauses, and waits for the first handler's acknowledgement to let the broker
     /// push the second, which then sits at the pause gate.
     /// </summary>

@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closing a connection from inside one of its own handlers no longer hangs for
+  45 seconds.** The RabbitMQ client closes a connection only once every handler on it
+  has returned, so a handler that called `Dispose()` — or code resumed inline by a
+  signal the handler set, such as a `TaskCompletionSource` created without
+  `RunContinuationsAsynchronously` — waited for itself until the client's timeouts
+  gave up: 25 to 45 seconds measured. `await CloseAsync()` from a handler was worse,
+  because its drain first waited the full 20 seconds for the very handler awaiting it.
+
+  A close that comes from inside one of the connection's own handlers now returns at
+  once and finishes on the thread pool, in the same order as before: consumers
+  cancelled, held deliveries handed back with requeue, connection closed. The drain
+  no longer counts the handler that called it. Nothing is acknowledged or rejected on
+  the way: the calling handler's own message is redelivered unless its
+  acknowledgement reaches the broker before the channel closes. Measured: 0 ms, from
+  25–45 s.
+
 ## [0.7.6] - 2026-10-03
 
 ### Fixed
