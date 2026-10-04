@@ -8,6 +8,30 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Closing a consumer with a backlog no longer takes thirty seconds.** A drain
+  pauses consumption; once the running handler acknowledged its message the broker
+  pushed the next one, which waited at the pause gate for up to thirty seconds — and
+  the channel close waited for it. The drain returned after about a second and then
+  `await using` or `CloseAsync()` spent another thirty closing: 31 seconds measured,
+  longer than Kubernetes' default 30-second grace period, so the pod was killed
+  mid-shutdown. Nothing was lost, only slow.
+
+  Closing now cancels the consumers first, so the broker sends them nothing more, and
+  then hands every delivery held at the gate back with requeue — never acknowledged,
+  never rejected without requeue, so the broker redelivers it and nothing is
+  dead-lettered. The same backlog now closes in about 20 ms after the running
+  handler finishes. `Dispose` gets the same fix.
+
+- **`Dispose` is documented as it behaves.** It was described as returning at once.
+  On RabbitMQ it returns only when the handlers already running have returned —
+  the client closes a channel only after its handlers are done — and by then it has
+  closed the channel, so their acknowledgements never reach the broker and those
+  messages are redelivered. Java's `close()` likewise cancels without waiting for
+  those handlers to settle; only the blocking differs, and it comes from the .NET
+  client. `await using` and `CloseAsync()` are still the way to let them settle.
+
 ## [0.7.5] - 2026-09-27
 
 ### Fixed

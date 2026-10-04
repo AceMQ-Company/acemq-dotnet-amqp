@@ -429,6 +429,89 @@ public sealed class RabbitMqTransportTests : IAsyncLifetime
         throw new TimeoutException($"timed out waiting for {what}");
     }
 
+    /// <summary>
+    /// Closing a consumer with a backlog finishes promptly once the running handler
+    /// has, and hands the delivery waiting at the pause gate back to the broker.
+    /// </summary>
+    /// <remarks>
+    /// Before 0.7.6 the drain paused consumption, the running handler acked, the
+    /// broker pushed the next message, and that one sat at the pause gate for its
+    /// full 30 seconds while the channel close waited for it — a close that took
+    /// longer than Kubernetes' default grace period. Nothing was lost; it was just
+    /// too slow to be useful.
+    /// </remarks>
+    [Fact]
+    public async Task ClosesPromptlyWithABacklogAndHandsTheHeldDeliveryBack()
+    {
+        var elapsed = await CloseWithABacklog(mq => mq.CloseAsync());
+
+        // Thirty seconds before the fix: the channel close waited for the held one.
+        Assert.True(elapsed < TimeSpan.FromSeconds(3), $"close took {elapsed}");
+
+        // The first message was handled and acknowledged by the drain; the held one
+        // and the one never sent are back on the queue, and nothing was dead-lettered.
+        await Eventually(async () => await _mq.MessageCountAsync(Queue) == 2, "2 ready");
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.DeadLetterQueue(Queue)));
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.ParkedQueue(Queue)));
+    }
+
+    /// <summary>
+    /// Dispose, which does not drain, does not wait for a held delivery either.
+    /// </summary>
+    [Fact]
+    public async Task DisposeDoesNotWaitForTheHeldDelivery()
+    {
+        var elapsed = await CloseWithABacklog(mq =>
+        {
+            mq.Dispose();
+            return Task.CompletedTask;
+        });
+
+        Assert.True(elapsed < TimeSpan.FromSeconds(3), $"dispose took {elapsed}");
+
+        await Eventually(async () => await _mq.MessageCountAsync(Queue) == 2, "2 ready");
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.DeadLetterQueue(Queue)));
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.ParkedQueue(Queue)));
+    }
+
+    /// <summary>
+    /// Pauses, and waits for the first handler's acknowledgement to let the broker
+    /// push the second, which then sits at the pause gate.
+    /// </summary>
+    private static async Task WaitForAHeldDelivery(AceMqConnection mq)
+    {
+        mq.PauseConsuming();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (mq.Held == 0 && DateTime.UtcNow < deadline) await Task.Delay(25);
+        Assert.Equal(1, mq.Held);
+    }
+
+    /// <summary>
+    /// Three messages, prefetch 1, a handler that takes a second; closes once the
+    /// second is waiting at the pause gate, and returns how long the close took.
+    /// </summary>
+    private async Task<TimeSpan> CloseWithABacklog(Func<AceMqConnection, Task> close)
+    {
+        var publisher = _mq.Publisher<OrderPlaced>(Exchange, "order.placed");
+        for (var i = 0; i < 3; i++) await publisher.SendAsync(new OrderPlaced { OrderId = $"B-{i}" });
+
+        var consumer = await AceMqConnection.ConnectAsync(_url);
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await consumer.ConsumeAsync<OrderPlaced>(Queue, ConsumerOptions.Prefetch(1), async _ =>
+        {
+            started.TrySetResult(true);
+            await Task.Delay(1000);
+            return Ack.Accept();
+        });
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await WaitForAHeldDelivery(consumer);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await close(consumer);
+        _output.WriteLine($"close took {clock.ElapsedMilliseconds} ms");
+        return clock.Elapsed;
+    }
+
     [Fact]
     public async Task ReportsAPublishThatMatchesNoQueue()
     {

@@ -38,9 +38,9 @@ namespace AceMq.Amqp;
 /// <b>Prefer <c>await using</c></b> (or <see cref="CloseAsync"/> from Visual Basic,
 /// which has neither <c>await using</c> nor the ability to await a <c>ValueTask</c>).
 /// Both drain the consumers first — handlers already running are finished and their messages settled — while
-/// <see cref="Dispose"/> cannot wait for anything and so leaves every message being
-/// handled unacknowledged, for the broker to redeliver to somebody else. Java, Go,
-/// Python and Ruby all wait on the way out; this is how .NET spells it.
+/// <see cref="Dispose"/> does not: it closes the channels before those handlers settle,
+/// so every message being handled is redelivered to somebody else. Java, Go, Python
+/// and Ruby all wait on the way out; this is how .NET spells it.
 /// </para>
 /// </remarks>
 public sealed class AceMqConnection : IDisposable, IAsyncDisposable
@@ -66,6 +66,9 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     private readonly List<IPublishInterceptor> _publishInterceptors = new List<IPublishInterceptor>();
     private readonly List<IConsumeInterceptor> _consumeInterceptors = new List<IConsumeInterceptor>();
     private volatile TaskCompletionSource<bool>? _consumingPaused;
+
+    // The pause gate once the connection is closing: already open, answering false.
+    private static readonly TaskCompletionSource<bool> Closing = ClosedGate();
     private volatile bool _publishingPaused;
 
     // This connection's own in-flight count, not the process-wide gauge. Two
@@ -361,7 +364,9 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                         var resumed = await Task
                             .WhenAny(paused.Task, Task.Delay(TimeSpan.FromSeconds(30)))
                             .ConfigureAwait(false);
-                        if (resumed != paused.Task) return Ack.Release();
+                        // False is the connection closing: handed back rather than
+                        // held until the timeout, which the channel close waits for.
+                        if (resumed != paused.Task || !paused.Task.Result) return Ack.Release();
                     }
                     finally
                     {
@@ -972,6 +977,13 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// with the message back on the broker and no half-done work; they differ in what
     /// the shutdown costs and in what it claims. This one now claims the truth.
     /// </para>
+    /// <para>
+    /// Closing does not wait for them. <see cref="Dispose"/>, <see cref="CloseAsync"/>
+    /// and <c>await using</c> cancel the consumers first, so the broker sends nothing
+    /// more, and then hand every held delivery back with requeue — never acknowledged,
+    /// never dead-lettered. Before 0.7.6 each one sat out its thirty seconds at the
+    /// gate while the channel close waited for it.
+    /// </para>
     /// </remarks>
     public long Held => Interlocked.Read(ref _heldDeliveries);
 
@@ -1542,20 +1554,33 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         }
     }
 
+    private static TaskCompletionSource<bool> ClosedGate()
+    {
+        var gate = new TaskCompletionSource<bool>();
+        gate.SetResult(false);
+        return gate;
+    }
+
     private void EnsureOpen()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(AceMqConnection));
         if (!_connection.IsOpen) throw new TransportException("the connection is closed");
     }
 
-    /// <summary>Closes the connection without waiting for anything.</summary>
+    /// <summary>Cancels the consumers and closes the connection, without draining.</summary>
     /// <remarks>
-    /// <b>This does not drain.</b> A handler still running when this is called keeps
-    /// running against a connection that is going away, and its message was never
-    /// acknowledged — so the broker redelivers it to another consumer, which is a
-    /// duplicate rather than a loss and is still work done twice. Nothing synchronous
-    /// can wait for an <c>async</c> handler without risking the deadlock that blocking
-    /// on one in a <c>using</c> block invites, so this does not try.
+    /// <b>This does not drain.</b> The consumers are cancelled and their channels
+    /// closed before a handler still running can settle, so its acknowledgement never
+    /// reaches the broker and the message is redelivered to another consumer — a
+    /// duplicate rather than a loss, and still work done twice.
+    /// <para>
+    /// <b>Nor does it return at once.</b> On RabbitMQ the client finishes closing a
+    /// connection only when every handler on it has returned, so this blocks for as
+    /// long as the longest handler still running takes — without the benefit of its
+    /// result. A delivery held at the pause gate is not waited for: once the consumers
+    /// are cancelled it is handed back with requeue, so the broker redelivers it and
+    /// nothing is lost or dead-lettered.
+    /// </para>
     /// <para>
     /// Use <c>await using</c> — or <see cref="CloseAsync"/> — or call
     /// <see cref="DrainConsumersAsync(TimeSpan)"/> yourself when you want the answer
@@ -1571,6 +1596,16 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             foreach (var d in _owned) d.Dispose();
             _owned.Clear();
         }
+
+        // After the consumers are cancelled, so the broker sends them nothing more,
+        // and before the connection closes, because closing waits for every handler
+        // to return and a delivery held at the pause gate would otherwise sit out its
+        // full thirty seconds first. Held ones are handed back with requeue; later
+        // arrivals from the prefetch buffer are handed back without being held.
+        var gate = _consumingPaused;
+        _consumingPaused = Closing;
+        gate?.TrySetResult(false);
+
         _connection.Dispose();
         _inFlight.Dispose();
     }

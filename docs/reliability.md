@@ -162,10 +162,19 @@ the pattern that exists to prevent exactly that.
 
 ## Shutting down
 
-**`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` cannot wait
-for an `async` handler and so abandons it mid-flight. The message was never
-acknowledged so it comes back — but any side effect already applied has happened
-twice by the time it does.
+**`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` does not.
+`Dispose` is not instant either: on RabbitMQ it returns only once the handlers
+already running have returned, because the client closes a channel only after its
+handlers are done — but it has already told the broker the channel is closing, so
+what those handlers settle never arrives. The messages come back, and any side
+effect already applied has happened twice by the time they do.
+
+Neither way of closing waits for a delivery held at the pause gate. Once the
+consumers are cancelled — so the broker sends them nothing more — held deliveries
+are handed back with requeue, never acknowledged and never dead-lettered, and the
+close finishes as soon as the last running handler does. Before 0.7.6 a held
+delivery sat out its full thirty seconds first, which made `await using` take longer
+than Kubernetes' default grace period.
 
 ```csharp
 await using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");

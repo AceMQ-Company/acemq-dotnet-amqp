@@ -990,6 +990,14 @@ public sealed class RabbitMqTransport : ITransport
         /// it on work the same thread has to perform deadlocks. Handing the cancel
         /// to the pool and waiting with a bound keeps disposal safe from anywhere,
         /// including from inside a handler.
+        /// <para>
+        /// Only the cancel is waited for, not the channel close. The client closes a
+        /// channel only once every handler on it has returned, and a delivery held at
+        /// the connection's pause gate has not — so waiting here would wait for the
+        /// gate, which is released only after this returns. Once basic.cancel is
+        /// answered the broker sends this consumer nothing more, so whatever is
+        /// handed back from then on is not handed straight back to it.
+        /// </para>
         /// </remarks>
         public void Dispose()
         {
@@ -997,17 +1005,17 @@ public sealed class RabbitMqTransport : ITransport
             _cancelled = true;
             try
             {
-                Task.Run(async () =>
-                {
-                    await _channel.BasicCancelAsync(_tag).ConfigureAwait(false);
-                    _channel.Dispose();
-                }).Wait(TimeSpan.FromSeconds(5));
+                Task.Run(() => _channel.BasicCancelAsync(_tag)).Wait(TimeSpan.FromSeconds(5));
             }
             catch
             {
                 // Cancelling a consumer on a connection that has already gone is the
                 // normal shutdown order, not an error worth reporting.
             }
+            Task.Run(() =>
+            {
+                try { _channel.Dispose(); } catch { /* closing a closed channel is not news */ }
+            });
         }
     }
 }
