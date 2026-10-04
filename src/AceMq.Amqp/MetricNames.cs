@@ -187,6 +187,17 @@ public static class MetricNames
     public const string OutcomeConfirmed = "confirmed";
     public const string OutcomeUnroutable = "unroutable";
     public const string OutcomeFailed = "failed";
+
+    /// <summary>
+    /// A publish the library declined to send before writing anything: publishing
+    /// was paused, or the broker had blocked the connection.
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="OutcomeFailed"/>, which means the message may have been lost.
+    /// Nothing was written, so the caller still holds the message and can send it
+    /// again once the pause or the block lifts. The same value in all five libraries.
+    /// </remarks>
+    public const string OutcomeRefused = "refused";
     public const string OutcomeAcked = "acked";
     public const string OutcomeRetried = "retried";
 

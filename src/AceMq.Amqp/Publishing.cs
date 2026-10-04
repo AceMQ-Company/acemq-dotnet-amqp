@@ -178,7 +178,12 @@ internal sealed class Publisher<T> : IPublisher<T>
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Publisher<T>));
         if (envelope == null) throw new ArgumentNullException(nameof(envelope));
-        if (_paused != null && _paused()) throw new PublishingPausedException();
+        if (_paused != null && _paused())
+        {
+            // Refused, not failed: nothing was written, so the caller still has it.
+            Record(envelope, MetricNames.OutcomeRefused, TimeSpan.Zero, span: null);
+            throw new PublishingPausedException();
+        }
 
         // Before encoding, so an interceptor's envelope change reaches the wire.
         if (_interceptors.Length > 0)
@@ -269,6 +274,14 @@ internal sealed class Publisher<T> : IPublisher<T>
         }
         catch (PublishFailedException e)
         {
+            Notify(envelope, payload, null, e);
+            throw;
+        }
+        catch (ConnectionBlockedException e)
+        {
+            // Thrown before the transport writes anything, so the message cannot have
+            // been lost -- refused, not failed, which would mean it might have been.
+            Record(envelope, MetricNames.OutcomeRefused, clock.Elapsed, span);
             Notify(envelope, payload, null, e);
             throw;
         }

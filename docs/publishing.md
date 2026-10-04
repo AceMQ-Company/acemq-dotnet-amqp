@@ -149,7 +149,9 @@ visible rather than hidden as a hang:
 if (mq.IsBlocked) Console.WriteLine(mq.BlockedReason);
 ```
 
-A publish attempted on a blocked connection throws `ConnectionBlockedException`.
+A publish attempted on a blocked connection throws `ConnectionBlockedException`, and
+is counted as `outcome="refused"`: nothing was written, so the message is still
+yours to send again.
 
 `mq.Health()` reports a blocked connection as **Up, with the reason on it** — back
 pressure is worth an alert and is not worth a restart. See

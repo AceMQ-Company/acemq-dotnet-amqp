@@ -125,6 +125,7 @@ builder.Services.AddOpenTelemetry()
 | What you see | What it usually means |
 |---|---|
 | `publish_total{outcome="unroutable"}` climbing | a binding was never declared, or a routing key has a typo |
+| `publish_total{outcome="refused"}` climbing | publishing is paused or the broker has blocked the connection — nothing was sent, nothing lost |
 | `consume_attempts` bucket above `le="1"` filling | a dependency is flapping; look at the retry reasons |
 | `dead_lettered_total{outcome="dead_lettered"}` climbing | a retry policy is running out — usually a dependency that is down |
 | `dead_lettered_total{outcome="parked"}` climbing | messages nothing can read — a schema or a deploy; check `{queue}.parked` |

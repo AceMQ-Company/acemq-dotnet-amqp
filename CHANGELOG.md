@@ -8,6 +8,17 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **A publish the library declined to send is counted as `refused`.** A new value for
+  the `outcome` tag on `acemq.publish.total` and `acemq.publish.duration`, and for
+  `messaging.acemq.outcome` on the publish span: `MetricNames.OutcomeRefused`. It
+  covers `PublishingPausedException` — which recorded nothing at all before — and
+  `ConnectionBlockedException`, which was counted as `failed`. Both are thrown before
+  anything is written, so the caller still holds the message; `failed` keeps meaning
+  the message may have been lost, and a drain's paused publishes no longer look like
+  an outage. Additive, and the same value in all five libraries.
+
 ### Fixed
 
 - **Closing a connection from inside one of its own handlers no longer hangs for

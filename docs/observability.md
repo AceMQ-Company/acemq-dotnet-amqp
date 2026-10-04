@@ -34,10 +34,14 @@ service rewritten from Java to C# keeps its observability.
 | `acemq.pipeline.run.duration` | histogram, seconds | pipeline, step, outcome |
 | `acemq.pipeline.run.total` | counter | pipeline, step, outcome |
 
-Publish outcomes are `confirmed`, `unroutable` and `failed`. The distinction is worth
+Publish outcomes are `confirmed`, `unroutable`, `failed` and `refused`. The distinction is worth
 alerting on separately: **unroutable is a topology mistake**, `failed` is the broker
 or the network, and treating them as one hides the difference between a bad binding
-and an outage. Up to 0.3.0 a broker's nack was tagged `rejected` here — a value no
+and an outage. **`refused` is a publish the library declined before writing
+anything** — publishing paused (`PublishingPausedException`) or the connection
+blocked by the broker (`ConnectionBlockedException`) — so the caller still has the
+message and nothing can have been lost; `failed` keeps meaning it may have been. The
+same value in all five libraries. Up to 0.3.0 a broker's nack was tagged `rejected` here — a value no
 other library writes, and one that belongs to a delivery — so a panel filtering
 publishes by outcome dropped every refusal.
 

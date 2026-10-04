@@ -111,6 +111,57 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal(MetricNames.OutcomeUnroutable, total.Tags[MetricNames.TagOutcome]);
     }
 
+    /// <summary>
+    /// A publish the library declined to send is <c>refused</c>, not <c>failed</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>failed</c> means the message may have been lost; a refusal wrote nothing, so
+    /// the caller still has it and nothing needs reconciling. One counter for both
+    /// made a drain's paused publishes look like an outage.
+    /// </remarks>
+    [Fact]
+    public async Task CountsAPausedPublishAsRefused()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+        mq.PausePublishing();
+
+        await Assert.ThrowsAsync<PublishingPausedException>(
+            () => mq.Publisher<string>("", _q).SendAsync("hello"));
+
+        var total = Taken().Single(
+            m => m.Name == MetricNames.PublishTotal && m.Tags[MetricNames.TagRoutingKey] == _q);
+        Assert.Equal(MetricNames.OutcomeRefused, total.Tags[MetricNames.TagOutcome]);
+    }
+
+    [Fact]
+    public async Task CountsAPublishOnABlockedConnectionAsRefused()
+    {
+        var spans = new List<Activity>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a => { lock (spans) spans.Add(a); },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        var broker = Blocked.Registered();
+        using var mq = await AceMqConnection.ConnectAsync(broker.Url);
+
+        await Assert.ThrowsAsync<ConnectionBlockedException>(
+            () => mq.Publisher<string>("", _q).SendAsync("hello"));
+
+        var total = Taken().Single(
+            m => m.Name == MetricNames.PublishTotal && m.Tags[MetricNames.TagRoutingKey] == _q);
+        Assert.Equal(MetricNames.OutcomeRefused, total.Tags[MetricNames.TagOutcome]);
+
+        Activity span;
+        lock (spans) span = spans.Single(a => a.GetTagItem(AceMqTelemetry.AttrOutcome) != null
+                                              && a.DisplayName.Contains(_q));
+        Assert.Equal(MetricNames.OutcomeRefused, span.GetTagItem(AceMqTelemetry.AttrOutcome));
+    }
+
     [Fact]
     public async Task RecordsWhatAConsumerDidWithAMessage()
     {
@@ -746,6 +797,7 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("confirmed", MetricNames.OutcomeConfirmed);
         Assert.Equal("unroutable", MetricNames.OutcomeUnroutable);
         Assert.Equal("failed", MetricNames.OutcomeFailed);
+        Assert.Equal("refused", MetricNames.OutcomeRefused);
         Assert.Equal("acked", MetricNames.OutcomeAcked);
         Assert.Equal("retried", MetricNames.OutcomeRetried);
         Assert.Equal("dead_lettered", MetricNames.OutcomeDeadLettered);
@@ -784,7 +836,7 @@ public sealed class TelemetryTests : IDisposable
             "acemq.pipeline.run.duration", "acemq.pipeline.run.total",
             "exchange", "routing.key", "queue", "transport", "message.type",
             "target", "rung", "outcome", "pipeline", "step",
-            "confirmed", "unroutable", "failed", "acked", "retried",
+            "confirmed", "unroutable", "failed", "refused", "acked", "retried",
             "dead_lettered", "parked", "rejected", "answered", "timed_out",
             "published", "completed", "ended_early",
             " publish", " process", " request",
@@ -830,5 +882,61 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("messaging.acemq.retry_delay_ms", AceMqTelemetry.AttrRetryDelayMs);
         Assert.Equal("messaging.acemq.outbox_lag_ms", AceMqTelemetry.AttrOutboxLagMs);
         Assert.Equal("messaging.acemq.run_age_ms", AceMqTelemetry.AttrRunAgeMs);
+    }
+
+    /// <summary>A broker that has blocked the connection: every publish is refused.</summary>
+    private sealed class Blocked : ITransport, ITransportConnection
+    {
+        // A scheme of its own per test: the registry is process-wide.
+        private Blocked() => Url = "blocked-" + Guid.NewGuid().ToString("N") + "://broker";
+
+        internal static Blocked Registered()
+        {
+            var broker = new Blocked();
+            Transports.Register(broker);
+            return broker;
+        }
+
+        internal string Url { get; }
+
+        public Task<ConfirmResult> SendAsync(OutboundMessage message, CancellationToken cancellationToken) =>
+            throw new ConnectionBlockedException("low on memory");
+
+        public IReadOnlyCollection<string> Schemes => new[] { Url.Substring(0, Url.IndexOf("://", StringComparison.Ordinal)) };
+        public string Name => "blocked";
+        public IReadOnlyCollection<Capability> Capabilities => new[] { Capability.PublisherConfirms };
+
+        public Task<ITransportConnection> ConnectAsync(ConnectionConfig config, CancellationToken cancellationToken) =>
+            Task.FromResult<ITransportConnection>(this);
+
+        public bool IsOpen => true;
+        public bool IsBlocked => true;
+        public string? BlockedReason => "low on memory";
+        public void Dispose() { }
+
+        private static Exception PublishingOnly() => new NotSupportedException("this broker only refuses publishes");
+
+        public Task DeclareExchangeAsync(string name, string type, bool durable, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task DeclareQueueAsync(string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task BindQueueAsync(string queue, string exchange, string routingKey, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task<ISubscription> SubscribeAsync(string queue, int prefetch, IReadOnlyDictionary<string, object>? arguments,
+            Func<InboundDelivery, Task<Ack>> handler, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task<InboundDelivery?> ReceiveAsync(string queue, TimeSpan timeout, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task<IPulledDelivery?> PullAsync(string queue, TimeSpan timeout, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task<long> MessageCountAsync(string queue, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
+        public Task DeleteQueueAsync(string name, CancellationToken cancellationToken) => throw PublishingOnly();
+        public Task DeleteExchangeAsync(string name, CancellationToken cancellationToken) => throw PublishingOnly();
+        public Task<bool> QueueExistsAsync(string name, CancellationToken cancellationToken) => throw PublishingOnly();
+        public Task<QueueCheck> CheckQueueAsync(string name, QueueType type, bool durable,
+            IReadOnlyDictionary<string, object>? arguments, CancellationToken cancellationToken) =>
+            throw PublishingOnly();
     }
 }
