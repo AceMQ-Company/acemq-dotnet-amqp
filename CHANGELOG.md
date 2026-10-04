@@ -8,6 +8,8 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-10-04
+
 ### Fixed
 
 - **Closing a consumer with a backlog no longer takes thirty seconds.** A drain
