@@ -209,4 +209,45 @@ public sealed class ClaimLeaseTests : IDisposable
 
         await Assert.ThrowsAnyAsync<DbException>(() => store.ClaimAsync("m-1"));
     }
+
+    // ---- why a claim was refused -------------------------------------------
+    //
+    // ClaimAsync answers false for two different things. Confirmed is finished work,
+    // and a redelivery of it is a duplicate to acknowledge. Claimed and unconfirmed
+    // is work nobody has finished: acknowledging that redelivery lost the message
+    // whenever the first handler had failed and its release failed too.
+
+    [Fact]
+    public async Task TheDatabaseStoreSaysWhetherARefusedClaimIsDoneOrInProgress()
+    {
+        var store = new DbIdempotencyStore(Connect, LongRetention, "acemq_idempotency", "@", ShortLease);
+        WithSchema(store.CreateTableSql());
+        await SaysWhyAClaimWasRefused(store);
+    }
+
+    [Fact]
+    public async Task TheInMemoryStoreSaysWhetherARefusedClaimIsDoneOrInProgress()
+    {
+        await SaysWhyAClaimWasRefused(new InMemoryIdempotencyStore(LongRetention, 1000, ShortLease));
+    }
+
+    private static async Task SaysWhyAClaimWasRefused(IClaimingIdempotencyStore store)
+    {
+        Assert.Equal(ClaimResult.Claimed, await store.TryClaimAsync("m-1"));
+        Assert.Equal(ClaimResult.InProgress, await store.TryClaimAsync("m-1"));
+
+        // An expired lease is still taken over, not reported as in progress.
+        await Task.Delay(200);
+        Assert.Equal(ClaimResult.Claimed, await store.TryClaimAsync("m-1"));
+
+        await store.ConfirmAsync("m-1");
+        Assert.Equal(ClaimResult.Duplicate, await store.TryClaimAsync("m-1"));
+        await Task.Delay(200);
+        Assert.Equal(ClaimResult.Duplicate, await store.TryClaimAsync("m-1"));
+
+        // And the two-state answer is unchanged.
+        Assert.False(await store.ClaimAsync("m-1"));
+        Assert.True(await store.ClaimAsync("m-2"));
+        Assert.False(await store.ClaimAsync("m-2"));
+    }
 }

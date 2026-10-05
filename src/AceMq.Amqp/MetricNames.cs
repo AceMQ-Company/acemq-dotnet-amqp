@@ -230,6 +230,16 @@ public static class MetricNames
     /// which is what Go, Python and Ruby have always reported for the same decision.
     /// </remarks>
     public const string OutcomeRejected = "rejected";
+
+    /// <summary>
+    /// Put back because another consumer holds a live idempotency claim on it.
+    /// </summary>
+    /// <remarks>
+    /// Not a retry: the attempt is unchanged, so it is not counted in
+    /// <see cref="RetriedTotal"/> and can never be dead-lettered for it. The same
+    /// value in all five libraries.
+    /// </remarks>
+    public const string OutcomeInProgress = "in_progress";
     public const string OutcomeAnswered = "answered";
     public const string OutcomeTimedOut = "timed_out";
     public const string OutcomePublished = "published";

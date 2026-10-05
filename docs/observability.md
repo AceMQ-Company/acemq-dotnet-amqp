@@ -45,7 +45,8 @@ same value in all five libraries. Up to 0.3.0 a broker's nack was tagged `reject
 other library writes, and one that belongs to a delivery — so a panel filtering
 publishes by outcome dropped every refusal.
 
-Consume outcomes are `acked`, `retried`, `rejected`, `dead_lettered` and `parked`.
+Consume outcomes are `acked`, `retried`, `rejected`, `dead_lettered`, `parked` and
+`in_progress`.
 **`rejected` is a handler's own decision — `Ack.DeadLetter`, or a release — and
 `dead_lettered` is the engine giving up — a `RetryPolicy` out of attempts, or a
 consume interceptor refusing the message before the handler ran.** Both messages
@@ -54,7 +55,11 @@ the difference is the only question the two counts are ever asked: an unprocessa
 message is a producer problem, an exhausted policy is usually a dependency that is
 down. **`parked` is a message nothing could read** — `Ack.Park`, or a body that will
 not decode — which goes to `{queue}.parked` instead, because no number of retries
-will change it and it is somebody's deploy rather than an outage. Request outcomes
+will change it and it is somebody's deploy rather than an outage. **`in_progress` is
+a redelivery put back because another consumer holds a live, unconfirmed
+idempotency claim on it** — see [reliability](reliability.md#done-or-still-being-done).
+Its attempt is unchanged, so it is not counted in `acemq.messages.retried.total` and
+never in `acemq.messages.dead.lettered.total`. Request outcomes
 are `answered`, `timed_out` and `failed`. An outbox record is `published` or `failed`.
 A pipeline run is `completed` or `ended_early`.
 

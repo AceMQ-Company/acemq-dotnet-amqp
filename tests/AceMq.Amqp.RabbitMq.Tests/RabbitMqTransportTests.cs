@@ -952,6 +952,120 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         Assert.Equal(0, await _mq.MessageCountAsync(queue));
     }
 
+    /// <summary>
+    /// A message whose first handler died holding the claim, and could not release
+    /// it, is handled once the lease runs out — not acknowledged as a duplicate.
+    /// </summary>
+    /// <remarks>
+    /// Before the in-progress answer the redelivery found the claim live, read it as
+    /// a duplicate and acknowledged it: nothing handled the message and nothing was
+    /// left anywhere to say so. A two-attempt policy is the point of the shape — the
+    /// redeliveries that find the claim held must not spend attempts, or the message
+    /// is dead-lettered for having waited.
+    /// </remarks>
+    [Fact]
+    public async Task HandlesAMessageWhoseClaimWasLeftBehindOnceItsLeaseRunsOut()
+    {
+        var queue = await QueueAsync("inprogress");
+        // The lease outlives the transport's five-second requeue of a delivery whose
+        // callback threw -- the failed release -- so the redelivery finds it live.
+        var store = new ReleaseFails(new InMemoryIdempotencyStore(
+            TimeSpan.FromDays(1), 1000, TimeSpan.FromSeconds(8)));
+        var calls = 0;
+        var handled = 0;
+
+        using (var consumer = await _mq.ConsumeAsync<string>(
+                   queue,
+                   ConsumerOptions.Defaults()
+                       .WithRetry(RetryPolicy.Fixed(2, TimeSpan.FromMilliseconds(100)))
+                       .Idempotent(store)
+                       .WithInProgressDelay(TimeSpan.FromMilliseconds(300)),
+                   _ =>
+                   {
+                       if (Interlocked.Increment(ref calls) == 1)
+                       {
+                           throw new InvalidOperationException("the first handler died");
+                       }
+                       Interlocked.Increment(ref handled);
+                       return Task.FromResult(Ack.Accept());
+                   }))
+        {
+            await _mq.Publisher<string>("", queue).SendAsync("charge the card");
+
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < deadline && Volatile.Read(ref handled) == 0)
+            {
+                await Task.Delay(100);
+            }
+            await Task.Delay(1000);
+        }
+
+        Assert.Equal(1, handled);
+        Assert.Equal(0, await _mq.MessageCountAsync(AceMq.Amqp.Naming.DeadLetterQueue(queue)));
+        Assert.Equal(0, await _mq.MessageCountAsync(queue));
+    }
+
+    /// <summary>
+    /// Closing does not wait out a message's in-progress delay, and does not lose it.
+    /// </summary>
+    /// <remarks>
+    /// The wait is spent in the consumer, holding the delivery. A close that waited
+    /// for it would bring back the slow shutdowns 0.7.6 removed; instead the delivery
+    /// is handed back with requeue, attempt unchanged.
+    /// </remarks>
+    [Fact]
+    public async Task ClosingDoesNotWaitOutTheInProgressDelay()
+    {
+        var queue = await QueueAsync("inprogress.close");
+        var store = InMemoryIdempotencyStore.ForOneDay();
+        var envelope = Envelope.Of("order.placed").Build();
+        Assert.True(await store.ClaimAsync(envelope.Id));
+
+        var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.ConsumeAsync<string>(
+            queue,
+            ConsumerOptions.Defaults().Idempotent(store).WithInProgressDelay(TimeSpan.FromMinutes(1)),
+            _ => Task.FromResult(Ack.Accept()));
+        await _mq.Publisher<string>("", queue).SendAsync("held elsewhere", envelope);
+
+        // Delivered and waiting: unacknowledged, so not counted as ready.
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline && await _mq.MessageCountAsync(queue) > 0)
+        {
+            await Task.Delay(50);
+        }
+        await Task.Delay(300);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await mq.CloseAsync();
+        clock.Stop();
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"closing took {clock.Elapsed}");
+
+        // Back on the queue, not acknowledged. The broker settles the requeue on its
+        // own time, so it is waited for rather than read once.
+        deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline && await _mq.MessageCountAsync(queue) == 0)
+        {
+            await Task.Delay(50);
+        }
+        Assert.Equal(1, await _mq.MessageCountAsync(queue));
+    }
+
+    /// <summary>A store whose release fails, as a database that has gone away does.</summary>
+    private sealed class ReleaseFails : IIdempotencyStore
+    {
+        private readonly InMemoryIdempotencyStore _inner;
+
+        internal ReleaseFails(InMemoryIdempotencyStore inner) => _inner = inner;
+
+        public Task<bool> ClaimAsync(string messageId) => _inner.ClaimAsync(messageId);
+        public Task ConfirmAsync(string messageId) => _inner.ConfirmAsync(messageId);
+        public Task ReleaseAsync(string messageId) =>
+            throw new InvalidOperationException("the store is unreachable");
+        public Task<bool> IsConfirmedAsync(string messageId) => _inner.IsConfirmedAsync(messageId);
+    }
+
     [Fact]
     public async Task AnswersARequestOverARealBroker()
     {

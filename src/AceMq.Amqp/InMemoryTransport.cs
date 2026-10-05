@@ -614,6 +614,7 @@ public sealed class InMemoryTransport : ITransport
                         _queue.Enqueue(Redelivered(delivery));
                         break;
                     case AckKind.Retry:
+                    case AckKind.InProgress:
                         var delay = ack.Delay ?? TimeSpan.FromMilliseconds(10);
                         var requeued = Redelivered(delivery);
                         _ = Task.Run(async () =>

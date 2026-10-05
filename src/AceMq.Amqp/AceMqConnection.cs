@@ -69,6 +69,11 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 
     // The pause gate once the connection is closing: already open, answering false.
     private static readonly TaskCompletionSource<bool> Closing = ClosedGate();
+
+    // Completed by the tear-down, so a delivery waiting out an in-progress delay is
+    // handed back at once rather than holding the channel close for the rest of it.
+    private readonly TaskCompletionSource<bool> _closed =
+        new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
     private volatile bool _publishingPaused;
 
     // This connection's own in-flight count, not the process-wide gauge. Two
@@ -392,11 +397,28 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                 // the first attempt is still in flight is not handled twice in
                 // parallel. Released on failure, or the retry would look like a
                 // duplicate and be dropped.
+                //
+                // Only a confirmed claim is a duplicate. A live, unconfirmed one is
+                // work nobody has finished -- the first handler may have failed and
+                // been unable to release it -- and accepting it lost the message. It
+                // is put back instead, attempt unchanged, until the claim is confirmed
+                // or its lease runs out.
                 if (options.Idempotency != null)
                 {
-                    if (!await options.Idempotency.ClaimAsync(envelope.Id).ConfigureAwait(false))
+                    var claim = await Claims.TryClaimAsync(options.Idempotency, envelope.Id)
+                        .ConfigureAwait(false);
+                    if (claim == ClaimResult.Duplicate) return Ack.Accept();
+                    if (claim == ClaimResult.InProgress)
                     {
-                        return Ack.Accept();
+                        using var waiting = AceMqTelemetry.StartConsume(queue, envelope, delivery.Headers);
+                        var inProgress = Ack.InProgress(options.InProgressDelay);
+                        var putBack = await SettleAsync(
+                                queue, ladder, policy, delivery, envelope, inProgress, waiting)
+                            .ConfigureAwait(false);
+                        RecordConsume(
+                            queue, envelope, attempt, inProgress, putBack.Outcome,
+                            TimeSpan.Zero, waiting);
+                        return putBack.Ack;
                     }
                 }
 
@@ -662,6 +684,29 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 
             case AckKind.Release:
                 return new Settled(ack, MetricNames.OutcomeRejected);
+
+            case AckKind.InProgress:
+            {
+                // Somebody else holds it, which says nothing about whether this
+                // message can be handled, so the retry policy is not asked: it can
+                // neither spend an attempt nor run out and dead-letter a message
+                // nobody has failed to handle. Same queue, same attempt.
+                var wait = ack.Delay ?? TimeSpan.Zero;
+                if (wait > TimeSpan.Zero)
+                {
+                    // Not waited out by a close, which would bring back the slow
+                    // shutdowns 0.7.6 removed. Handed back with requeue instead: the
+                    // attempt does not move either way.
+                    var woke = await Task.WhenAny(Task.Delay(wait), _closed.Task)
+                        .ConfigureAwait(false);
+                    if (woke == _closed.Task)
+                    {
+                        return new Settled(Ack.Release(), MetricNames.OutcomeInProgress);
+                    }
+                }
+                var back = await MoveAsync(queue, delivery, envelope).ConfigureAwait(false);
+                return new Settled(back, MetricNames.OutcomeInProgress);
+            }
 
             case AckKind.Park:
             {
@@ -1571,7 +1616,9 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         // carry the same value, which is the invariant the test asserts.
         AceMqTelemetry.Outcome(span, outcome);
         span?.SetTag(AceMqTelemetry.AttrAttempt, (long)attempt);
-        if (!ack.IsAccept)
+
+        // Waiting for somebody else is not a failure of this message.
+        if (!ack.IsAccept && !ack.IsInProgress)
         {
             span?.SetStatus(
                 System.Diagnostics.ActivityStatusCode.Error, ack.Reason ?? outcome);
@@ -1645,6 +1692,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         var gate = _consumingPaused;
         _consumingPaused = Closing;
         gate?.TrySetResult(false);
+        _closed.TrySetResult(true);
 
         _connection.Dispose();
         _inFlight.Dispose();

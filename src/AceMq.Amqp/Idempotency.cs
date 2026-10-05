@@ -42,6 +42,10 @@ public interface IIdempotencyStore
 {
     /// <summary>Takes the message. False when it is already claimed or confirmed.</summary>
     /// <remarks>
+    /// <para>
+    /// False does not say which, and the difference matters: see
+    /// <see cref="IClaimingIdempotencyStore"/>.
+    /// </para>
     /// <b>A claim is a lease, not a fact.</b> An implementation must let a claim
     /// nobody confirmed be taken over after a while, because the alternative is
     /// losing work: nothing runs when a process is killed, so a claim with no expiry
@@ -62,6 +66,69 @@ public interface IIdempotencyStore
     Task<bool> IsConfirmedAsync(string messageId);
 }
 
+/// <summary>What a store found when it was asked to claim a message.</summary>
+public enum ClaimResult
+{
+    /// <summary>Nobody had it, or the last holder's lease ran out: it is yours to handle.</summary>
+    Claimed,
+
+    /// <summary>It was handled and confirmed. Accept the delivery without handling it.</summary>
+    Duplicate,
+
+    /// <summary>
+    /// Somebody holds a live claim and has not confirmed it — still working, or failed
+    /// without releasing it. Neither handle the delivery nor accept it: put it back
+    /// and look again later.
+    /// </summary>
+    InProgress,
+}
+
+/// <summary>
+/// An idempotency store that says why a claim was refused.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="IIdempotencyStore.ClaimAsync"/> answers false for two different
+/// situations, and a consumer must not treat them alike. A confirmed message is
+/// finished work, and a redelivery of it is a duplicate to accept. A claimed but
+/// unconfirmed one is work nobody has finished: accepting that redelivery loses the
+/// message whenever the first handler failed and its release failed too. So the
+/// consumer accepts only <see cref="ClaimResult.Duplicate"/> and puts
+/// <see cref="ClaimResult.InProgress"/> back on its queue — see
+/// <see cref="ConsumerOptions.InProgressDelay"/>.
+/// </para>
+/// <para>
+/// Both stores here implement it. A store that implements only
+/// <see cref="IIdempotencyStore"/> gets the same answer from
+/// <see cref="IIdempotencyStore.ClaimAsync"/> followed by
+/// <see cref="IIdempotencyStore.IsConfirmedAsync"/>. Those are two calls rather than
+/// one atomic step, and both races resolve safely: a confirmation landing in between
+/// reads as a duplicate, which it is, and one expiring in between reads as in
+/// progress, which only costs another look.
+/// </para>
+/// </remarks>
+public interface IClaimingIdempotencyStore : IIdempotencyStore
+{
+    /// <summary>Takes the message, or says why not: done already, or still being done.</summary>
+    Task<ClaimResult> TryClaimAsync(string messageId);
+}
+
+internal static class Claims
+{
+    /// <summary>The three-way answer, from any store.</summary>
+    internal static async Task<ClaimResult> TryClaimAsync(IIdempotencyStore store, string messageId)
+    {
+        if (store is IClaimingIdempotencyStore claiming)
+        {
+            return await claiming.TryClaimAsync(messageId).ConfigureAwait(false);
+        }
+        if (await store.ClaimAsync(messageId).ConfigureAwait(false)) return ClaimResult.Claimed;
+        return await store.IsConfirmedAsync(messageId).ConfigureAwait(false)
+            ? ClaimResult.Duplicate
+            : ClaimResult.InProgress;
+    }
+}
+
 /// <summary>An idempotency store in memory, bounded by age and size.</summary>
 /// <remarks>
 /// <strong>Per process, and lost on restart.</strong> It deduplicates the redeliveries
@@ -69,7 +136,7 @@ public interface IIdempotencyStore
 /// instances or across a restart — for that the store has to be the database the
 /// handler already writes to, ideally in the same transaction as the work.
 /// </remarks>
-public sealed class InMemoryIdempotencyStore : IIdempotencyStore
+public sealed class InMemoryIdempotencyStore : IClaimingIdempotencyStore
 {
     /// <summary>
     /// How long a claim nobody confirmed is honoured before another consumer may
@@ -126,7 +193,14 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
         new InMemoryIdempotencyStore(TimeSpan.FromDays(1));
 
     /// <inheritdoc/>
-    public Task<bool> ClaimAsync(string messageId)
+    public Task<bool> ClaimAsync(string messageId) =>
+        Task.FromResult(Claim(messageId) == ClaimResult.Claimed);
+
+    /// <inheritdoc/>
+    public Task<ClaimResult> TryClaimAsync(string messageId) =>
+        Task.FromResult(Claim(messageId));
+
+    private ClaimResult Claim(string messageId)
     {
         if (messageId == null) throw new ArgumentNullException(nameof(messageId));
         var now = DateTimeOffset.UtcNow;
@@ -136,10 +210,10 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
             if (_entries.TryGetValue(messageId, out var existing) && !existing.Expired(_retention))
             {
                 // Confirmed is done, and stays done for the retention window.
-                if (existing.Confirmed) return Task.FromResult(false);
+                if (existing.Confirmed) return ClaimResult.Duplicate;
 
                 // An unconfirmed claim inside its window belongs to whoever took it.
-                if (now - existing.At <= _claimTimeout) return Task.FromResult(false);
+                if (now - existing.At <= _claimTimeout) return ClaimResult.InProgress;
 
                 // Outside the window: whoever held it is not coming back — nothing
                 // runs when a process is killed, so no Release was ever called — and
@@ -148,7 +222,7 @@ public sealed class InMemoryIdempotencyStore : IIdempotencyStore
                 // for the whole retention window.
             }
             _entries[messageId] = new Entry(now, confirmed: false);
-            return Task.FromResult(true);
+            return ClaimResult.Claimed;
         }
     }
 

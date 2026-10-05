@@ -346,7 +346,7 @@ ORDER BY created_at",
 /// retention window, and the work would never happen.
 /// </para>
 /// </remarks>
-public sealed class DbIdempotencyStore : IIdempotencyStore
+public sealed class DbIdempotencyStore : IClaimingIdempotencyStore
 {
     private readonly ConnectionSupplier _connections;
     private readonly string _table;
@@ -398,7 +398,18 @@ public sealed class DbIdempotencyStore : IIdempotencyStore
 CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
 
     /// <inheritdoc/>
-    public Task<bool> ClaimAsync(string messageId)
+    public async Task<bool> ClaimAsync(string messageId) =>
+        await TryClaimAsync(messageId).ConfigureAwait(false) == ClaimResult.Claimed;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <see cref="ClaimResult.Claimed"/> when there was no row or its lease had run
+    /// out; <see cref="ClaimResult.Duplicate"/> when the row is confirmed;
+    /// <see cref="ClaimResult.InProgress"/> when somebody holds a live, unconfirmed
+    /// claim. A row released or purged between the statements also reads as in
+    /// progress, the answer that cannot lose the message.
+    /// </remarks>
+    public Task<ClaimResult> TryClaimAsync(string messageId)
     {
         if (messageId == null) throw new ArgumentNullException(nameof(messageId));
         var now = DateTime.UtcNow;
@@ -414,7 +425,7 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
             Add(command, "id", messageId);
             Add(command, "at", now);
             command.ExecuteNonQuery();
-            return Task.FromResult(true);
+            return Task.FromResult(ClaimResult.Claimed);
         }
         catch (DbException) when (RowExists(connection, messageId))
         {
@@ -436,7 +447,12 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
             // over is conditional and atomic: only an unconfirmed row whose claim has
             // run out is updated, so two consumers racing to steal the same stale
             // claim cannot both win -- the second updates zero rows.
-            return Task.FromResult(StealStaleClaim(connection, messageId, now));
+            if (StealStaleClaim(connection, messageId, now))
+            {
+                return Task.FromResult(ClaimResult.Claimed);
+            }
+            return Task.FromResult(
+                Confirmed(connection, messageId) ? ClaimResult.Duplicate : ClaimResult.InProgress);
         }
     }
 
@@ -499,14 +515,18 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
     public Task<bool> IsConfirmedAsync(string messageId)
     {
         using var connection = Open();
+        return Task.FromResult(Confirmed(connection, messageId));
+    }
+
+    private bool Confirmed(DbConnection connection, string messageId)
+    {
         using var command = connection.CreateCommand();
         command.CommandText =
             $"SELECT confirmed FROM {_table} WHERE message_id = {_prefix}id";
         Add(command, "id", messageId);
         var value = command.ExecuteScalar();
-        return Task.FromResult(
-            value != null && value != DBNull.Value
-            && Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture) == 1);
+        return value != null && value != DBNull.Value
+            && Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture) == 1;
     }
 
     private void Evict(DbConnection connection)

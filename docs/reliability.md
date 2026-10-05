@@ -160,6 +160,43 @@ therefore suppressed that message's redelivery for a day, and the work never
 happened — not a duplicate, which this pattern may produce, but a silent loss, in
 the pattern that exists to prevent exactly that.
 
+### Done, or still being done
+
+A refused claim means one of two things, and they are not handled alike:
+
+| the store says | the consumer |
+|---|---|
+| `ClaimResult.Claimed` — no claim, or its lease ran out | runs the handler |
+| `ClaimResult.Duplicate` — confirmed | accepts it, handler not run |
+| `ClaimResult.InProgress` — claimed, not confirmed, lease live | puts it back, handler not run |
+
+**In progress is neither run nor accepted.** Somebody is still working on it — or
+failed and could not release the claim, because the store was unreachable when the
+release ran. Accepting that redelivery, as every version up to 0.7.8 did, lost the
+message. Instead it waits `ConsumerOptions.InProgressDelay` (five seconds by
+default; `WithInProgressDelay` changes it), is republished to its own queue with
+its **attempt unchanged**, and the original is acknowledged — or, if the republish is
+not routed, returned to the broker with requeue. The retry policy is not asked, so
+it spends no attempt and is never dead-lettered for waiting. Once the claim is
+confirmed the next look is a duplicate; once its lease runs out the message is taken
+over and handled. It is counted as `outcome="in_progress"`.
+
+```csharp
+ConsumerOptions.Defaults()
+    .Idempotent(store)
+    .WithInProgressDelay(TimeSpan.FromSeconds(2));   // keep it well under the claim window
+```
+
+The wait is spent in the consumer, holding the delivery, as a short retry's is.
+Closing the connection does not wait it out: the delivery is handed back with
+requeue at once.
+
+Both shipped stores implement `IClaimingIdempotencyStore.TryClaimAsync`, which
+answers in one call. A custom store that implements only `IIdempotencyStore` gets
+the same answer from `ClaimAsync` followed by `IsConfirmedAsync`; `ClaimAsync` is
+unchanged. A pipeline step with `Idempotent` follows the same rule, with the default
+delay.
+
 ## Shutting down
 
 **`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` does not.

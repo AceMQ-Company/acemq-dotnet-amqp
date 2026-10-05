@@ -225,6 +225,66 @@ public sealed class TelemetryTests : IDisposable
             m.Name == MetricNames.DeadLetteredTotal && m.Tags[MetricNames.TagQueue] == _q);
     }
 
+    /// <summary>
+    /// A message somebody else holds is counted as <c>in_progress</c>, on the counter
+    /// and the span, and not as a retry.
+    /// </summary>
+    [Fact]
+    public async Task CountsAMessageSomebodyElseHoldsAsInProgress()
+    {
+        var outcomes = new List<string?>();
+        using var recorder = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == MetricNames.ActivitySource,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = a =>
+            {
+                if (a.GetTagItem("messaging.destination.name") as string != _q) return;
+                lock (outcomes) outcomes.Add(a.GetTagItem("messaging.acemq.outcome") as string);
+            },
+        };
+        ActivitySource.AddActivityListener(recorder);
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        // Another consumer has it and has not finished.
+        var store = InMemoryIdempotencyStore.ForOneDay();
+        var envelope = Envelope.Of("order.placed").Build();
+        Assert.True(await store.ClaimAsync(envelope.Id));
+
+        var ran = 0;
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q,
+            ConsumerOptions.Defaults()
+                .WithRetry(RetryPolicy.Fixed(2, TimeSpan.FromMilliseconds(10)))
+                .Idempotent(store)
+                .WithInProgressDelay(TimeSpan.FromMilliseconds(20)),
+            _ =>
+            {
+                Interlocked.Increment(ref ran);
+                return Task.FromResult(Ack.Accept());
+            });
+        await mq.Publisher<string>("", _q).SendAsync("hello", envelope);
+
+        // Several times round, which a two-attempt policy would not have allowed had
+        // any of them been spent.
+        await Eventually(
+            () => Taken().Count(m => m.Name == MetricNames.ConsumeTotal
+                                     && m.Tags[MetricNames.TagQueue] == _q) >= 3,
+            "the message to be put back three times");
+
+        var consumed = Taken().Where(
+            m => m.Name == MetricNames.ConsumeTotal && m.Tags[MetricNames.TagQueue] == _q).ToList();
+        Assert.All(consumed, m => Assert.Equal(MetricNames.OutcomeInProgress, m.Tags[MetricNames.TagOutcome]));
+        Assert.Equal(0, ran);
+        Assert.DoesNotContain(Taken(), m =>
+            (m.Name == MetricNames.RetriedTotal || m.Name == MetricNames.DeadLetteredTotal)
+            && m.Tags[MetricNames.TagQueue] == _q);
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+        lock (outcomes) Assert.Contains(MetricNames.OutcomeInProgress, outcomes);
+    }
+
     private sealed class Refuser : ConsumeInterceptor
     {
         public override void BeforeHandle(ConsumeContext context) =>
@@ -803,6 +863,7 @@ public sealed class TelemetryTests : IDisposable
         Assert.Equal("dead_lettered", MetricNames.OutcomeDeadLettered);
         Assert.Equal("parked", MetricNames.OutcomeParked);
         Assert.Equal("rejected", MetricNames.OutcomeRejected);
+        Assert.Equal("in_progress", MetricNames.OutcomeInProgress);
         Assert.Equal("answered", MetricNames.OutcomeAnswered);
         Assert.Equal("timed_out", MetricNames.OutcomeTimedOut);
         Assert.Equal("published", MetricNames.OutcomePublished);
@@ -837,7 +898,7 @@ public sealed class TelemetryTests : IDisposable
             "exchange", "routing.key", "queue", "transport", "message.type",
             "target", "rung", "outcome", "pipeline", "step",
             "confirmed", "unroutable", "failed", "refused", "acked", "retried",
-            "dead_lettered", "parked", "rejected", "answered", "timed_out",
+            "dead_lettered", "parked", "rejected", "in_progress", "answered", "timed_out",
             "published", "completed", "ended_early",
             " publish", " process", " request",
         };

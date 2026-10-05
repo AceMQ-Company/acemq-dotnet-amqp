@@ -93,6 +93,26 @@ public sealed class Ack
     /// </summary>
     public static Ack Release() => new Ack(AckKind.Release, null, null);
 
+    /// <summary>
+    /// Put it back because somebody else is still working on it, without spending an
+    /// attempt.
+    /// </summary>
+    /// <remarks>
+    /// What the consumer does itself when a redelivery finds its idempotency claim
+    /// held and unconfirmed (see <see cref="ClaimResult.InProgress"/>). Accepting it
+    /// would lose the message if that other handler had died; handling it would do
+    /// the work twice. So it goes back on its own queue after
+    /// <paramref name="after"/>, with its attempt <b>unchanged</b>: the retry policy
+    /// is not asked, so it neither spends a retry nor can run out of them and be
+    /// dead-lettered. The wait is spent in the consumer, holding the delivery, as a
+    /// short retry's is; closing the connection hands it back at once.
+    /// </remarks>
+    public static Ack InProgress(TimeSpan after)
+    {
+        if (after < TimeSpan.Zero) throw new ArgumentException("cannot be negative", nameof(after));
+        return new Ack(AckKind.InProgress, after, null);
+    }
+
     public AckKind Kind { get; }
 
     /// <summary>How long to wait before redelivery, when this is a retry.</summary>
@@ -106,6 +126,7 @@ public sealed class Ack
     public bool IsDeadLetter => Kind == AckKind.DeadLetter;
     public bool IsPark => Kind == AckKind.Park;
     public bool IsRelease => Kind == AckKind.Release;
+    public bool IsInProgress => Kind == AckKind.InProgress;
 
     public override string ToString() =>
         Reason == null ? Kind.ToString() : $"{Kind}({Reason})";
@@ -121,6 +142,9 @@ public enum AckKind
 
     /// <summary>Send it somewhere a person will look, rather than to the dead letters.</summary>
     Park,
+
+    /// <summary>Somebody else holds it: put it back, attempt unchanged. See <see cref="Ack.InProgress"/>.</summary>
+    InProgress,
 }
 
 /// <summary>A decoded message and everything that arrived with it.</summary>
@@ -209,7 +233,7 @@ public sealed class ConsumerOptions
 {
     private ConsumerOptions(
         int prefetch, ICodec? codec, bool requeueOnFailure, TimeSpan retryDelay,
-        RetryPolicy? retryPolicy, IIdempotencyStore? idempotency)
+        RetryPolicy? retryPolicy, IIdempotencyStore? idempotency, TimeSpan inProgressDelay)
     {
         PrefetchCount = prefetch;
         Codec = codec;
@@ -217,10 +241,17 @@ public sealed class ConsumerOptions
         RetryDelay = retryDelay;
         RetryPolicy = retryPolicy;
         Idempotency = idempotency;
+        InProgressDelay = inProgressDelay;
     }
 
+    /// <summary>
+    /// How long a message found in progress waits before it is looked at again: five
+    /// seconds, Python's figure.
+    /// </summary>
+    public static readonly TimeSpan DefaultInProgressDelay = TimeSpan.FromSeconds(5);
+
     public static ConsumerOptions Defaults() =>
-        new ConsumerOptions(20, null, false, TimeSpan.FromSeconds(5), null, null);
+        new ConsumerOptions(20, null, false, TimeSpan.FromSeconds(5), null, null, DefaultInProgressDelay);
 
     /// <summary>
     /// How many unacknowledged messages the broker may have outstanding with this
@@ -234,15 +265,15 @@ public sealed class ConsumerOptions
     public static ConsumerOptions Prefetch(int prefetch)
     {
         if (prefetch < 1) throw new ArgumentException("must be at least 1", nameof(prefetch));
-        return new ConsumerOptions(prefetch, null, false, TimeSpan.FromSeconds(5), null, null);
+        return new ConsumerOptions(prefetch, null, false, TimeSpan.FromSeconds(5), null, null, DefaultInProgressDelay);
     }
 
     public ConsumerOptions WithPrefetch(int prefetch) =>
-        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency);
+        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
     /// <summary>Decodes with this codec rather than the connection's.</summary>
     public ConsumerOptions As(ICodec codec) =>
-        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency);
+        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
     /// <summary>
     /// Backs off between attempts and gives up according to a policy.
@@ -253,7 +284,7 @@ public sealed class ConsumerOptions
     /// after which the message is dead-lettered rather than retried into eternity.
     /// </remarks>
     public ConsumerOptions WithRetry(RetryPolicy policy) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, policy, Idempotency);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, policy, Idempotency, InProgressDelay);
 
     /// <summary>
     /// Skips a message this store says has already been handled.
@@ -261,9 +292,11 @@ public sealed class ConsumerOptions
     /// <remarks>
     /// Every broker delivers at least once, so a consumer will see the same message
     /// twice eventually. This is what makes that safe when handling it twice is not.
+    /// A confirmed message is accepted without running the handler; one claimed and
+    /// not yet confirmed is put back — see <see cref="WithInProgressDelay"/>.
     /// </remarks>
     public ConsumerOptions Idempotent(IIdempotencyStore store) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, store);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, store, InProgressDelay);
 
     /// <summary>
     /// Returns a failed message to the queue rather than retrying it.
@@ -277,13 +310,43 @@ public sealed class ConsumerOptions
     /// "somebody else should take this", and for nothing else.
     /// </remarks>
     public ConsumerOptions RequeueingOnFailure() =>
-        new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay, RetryPolicy, Idempotency);
+        new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
     public ConsumerOptions WithRetryDelay(TimeSpan delay) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, delay, RetryPolicy, Idempotency);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, delay, RetryPolicy, Idempotency, InProgressDelay);
+
+    /// <summary>
+    /// Waits this long before putting back a message somebody else holds.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// With <see cref="Idempotent"/>, a redelivery that finds the message claimed and
+    /// not confirmed — another handler still running, or one that failed and could
+    /// not release its claim — is neither handled nor accepted. It is republished to
+    /// its own queue after this delay with its attempt unchanged, and the original
+    /// acknowledged (or, when the republish is not routed, returned to the broker
+    /// with requeue). It spends no retry and is never dead-lettered for waiting.
+    /// Once the claim is confirmed the next look is a duplicate and is accepted; once
+    /// its lease runs out the message is taken over and handled. Counted as
+    /// <c>outcome="in_progress"</c>.
+    /// </para>
+    /// <para>
+    /// Keep it well under the store's claim timeout. Closing the connection does not
+    /// wait it out: the delivery is handed back with requeue.
+    /// </para>
+    /// </remarks>
+    public ConsumerOptions WithInProgressDelay(TimeSpan delay)
+    {
+        if (delay < TimeSpan.Zero) throw new ArgumentException("cannot be negative", nameof(delay));
+        return new ConsumerOptions(
+            PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, delay);
+    }
 
     public int PrefetchCount { get; }
     public ICodec? Codec { get; }
+
+    /// <summary>How long a message somebody else holds waits before it is put back.</summary>
+    public TimeSpan InProgressDelay { get; }
     public bool RequeueOnFailure { get; }
 
     /// <summary>How to back off and when to give up, or null for a fixed delay forever.</summary>

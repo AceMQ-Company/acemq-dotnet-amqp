@@ -8,8 +8,33 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A redelivery that finds its idempotency claim still held is put back, not
+  acknowledged.** The consumer treated a live but unconfirmed claim as a duplicate
+  and accepted the message; if the first handler had failed and the release of its
+  claim failed too, the message was lost. Now a confirmed claim is still a duplicate
+  (accepted, handler not run), an expired claim is still taken over and handled, and
+  a **live unconfirmed** claim is *in progress*: the handler is not run and, after
+  `ConsumerOptions.InProgressDelay` (five seconds by default), the original bytes are
+  republished to the same queue **with the attempt unchanged** and the original
+  acknowledged — or returned with requeue when the republish is not routed. The
+  retry policy is not consulted, so it spends no retry and is never dead-lettered
+  for it. Closing the connection does not wait the delay out; the delivery is handed
+  back with requeue. Counted as `acemq.consume.total{outcome="in_progress"}`, with the
+  same span outcome, and not as retried or dead-lettered. A pipeline step marked
+  `Idempotent` follows the same rule. The same contract in all five libraries.
+
 ### Added
 
+- `ClaimResult` (`Claimed`, `Duplicate`, `InProgress`) and
+  `IClaimingIdempotencyStore.TryClaimAsync`, implemented by `InMemoryIdempotencyStore`
+  and `DbIdempotencyStore`. `IIdempotencyStore` is unchanged and `ClaimAsync` keeps
+  its signature and meaning; a custom store with only `IIdempotencyStore` gets the
+  three-way answer from `ClaimAsync` then `IsConfirmedAsync`.
+- `ConsumerOptions.WithInProgressDelay`, `InProgressDelay` and
+  `DefaultInProgressDelay`; `Ack.InProgress(TimeSpan)`, `AckKind.InProgress` and
+  `Ack.IsInProgress`; `MetricNames.OutcomeInProgress` (`"in_progress"`).
 - **`CodecRegistry.ByName("text")`** returns the `StringCodec`, which was registered
   only as `"string"`. Java and Python call it `"text"`, so a format read from
   configuration shared with them failed here. Both names work.

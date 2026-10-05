@@ -97,6 +97,91 @@ public sealed class ReliabilityTests : IDisposable
         Assert.True(store.Evictions >= 1);
     }
 
+    /// <summary>
+    /// A redelivery that finds its claim held and unconfirmed is put back, not accepted.
+    /// </summary>
+    /// <remarks>
+    /// The first handler fails and the release of its claim fails too, so the claim
+    /// stays behind, live and unconfirmed. The redelivery used to read that as a
+    /// duplicate and acknowledge it: the message was gone and nothing had handled it.
+    /// Now it goes back on its queue, attempt unchanged, until the lease runs out and
+    /// it is taken over — handled once, and never dead-lettered for waiting, even with
+    /// a policy that allows only two attempts. A store with only the two-state
+    /// <see cref="IIdempotencyStore"/> gets the same answer, by asking whether the
+    /// refused claim was confirmed.
+    /// </remarks>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PutsBackARedeliveryWhoseClaimIsStillHeldRatherThanAcceptingIt(bool claiming)
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var inner = new InMemoryIdempotencyStore(
+            TimeSpan.FromDays(1), 1000, TimeSpan.FromMilliseconds(600));
+        IIdempotencyStore store = claiming ? new ClaimingReleaseFails(inner) : new ReleaseFails(inner);
+        var calls = 0;
+        var handled = 0;
+
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q,
+            ConsumerOptions.Defaults()
+                .WithRetry(RetryPolicy.Fixed(2, TimeSpan.FromMilliseconds(10)))
+                .Idempotent(store)
+                .WithInProgressDelay(TimeSpan.FromMilliseconds(50)),
+            _ =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    throw new InvalidOperationException("the first handler died");
+                }
+                Interlocked.Increment(ref handled);
+                return Task.FromResult(Ack.Accept());
+            });
+
+        await mq.Publisher<string>("", _q).SendAsync("charge the card");
+
+        await Eventually(() => Volatile.Read(ref handled) >= 1, "the message to be handled once its lease ran out");
+        await Task.Delay(200);
+
+        Assert.Equal(1, handled);
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+    }
+
+    [Fact]
+    public void WaitsFiveSecondsBeforeLookingAtAMessageInProgressAgain()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), ConsumerOptions.DefaultInProgressDelay);
+        Assert.Equal(TimeSpan.FromSeconds(5), ConsumerOptions.Defaults().InProgressDelay);
+        Assert.Equal(
+            TimeSpan.FromSeconds(1),
+            ConsumerOptions.Defaults().WithInProgressDelay(TimeSpan.FromSeconds(1)).InProgressDelay);
+        Assert.Throws<ArgumentException>(
+            () => ConsumerOptions.Defaults().WithInProgressDelay(TimeSpan.FromSeconds(-1)));
+    }
+
+    /// <summary>A store whose release fails, as a database that has gone away does.</summary>
+    private class ReleaseFails : IIdempotencyStore
+    {
+        protected readonly InMemoryIdempotencyStore Inner;
+
+        internal ReleaseFails(InMemoryIdempotencyStore inner) => Inner = inner;
+
+        public Task<bool> ClaimAsync(string messageId) => Inner.ClaimAsync(messageId);
+        public Task ConfirmAsync(string messageId) => Inner.ConfirmAsync(messageId);
+        public Task ReleaseAsync(string messageId) =>
+            throw new InvalidOperationException("the store is unreachable");
+        public Task<bool> IsConfirmedAsync(string messageId) => Inner.IsConfirmedAsync(messageId);
+    }
+
+    private sealed class ClaimingReleaseFails : ReleaseFails, IClaimingIdempotencyStore
+    {
+        internal ClaimingReleaseFails(InMemoryIdempotencyStore inner) : base(inner) { }
+
+        public Task<ClaimResult> TryClaimAsync(string messageId) => Inner.TryClaimAsync(messageId);
+    }
+
     // ---- retry policy ----------------------------------------------------
 
     [Fact]

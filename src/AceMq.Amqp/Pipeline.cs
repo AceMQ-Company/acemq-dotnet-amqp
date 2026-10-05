@@ -182,10 +182,18 @@ public sealed class Pipeline<T> : IDisposable
                     // step three is not mistaken for one that already cleared step
                     // one -- they share an envelope id all the way down the chain.
                     var key = step.Name + ":" + message.Envelope.Id;
-                    if (_idempotency != null
-                        && !await _idempotency.ClaimAsync(key).ConfigureAwait(false))
+                    if (_idempotency != null)
                     {
-                        return Ack.Accept();
+                        // A live, unconfirmed claim is not a duplicate: accepting it
+                        // lost the message when the step that held it had failed and
+                        // could not release it. Put back, attempt unchanged.
+                        var claim = await Claims.TryClaimAsync(_idempotency, key)
+                            .ConfigureAwait(false);
+                        if (claim == ClaimResult.Duplicate) return Ack.Accept();
+                        if (claim == ClaimResult.InProgress)
+                        {
+                            return Ack.InProgress(ConsumerOptions.DefaultInProgressDelay);
+                        }
                     }
 
                     object? output;

@@ -728,6 +728,7 @@ public sealed class RabbitMqTransport : ITransport
                             .ConfigureAwait(false);
                         break;
                     case AckKind.Retry:
+                    case AckKind.InProgress:
                         // Likewise. A requeue hands back the bytes the broker was
                         // given, so x-acemq-attempt never advances; the engine
                         // republishes with it advanced instead.

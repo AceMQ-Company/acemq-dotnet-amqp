@@ -179,7 +179,9 @@ Two deliveries never reach the chain at all:
   consume interceptor is therefore not a complete record of what arrived.
 - **A duplicate refused by an idempotency store** is accepted before the chain
   runs, because the claim is taken first — see
-  [duplicates](reliability.md#duplicates).
+  [duplicates](reliability.md#duplicates). A message another consumer still holds
+  is put back before the chain runs, for the same reason — see
+  [done, or still being done](reliability.md#done-or-still-being-done).
 
 ## The `Ack` is what the handler asked for
 
