@@ -565,6 +565,9 @@ var codec = CodecRegistry.ByName(settings.Format);   // "json", "xml", "string",
 CodecRegistry.Register("avro", () => new MyAvroCodec());
 ```
 
+`"text"` names the same codec as `"string"`: it is what Java and Python call it, so
+a format setting shared with services in those languages works here unchanged.
+
 Registration is explicit. Nothing scans assemblies, so a format is available because
 something registered it — not because a package happened to be installed.
 

@@ -211,11 +211,22 @@ public sealed class ExtensibilityTests : IDisposable
     [Fact]
     public void FindsCodecsByName()
     {
-        Assert.Equal(new[] { "bytes", "json", "string", "xml" }, CodecRegistry.Names());
+        Assert.Equal(new[] { "bytes", "json", "string", "text", "xml" }, CodecRegistry.Names());
         Assert.IsType<XmlCodec>(CodecRegistry.ByName("xml"));
 
         var error = Assert.Throws<AceFatalException>(() => CodecRegistry.ByName("avro"));
         Assert.Contains("no codec named 'avro'", error.Message);
+    }
+
+    [Fact]
+    public void FindsTheTextCodecByTheNameTheOtherLibrariesUse()
+    {
+        // Java and Python call it "text", this library called it "string". A format
+        // read from configuration shared across services has to work in all of them.
+        Assert.IsType<StringCodec>(CodecRegistry.ByName("text"));
+        Assert.IsType<StringCodec>(CodecRegistry.ByName("string"));
+        Assert.Equal("caf\u00e9", CodecRegistry.ByName("text").Decode(
+            CodecRegistry.ByName("string").Encode("caf\u00e9"), typeof(string)));
     }
 
     // Encryption moved to AceMq.Amqp.Crypto in 0.4.0, and its tests moved with it:

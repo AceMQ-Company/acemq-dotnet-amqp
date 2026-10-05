@@ -8,6 +8,12 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **`CodecRegistry.ByName("text")`** returns the `StringCodec`, which was registered
+  only as `"string"`. Java and Python call it `"text"`, so a format read from
+  configuration shared with them failed here. Both names work.
+
 ## [0.7.8] - 2026-10-04
 
 ### Fixed

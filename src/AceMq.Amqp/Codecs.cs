@@ -356,6 +356,10 @@ public static class CodecRegistry
         Register(new Provider("json", () => new JsonCodec()));
         Register(new Provider("bytes", () => new BytesCodec()));
         Register(new Provider("string", () => new StringCodec()));
+
+        // The same codec under the name Java and Python give it, so a format read
+        // from configuration shared with them resolves here too.
+        Register(new Provider("text", () => new StringCodec()));
         Register(new Provider("xml", () => new XmlCodec()));
     }
 
