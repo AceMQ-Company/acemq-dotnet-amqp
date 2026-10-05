@@ -8,6 +8,8 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-10-04
+
 ### Fixed
 
 - **`DbIdempotencyStore.ClaimAsync` no longer reads every failed insert as a
