@@ -187,4 +187,26 @@ public sealed class ClaimLeaseTests : IDisposable
         Assert.True(await store.ClaimAsync("m-1"));
         Assert.False(await store.ClaimAsync("m-1"));
     }
+
+    [Fact]
+    public async Task AnInsertThatFailsForAnotherReasonIsNotTakenForADuplicate()
+    {
+        // The claim is an insert, and a duplicate key is one reason an insert fails.
+        // It is not the only one: a lock timeout, a deadlock victim, a full disk. Any
+        // DbException used to be read as "somebody already has this message", so the
+        // claim answered false, the consumer acknowledged the message as a duplicate,
+        // and a message nothing had handled was gone. Java fixed the same thing by
+        // asking whether the row is actually there; this asks the same question.
+        var store = new DbIdempotencyStore(Connect, LongRetention, "acemq_idempotency", "@", ShortLease);
+        WithSchema(store.CreateTableSql());
+        using (var refuse = _keepAlive!.CreateCommand())
+        {
+            refuse.CommandText =
+                "CREATE TRIGGER refuse BEFORE INSERT ON acemq_idempotency " +
+                "BEGIN SELECT RAISE(ABORT, 'database is locked'); END";
+            refuse.ExecuteNonQuery();
+        }
+
+        await Assert.ThrowsAnyAsync<DbException>(() => store.ClaimAsync("m-1"));
+    }
 }

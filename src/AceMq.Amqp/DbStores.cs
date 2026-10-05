@@ -416,11 +416,21 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
             command.ExecuteNonQuery();
             return Task.FromResult(true);
         }
-        catch (DbException)
+        catch (DbException) when (RowExists(connection, messageId))
         {
             // The primary key rejected it, so a row is already there. This is the
             // mutual exclusion, and it is the database's rather than ours -- a
             // select-then-insert would have a window between the two.
+            //
+            // Asked rather than assumed, because a duplicate key is one reason an
+            // insert fails and not the only one: a lock timeout, a deadlock victim or
+            // a full disk fail it too, and no row is there. Reading any of those as
+            // "somebody already has this message" answered false, and the consumer
+            // acknowledged a message nothing had handled -- a silent loss. Those now
+            // propagate, so the message is retried. Providers do not agree on an
+            // error code for a duplicate key (SQLite's is 19, SQL Server's 2627,
+            // PostgreSQL's 23505), so the row is asked instead, which is what the
+            // Java store does.
             //
             // But a row is not necessarily a claim somebody still holds. Taking it
             // over is conditional and atomic: only an unconfirmed row whose claim has
@@ -428,6 +438,21 @@ CREATE INDEX {_table}_claimed ON {_table} (claimed_at);";
             // claim cannot both win -- the second updates zero rows.
             return Task.FromResult(StealStaleClaim(connection, messageId, now));
         }
+    }
+
+    /// <summary>Whether a row for this message is there, asked only after an insert failed.</summary>
+    /// <remarks>
+    /// A row that appeared between the failed insert and this query belongs to
+    /// somebody else, and true is the right answer for that too: whoever wrote it
+    /// has the claim.
+    /// </remarks>
+    private bool RowExists(DbConnection connection, string messageId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT 1 FROM {_table} WHERE message_id = {_prefix}id";
+        Add(command, "id", messageId);
+        var value = command.ExecuteScalar();
+        return value != null && value != DBNull.Value;
     }
 
     /// <summary>Takes over a claim whose holder never came back.</summary>

@@ -8,6 +8,18 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`DbIdempotencyStore.ClaimAsync` no longer reads every failed insert as a
+  duplicate.** Any `DbException` from the claim's insert — a lock timeout, a
+  deadlock victim, a full disk, not only a duplicate key — answered `false`, so the
+  caller treated a message nothing had handled as already handled and acknowledged
+  it: a silent loss, in the store that exists to prevent one. The row is now asked
+  for after a failed insert, as Java's `JdbcIdempotencyStore` does; when it is not
+  there the exception propagates and the message is retried. Found by porting the
+  Java examples' order-fulfilment app, whose payments service claims before
+  charging.
+
 ## [0.7.7] - 2026-10-04
 
 ### Added
