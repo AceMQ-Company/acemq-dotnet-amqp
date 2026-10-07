@@ -10,6 +10,16 @@ While the version is `0.x` the public API may change in any release.
 
 ### Fixed
 
+- **A stream declared from .NET now spells `x-max-age` the way the other libraries
+  do.** `DeclareStreamAsync` wrote the age as whole seconds — `3600s` for an hour —
+  while Go, Python and Ruby write the largest unit that holds it exactly: `1h`,
+  `90m`, `2D`, and seconds only when nothing larger fits. The broker compares the
+  argument as a string, so the same stream declared from .NET and then from another
+  language failed with `PRECONDITION_FAILED - inequivalent arg 'x-max-age'`. Both
+  now send `1h`. A stream that already exists with `3600s` keeps that argument —
+  the broker never rewrites it — so redeclaring it from this version is refused the
+  same way; declare it with the old spelling through `DeclareQueueAsync` and
+  `StreamArguments.MaxAge`, or delete and recreate it, until it can be moved.
 - **Disposing a consumer while its handler is still at work no longer wedges the
   connection.** The consumer's channel was closed straight away, and RabbitMQ.Client
   answers channel.close-ok on the connection's one reader loop, where it waits for

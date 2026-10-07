@@ -204,6 +204,18 @@ public sealed class RoutingAndDriftTests : IDisposable
 
     // ---- stream retention ------------------------------------------------
 
+    [Theory]
+    [InlineData(1 * 60 * 60, "1h")]
+    [InlineData(90 * 60, "90m")]
+    [InlineData(2 * 24 * 60 * 60, "2D")]
+    [InlineData(90, "90s")]
+    public void SpellsAStreamsMaxAgeTheWayTheOtherLibrariesDo(int seconds, string expected)
+    {
+        // The broker compares the string: 3600s from here and 1h from Go, Python or
+        // Ruby are different arguments, and the second declarer is refused.
+        Assert.Equal(expected, StreamArguments.Duration(TimeSpan.FromSeconds(seconds)));
+    }
+
     [Fact]
     public async Task DeclaresAStreamWithASegmentSizeWhenOneIsAskedFor()
     {
@@ -218,7 +230,7 @@ public sealed class RoutingAndDriftTests : IDisposable
             Topology.Define()
                 .Queue(_q, QueueType.Stream, new Dictionary<string, object>
                 {
-                    [StreamArguments.MaxAge] = "3600s",
+                    [StreamArguments.MaxAge] = "1h",
                     [StreamArguments.MaxLengthBytes] = 1024L,
                     [StreamArguments.SegmentBytes] = 512L,
                 })

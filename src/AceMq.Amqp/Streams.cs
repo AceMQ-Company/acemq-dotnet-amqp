@@ -42,6 +42,27 @@ public static class StreamArguments
     /// <see cref="AceMqConnection.DeclareStreamAsync(string, System.TimeSpan?, long?, long?)"/>.
     /// </remarks>
     public const string SegmentBytes = "x-stream-max-segment-size-bytes";
+
+    /// <summary>
+    /// Spells a <see cref="MaxAge"/> in the largest unit that holds it exactly:
+    /// <c>7D</c>, <c>1h</c>, <c>90m</c>, else whole seconds.
+    /// </summary>
+    /// <remarks>
+    /// The broker compares the string, not the duration, so <c>3600s</c> and
+    /// <c>1h</c> are different arguments and redeclaring one as the other fails.
+    /// Go, Python and Ruby all spell it this way.
+    /// </remarks>
+    internal static string Duration(TimeSpan age)
+    {
+        var ticks = age.Ticks;
+        if (ticks % TimeSpan.TicksPerDay == 0) return Spell(ticks / TimeSpan.TicksPerDay, "D");
+        if (ticks % TimeSpan.TicksPerHour == 0) return Spell(ticks / TimeSpan.TicksPerHour, "h");
+        if (ticks % TimeSpan.TicksPerMinute == 0) return Spell(ticks / TimeSpan.TicksPerMinute, "m");
+        return Spell(ticks / TimeSpan.TicksPerSecond, "s");
+    }
+
+    private static string Spell(long count, string unit) =>
+        count.ToString(CultureInfo.InvariantCulture) + unit;
 }
 
 /// <summary>Where in a stream to start reading.</summary>

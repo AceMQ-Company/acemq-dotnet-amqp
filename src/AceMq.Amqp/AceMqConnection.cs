@@ -1418,9 +1418,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         var arguments = new Dictionary<string, object>();
         if (maxAge.HasValue)
         {
-            arguments["x-max-age"] =
-                ((long)maxAge.Value.TotalSeconds)
-                    .ToString(System.Globalization.CultureInfo.InvariantCulture) + "s";
+            arguments[StreamArguments.MaxAge] = StreamArguments.Duration(maxAge.Value);
         }
         if (maxLengthBytes.HasValue) arguments["x-max-length-bytes"] = maxLengthBytes.Value;
         if (segmentBytes.HasValue)
