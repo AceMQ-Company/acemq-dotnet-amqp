@@ -63,6 +63,16 @@ public sealed class PublishOptions
 
     public bool Persistent { get; }
     public bool Mandatory { get; }
+
+    /// <summary>Marks every publish as the library's own; see <see cref="OutboundMessage.OnBehalf"/>.</summary>
+    internal bool OnBehalf { get; private set; }
+
+    internal static PublishOptions OnBehalfOfCaller()
+    {
+        var options = Defaults();
+        options.OnBehalf = true;
+        return options;
+    }
     public TimeSpan? Expiration { get; }
     public int? Priority { get; }
 }
@@ -214,7 +224,10 @@ internal sealed class Publisher<T> : IPublisher<T>
             new Dictionary<string, object>(headers),
             envelope.Id, _codec.ContentType,
             _options.Persistent, _options.Mandatory,
-            _options.Expiration, _options.Priority, _replyTo);
+            _options.Expiration, _options.Priority, _replyTo)
+        {
+            OnBehalf = _options.OnBehalf,
+        };
 
         // The semaphore is the back pressure. Without it a caller in a loop can
         // queue more unconfirmed publishes than the broker will ever confirm, and

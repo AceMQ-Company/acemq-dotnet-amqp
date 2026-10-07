@@ -317,7 +317,8 @@ public sealed class Responder : IDisposable
                 .CausationId(message.Envelope.Id)
                 .Build();
 
-            var publisher = mq.Publisher<TResponse>(string.Empty, replyTo!);
+            var publisher = mq.Publisher<TResponse>(
+                string.Empty, replyTo!, PublishOptions.OnBehalfOfCaller());
 
             // Counted before the reply goes out, and this order is the contract.
             // The reply and the counter are two things one caller can see, and

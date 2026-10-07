@@ -169,7 +169,7 @@ public sealed class StreamRecoveryTests : IAsyncLifetime
         await Task.Delay(TimeSpan.FromSeconds(1));
     }
 
-    private static string Control(params string[] arguments)
+    internal static string Control(params string[] arguments)
     {
         const string variable = "ACEMQ_TEST_RABBITMQCTL";
         var prefix = Environment.GetEnvironmentVariable(variable);

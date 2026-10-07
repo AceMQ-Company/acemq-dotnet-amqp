@@ -273,7 +273,7 @@ public sealed class Pipeline<T> : IDisposable
                     // is the sending step's, so the next step is told what it is reading.
                     var onwardTo = Resolve(onwardRoute.Destination!);
                     var publisher = _mq.Publisher<byte[]>(
-                        onwardTo.Exchange, onwardTo.RoutingKey, PublishOptions.Defaults(), null,
+                        onwardTo.Exchange, onwardTo.RoutingKey, PublishOptions.OnBehalfOfCaller(), null,
                         new VerbatimCodec(step.ContentType));
                     await ((Publisher<byte[]>)publisher)
                         .SendWithHeadersAsync(

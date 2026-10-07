@@ -75,6 +75,21 @@ public sealed class OutboundMessage
     public TimeSpan? Expiration { get; }
     public int? Priority { get; }
     public string? ReplyTo { get; }
+
+    /// <summary>
+    /// Whether the library is publishing this on a caller's behalf, and will settle
+    /// something on the strength of the answer.
+    /// </summary>
+    /// <remarks>
+    /// A retry hop, a move to <c>{queue}.dlq</c> or <c>{queue}.parked</c>, a replay, a
+    /// routing-slip or pipeline hop, a scheduled hop or delivery, an outbox record, a
+    /// reply. Each acknowledges a message or marks a record done once this returns, so
+    /// a transport must confirm it and report a return even on a connection made
+    /// <c>WithoutPublisherConfirms()</c>: an unconfirmed publish can only ever be
+    /// reported as routed, and the work would be marked done after the message went
+    /// nowhere. A caller's own publishes keep the mode the connection was made with.
+    /// </remarks>
+    public bool OnBehalf { get; internal set; }
 }
 
 /// <summary>A message as it arrived, before decoding.</summary>

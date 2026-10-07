@@ -114,7 +114,8 @@ public sealed class InMemoryTransport : ITransport
         var name = config.Url.Substring("memory://".Length);
         if (name.Length == 0) name = "default";
         var broker = Brokers.GetOrAdd(name, _ => new Broker());
-        return Task.FromResult<ITransportConnection>(new Connection(broker));
+        return Task.FromResult<ITransportConnection>(
+            new Connection(broker, unconfirmed: !config.PublisherConfirms));
     }
 
     private sealed class Broker
@@ -291,7 +292,18 @@ public sealed class InMemoryTransport : ITransport
         private readonly Broker _broker;
         private readonly List<Subscription> _subscriptions = new List<Subscription>();
 
-        internal Connection(Broker broker) => _broker = broker;
+        /// <summary>
+        /// Made <c>WithoutPublisherConfirms()</c>, and so as blind to a return as a
+        /// broker connection in that mode: the caller's own publishes are reported as
+        /// routed whatever happened to them.
+        /// </summary>
+        private readonly bool _unconfirmed;
+
+        internal Connection(Broker broker, bool unconfirmed)
+        {
+            _broker = broker;
+            _unconfirmed = unconfirmed;
+        }
 
         public bool IsOpen { get; private set; } = true;
         public bool IsBlocked => false;
@@ -333,7 +345,8 @@ public sealed class InMemoryTransport : ITransport
                 queue.Enqueue(delivery);
                 ArmExpiry(queue, delivery);
             }
-            return Task.FromResult(ConfirmResult.Ok(matched.Count > 0));
+            return Task.FromResult(ConfirmResult.Ok(
+                matched.Count > 0 || (_unconfirmed && !message.OnBehalf)));
         }
 
         /// <summary>

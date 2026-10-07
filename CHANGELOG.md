@@ -49,6 +49,15 @@ While the version is `0.x` the public API may change in any release.
   every five seconds (`acemq.move.failed` each time) until it can be delivered.
   `Delivered` now counts only deliveries that were routed.
 
+- **What the library publishes for you is confirmed even on a connection made
+  `WithoutPublisherConfirms()`.** The transport reported every unconfirmed publish as
+  routed — without a confirm a return can never be ruled out — and every publish the
+  library makes on a caller's behalf settles something on that answer. A retry hop
+  or rung, a move to `{queue}.dlq` or `{queue}.parked`, a replay, a routing-slip or
+  pipeline hop, the scheduler's hop and delivery, the outbox relay and a responder's
+  reply each acknowledged a message or marked a record done after the message went
+  nowhere. Reproduced against RabbitMQ 4 for each one, and in memory.
+
 Audited with them, against RabbitMQ 4, and already safe: retry hops, rungs,
 parking, `{queue}.dlq` and the in-progress requeue (mandatory, routed checked before
 the original is acknowledged, released otherwise); routing-slip and pipeline hops,
@@ -56,6 +65,19 @@ the reply side of request/reply and the outbox relay (publishers are mandatory b
 default and an unroutable publish throws, so the step is retried, the request is
 retried and the record stays with its attempt counted). Claim check, sagas and
 consumer groups publish nothing on the caller's behalf.
+
+### Changed
+
+- A connection made `WithoutPublisherConfirms()` opens one extra channel, in confirm
+  mode and watched for returns, and the library's own publishes go over it; it is
+  recovered with the connection. The caller's publishers keep the mode they chose and
+  still report every send as routed. A retry hop under that mode now costs a confirm
+  round trip, as it does with confirms on (about 1,100 hops a second against a local
+  broker, from about 16,000).
+- `OutboundMessage.OnBehalf` says a publish is the library's own, for a custom
+  transport to confirm it whatever the connection's mode. The in-memory transport now
+  honours `WithoutPublisherConfirms()` the same way, reporting the caller's publishes
+  as routed.
 
 ### Added
 

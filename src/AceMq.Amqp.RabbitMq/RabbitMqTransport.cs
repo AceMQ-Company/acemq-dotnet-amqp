@@ -94,7 +94,23 @@ public sealed class RabbitMqTransport : ITransport
             var channel = await connection.CreateChannelAsync(options, cancellationToken)
                 .ConfigureAwait(false);
 
-            return new Connection(connection, channel, config);
+            // What the library publishes on a caller's behalf is confirmed whatever the
+            // connection was made with: a retry hop, a move to {queue}.dlq, a replay,
+            // a scheduled delivery, an outbox record. Each settles something on the
+            // answer, and an unconfirmed publish can only ever be answered "routed".
+            // With confirms on that is the channel above; without, it is one more.
+            IChannel? onBehalf = null;
+            if (!config.PublisherConfirms)
+            {
+                onBehalf = await connection.CreateChannelAsync(
+                        new CreateChannelOptions(
+                            publisherConfirmationsEnabled: true,
+                            publisherConfirmationTrackingEnabled: false),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            return new Connection(connection, channel, onBehalf, config);
         }
         catch (BrokerUnreachableException e)
         {
@@ -261,6 +277,18 @@ public sealed class RabbitMqTransport : ITransport
         private readonly ConnectionConfig _config;
 
         /// <summary>
+        /// The channel confirmed publishes go out on: <see cref="_channel"/> when the
+        /// connection has confirms, and a channel of its own when it does not, which
+        /// carries only <see cref="OutboundMessage.OnBehalf"/> publishes.
+        /// </summary>
+        /// <remarks>
+        /// Recovered with the connection like any other channel, and in confirm mode
+        /// again when it is: the client re-creates a channel with the options it was
+        /// first made with.
+        /// </remarks>
+        private readonly IChannel _confirming;
+
+        /// <summary>
         /// Serialises the frame write, and nothing else.
         /// </summary>
         /// <remarks>
@@ -333,10 +361,12 @@ public sealed class RabbitMqTransport : ITransport
         private readonly ConcurrentDictionary<string, StreamPosition> _streams =
             new ConcurrentDictionary<string, StreamPosition>(StringComparer.Ordinal);
 
-        internal Connection(IConnection connection, IChannel channel, ConnectionConfig config)
+        internal Connection(
+            IConnection connection, IChannel channel, IChannel? onBehalf, ConnectionConfig config)
         {
             _connection = connection;
             _channel = channel;
+            _confirming = onBehalf ?? channel;
             _config = config;
             _confirms = config.PublisherConfirms;
             _outstanding = new SemaphoreSlim(
@@ -364,20 +394,18 @@ public sealed class RabbitMqTransport : ITransport
                 return Task.CompletedTask;
             };
 
-            if (!_confirms) return;
-
-            _channel.BasicAcksAsync += (_, e) =>
+            _confirming.BasicAcksAsync += (_, e) =>
             {
                 Settle(e.DeliveryTag, e.Multiple, acknowledged: true, reason: null);
                 return Task.CompletedTask;
             };
-            _channel.BasicNacksAsync += (_, e) =>
+            _confirming.BasicNacksAsync += (_, e) =>
             {
                 Settle(e.DeliveryTag, e.Multiple, acknowledged: false,
                     reason: "the broker rejected the message");
                 return Task.CompletedTask;
             };
-            _channel.BasicReturnAsync += (_, e) =>
+            _confirming.BasicReturnAsync += (_, e) =>
             {
                 var id = e.BasicProperties?.MessageId;
                 if (id != null)
@@ -386,7 +414,7 @@ public sealed class RabbitMqTransport : ITransport
                 }
                 return Task.CompletedTask;
             };
-            _channel.ChannelShutdownAsync += (_, e) =>
+            _confirming.ChannelShutdownAsync += (_, e) =>
             {
                 // Every outstanding publish would otherwise wait for a confirm that
                 // can no longer arrive. Failing them is the only honest answer: those
@@ -487,7 +515,7 @@ public sealed class RabbitMqTransport : ITransport
             }
         }
 
-        public bool IsOpen => _connection.IsOpen && _channel.IsOpen;
+        public bool IsOpen => _connection.IsOpen && _channel.IsOpen && _confirming.IsOpen;
         public bool IsBlocked => _blockedReason != null;
         public string? BlockedReason => _blockedReason;
 
@@ -579,7 +607,7 @@ public sealed class RabbitMqTransport : ITransport
                 properties.Headers = headers;
             }
 
-            if (!_confirms)
+            if (!_confirms && !message.OnBehalf)
             {
                 // Nothing to wait for, so the write is the whole operation and the
                 // lock covers all of it.
@@ -614,14 +642,14 @@ public sealed class RabbitMqTransport : ITransport
                 await _publishLock.WaitAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {
-                    sequence = await _channel
+                    sequence = await _confirming
                         .GetNextPublishSequenceNumberAsync(cancellationToken)
                         .ConfigureAwait(false);
                     lock (_confirmsLock) _pending[sequence] = pending;
 
                     try
                     {
-                        await _channel.BasicPublishAsync(
+                        await _confirming.BasicPublishAsync(
                             message.Exchange, message.RoutingKey, message.Mandatory,
                             properties, message.Body, cancellationToken).ConfigureAwait(false);
                     }
@@ -1002,6 +1030,10 @@ public sealed class RabbitMqTransport : ITransport
             // Before the channel goes, so a caller still awaiting a confirm is told
             // rather than left waiting for an answer nothing will now deliver.
             FailAllPending("the connection was disposed");
+            if (_confirming != _channel)
+            {
+                try { _confirming.Dispose(); } catch { /* closing a closed channel is not news */ }
+            }
             try { _channel.Dispose(); } catch { /* closing a closed channel is not news */ }
             try { _connection.Dispose(); } catch { /* nor is closing a closed connection */ }
             _publishLock.Dispose();

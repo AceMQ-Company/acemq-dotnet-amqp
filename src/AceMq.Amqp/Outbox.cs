@@ -398,7 +398,7 @@ public sealed class OutboxRelay : IDisposable
         {
             if (_publishers.TryGetValue(key, out var existing)) return existing;
             var publisher = _mq.Publisher<string>(
-                exchange, routingKey, PublishOptions.Defaults(), null,
+                exchange, routingKey, PublishOptions.OnBehalfOfCaller(), null,
                 new VerbatimCodec(_mq.Codec.ContentType));
             _publishers[key] = publisher;
             return publisher;

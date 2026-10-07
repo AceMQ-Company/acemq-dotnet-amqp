@@ -32,6 +32,20 @@ var config = ConnectionConfig.ForUrl("amqp://localhost")
 Without them a publish reports success as soon as it is written. That is faster and
 it is a weaker promise; the library will not make it quietly on your behalf.
 
+That applies to **your** publishes. What the library publishes for you is confirmed
+either way: a retry hop, a move to `{queue}.dlq` or `{queue}.parked`, a replay, a
+routing-slip or pipeline hop, a scheduled hop or delivery, an outbox record, a
+responder's reply. Each of those acknowledges a message or marks a record done once
+the publish returns, and without a confirm a broker that dropped the message as
+unroutable is indistinguishable from one that stored it. So a connection made
+without confirms opens one more channel, in confirm mode and watched for returns,
+and sends only those on it. Your own publishers stay unconfirmed and report every
+send as routed, as before.
+
+The cost is the confirm round trip on each of those hops — the same as with confirms
+on. Measured against a local RabbitMQ 4, 500 messages retried five times each:
+about 16,000 hops a second unconfirmed, about 1,100 confirmed.
+
 ## Unroutable messages fail
 
 A message published to an exchange with no matching binding is a failure, not a

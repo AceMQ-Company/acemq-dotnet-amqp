@@ -29,22 +29,25 @@ namespace AceMq.Amqp.RabbitMq.Tests;
 /// marked done, the message is gone and nothing says so. Only a real broker can show
 /// the return arriving; the in-memory transport routes by its own rules.
 /// </remarks>
-public sealed class UnroutablePublishTests : IAsyncLifetime
+public class UnroutablePublishTests : IAsyncLifetime
 {
-    private readonly string _url =
+    protected readonly string _url =
         Environment.GetEnvironmentVariable("ACEMQ_TEST_AMQP_URL")
         ?? "amqp://guest:guest@localhost:5672";
 
+    /// <summary>How the connection under test is made.</summary>
+    protected virtual ConnectionConfig Config() => ConnectionConfig.ForUrl(_url).Build();
+
     private readonly string _suffix = Guid.NewGuid().ToString("N").Substring(0, 8);
     private readonly List<string> _declared = new List<string>();
-    private AceMqConnection _mq = null!;
+    protected AceMqConnection _mq = null!;
 
-    private string Name(string what) => $"acemq.test.{_suffix}.{what}";
+    protected string Name(string what) => $"acemq.test.{_suffix}.{what}";
 
     public async Task InitializeAsync()
     {
         Transports.Register(new RabbitMqTransport());
-        _mq = await AceMqConnection.ConnectAsync(_url);
+        _mq = await AceMqConnection.ConnectAsync(Config());
     }
 
     public async Task DisposeAsync()
@@ -60,7 +63,7 @@ public sealed class UnroutablePublishTests : IAsyncLifetime
         _mq.Dispose();
     }
 
-    private async Task<string> QueueAsync(string what)
+    protected async Task<string> QueueAsync(string what)
     {
         var name = Name(what);
         await _mq.DeclareQueueAsync(name);
@@ -83,10 +86,15 @@ public sealed class UnroutablePublishTests : IAsyncLifetime
             await _mq.DeleteQueueAsync(Naming.DeadLetterQueue(queue));
             await _mq.Publisher<string>("", queue).SendAsync("keep me");
             await EventuallyAsync(() => Volatile.Read(ref deliveries) >= 2);
+
+        // Put the queue back and the same message completes: it was kept, not lost.
+        // Also leaves no handler mid-retry when the consumer is disposed.
+            await _mq.DeclareQueueAsync(Naming.DeadLetterQueue(queue));
+            await EventuallyAsync(async () => await _mq.MessageCountAsync(Naming.DeadLetterQueue(queue)) == 1);
         }
 
-        await Task.Delay(500);
-        Assert.Equal(1, await _mq.MessageCountAsync(queue));
+        Assert.True(deliveries >= 2, "the move was taken as done");
+        Assert.Equal(1, await _mq.MessageCountAsync(Naming.DeadLetterQueue(queue)));
     }
 
     [Fact]
@@ -166,10 +174,61 @@ public sealed class UnroutablePublishTests : IAsyncLifetime
         Assert.Equal(1, await _mq.MessageCountAsync(target));
     }
 
-    private static Task EventuallyAsync(Func<bool> probe, int seconds = 30) =>
+    [Fact]
+    public async Task APipelineHopToADeletedStepIsRetriedNotAcknowledged()
+    {
+        var first = 0;
+        var name = Name("p");
+        using var pipeline = await _mq.Pipeline<string>(name)
+            .Step("first", (string s) => { Interlocked.Increment(ref first); return Task.FromResult<string?>(s); })
+            .Step("second", (string s) => Task.FromResult<string?>(s))
+            .WithRetryDelay(TimeSpan.FromMilliseconds(50))
+            .BuildAsync();
+        _declared.Add(pipeline.QueueFor("first"));
+        _declared.Add(pipeline.QueueFor("second"));
+        await _mq.DeleteQueueAsync(pipeline.QueueFor("second"));
+
+        await pipeline.SendAsync("an order");
+        await EventuallyAsync(() => Volatile.Read(ref first) >= 2);
+        Assert.True(first >= 2, "the first step's hop was taken as done");
+        Assert.Equal(0, pipeline.Completed);
+
+        // Put the queue back and the same message completes: it was kept, not lost.
+        // Also leaves no handler mid-retry when the consumer is disposed.
+        // The second step's consumer went with its queue, so the hop waits there.
+        await _mq.DeclareQueueAsync(pipeline.QueueFor("second"));
+        await EventuallyAsync(async () => await _mq.MessageCountAsync(pipeline.QueueFor("second")) == 1);
+        Assert.Equal(1, await _mq.MessageCountAsync(pipeline.QueueFor("second")));
+    }
+
+    [Fact]
+    public async Task AReplyThatCannotBeDeliveredLeavesTheRequestUnacknowledged()
+    {
+        var queue = await QueueAsync("pricing");
+        var calls = 0;
+        using var responder = await _mq.RespondAsync<string, string>(queue, request =>
+        {
+            Interlocked.Increment(ref calls);
+            return Task.FromResult(request);
+        });
+
+        // A requester that has gone: its reply queue does not exist.
+        await _mq.Publisher<string>("", queue, PublishOptions.Defaults(), Name("reply-gone"))
+            .SendAsync("quote me");
+        await EventuallyAsync(() => Volatile.Read(ref calls) >= 2, seconds: 15);
+        Assert.True(calls >= 2, "the request was acknowledged after its reply went nowhere");
+
+        // Put the queue back and the same message completes: it was kept, not lost.
+        // Also leaves no handler mid-retry when the consumer is disposed.
+        var replies = await QueueAsync("reply-gone");
+        await EventuallyAsync(async () => await _mq.MessageCountAsync(replies) == 1, seconds: 15);
+        Assert.Equal(1, await _mq.MessageCountAsync(replies));
+    }
+
+    protected static Task EventuallyAsync(Func<bool> probe, int seconds = 30) =>
         EventuallyAsync(() => Task.FromResult(probe()), seconds);
 
-    private static async Task EventuallyAsync(Func<Task<bool>> probe, int seconds = 30)
+    protected static async Task EventuallyAsync(Func<Task<bool>> probe, int seconds = 30)
     {
         var deadline = DateTime.UtcNow.AddSeconds(seconds);
         while (DateTime.UtcNow < deadline)
@@ -177,5 +236,49 @@ public sealed class UnroutablePublishTests : IAsyncLifetime
             if (await probe()) return;
             await Task.Delay(100);
         }
+    }
+}
+
+/// <summary>
+/// The same, on a connection made <c>WithoutPublisherConfirms()</c>: the library
+/// still confirms what it publishes for the caller.
+/// </summary>
+public sealed class UnroutablePublishWithoutConfirmsTests : UnroutablePublishTests
+{
+    protected override ConnectionConfig Config() =>
+        ConnectionConfig.ForUrl(_url).WithoutPublisherConfirms().Build();
+
+    [Fact]
+    public async Task TheCallersOwnPublishIsStillUnconfirmed()
+    {
+        await _mq.DeclareExchangeAsync(Name("x"), "direct");
+
+        // Nothing bound, and the publisher cannot know: that is the mode it asked for.
+        var result = await _mq.Publisher<string>(Name("x"), "nobody").SendAsync("x");
+        Assert.True(result.Routed);
+    }
+
+    [Fact]
+    public async Task TheConfirmedChannelComesBackWithTheConnection()
+    {
+        var name = Name("client");
+        using var mq = await AceMqConnection.ConnectAsync(
+            ConnectionConfig.ForUrl(_url).ClientName(name).WithoutPublisherConfirms().Build());
+        var source = await QueueAsync("recovered");
+        await mq.Publisher<string>("", source).SendAsync("recover me");
+
+        var pid = StreamRecoveryTests.Control("list_connections", "--silent", "pid", "client_properties")
+            .Split('\n').Where(line => line.Contains(name)).Select(line => line.Split('\t')[0].Trim()).Single();
+        StreamRecoveryTests.Control("close_connection", pid, "confirmed channel recovery test");
+        await EventuallyAsync(() => !mq.IsOpen, seconds: 10);
+        await EventuallyAsync(() => mq.IsOpen);
+        Assert.True(mq.IsOpen, "the connection did not recover");
+
+        // Still confirmed, still watched for returns: the copy goes nowhere and the
+        // original stays.
+        await Assert.ThrowsAsync<PublishFailedException>(
+            () => mq.Replay(source).Into(Name("not-there")).ReplayAllAsync());
+        await EventuallyAsync(async () => await _mq.MessageCountAsync(source) == 1, seconds: 10);
+        Assert.Equal(1, await _mq.MessageCountAsync(source));
     }
 }

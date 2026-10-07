@@ -383,7 +383,7 @@ public sealed class Scheduler : IDisposable
         {
             if (_publishers.TryGetValue(key, out var existing)) return existing;
             var publisher = _mq.Publisher<byte[]>(
-                exchange, routingKey, PublishOptions.Defaults(), null, codec);
+                exchange, routingKey, PublishOptions.OnBehalfOfCaller(), null, codec);
             _publishers[key] = publisher;
             return publisher;
         }

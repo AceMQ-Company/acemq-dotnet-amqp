@@ -919,7 +919,10 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                         string.Empty, destination, delivery.Body, headers,
                         envelope.Id, delivery.ContentType,
                         persistent: true, mandatory: true, expiration: null, priority: null,
-                        replyTo: delivery.ReplyTo),
+                        replyTo: delivery.ReplyTo)
+                    {
+                        OnBehalf = true,
+                    },
                     CancellationToken.None)
                 .ConfigureAwait(false);
 
@@ -1490,7 +1493,8 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 
         var carried = builder.Build();
         var destination = slip.Destination!;
-        var publisher = Publisher<T>(destination.Exchange, destination.RoutingKey);
+        var publisher = Publisher<T>(
+            destination.Exchange, destination.RoutingKey, PublishOptions.OnBehalfOfCaller());
         await ((Publisher<T>)publisher)
             .SendWithHeadersAsync(payload, carried, slip.ToHeaders(), CancellationToken.None)
             .ConfigureAwait(false);

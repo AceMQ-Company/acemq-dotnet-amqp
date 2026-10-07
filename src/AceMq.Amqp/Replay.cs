@@ -254,7 +254,10 @@ public sealed class Replay
             string.Empty, _to, delivery.Body, headers,
             delivery.MessageId ?? Guid.NewGuid().ToString(), delivery.ContentType,
             persistent: true, mandatory: true, expiration: null, priority: null,
-            replyTo: delivery.ReplyTo);
+            replyTo: delivery.ReplyTo)
+        {
+            OnBehalf = true,
+        };
     }
 
     /// <summary>
