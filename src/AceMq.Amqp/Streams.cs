@@ -197,6 +197,11 @@ public sealed class StreamReader<T>
             _queue, options, _offset,
             async message =>
             {
+                // Already stopped by an earlier failure. Whatever the prefetch had in
+                // flight behind it is handed back unhandled, so this reader has not
+                // got past the entry it could not handle.
+                if (stream.IsStopped) return Ack.Release();
+
                 try
                 {
                     await handler(message).ConfigureAwait(false);
@@ -210,8 +215,26 @@ public sealed class StreamReader<T>
                 }
                 catch (Exception e)
                 {
-                    stream.Failed_();
-                    return Ack.Retry(TimeSpan.FromSeconds(5), e.Message);
+                    // Stopped, never retried. A retry republishes to the queue the
+                    // message came from, and on a stream that appends a second copy of
+                    // the entry to the log -- which every other reader, and every
+                    // rebuild from offset zero, then reads as a second entry. A ledger
+                    // posted the same money twice because one projection threw once.
+                    // Java's reader stops here and moves nothing, and so does this: the
+                    // entry is still in the log, and a reader restarted from it once
+                    // the handler is fixed reads it again.
+                    stream.Stop();
+                    var offset = OffsetOf(message);
+                    AceMqDiagnostics.Report(
+                        AceMqDiagnostics.StreamReaderStopped, DiagnosticLevel.Error,
+                        $"stopped reading stream {_queue} at offset " +
+                        (offset.HasValue
+                            ? offset.Value.ToString(CultureInfo.InvariantCulture)
+                            : "unknown") +
+                        $" because the handler failed: {e.Message}. The entry is still in the " +
+                        "stream; fix the handler and read again from that offset.",
+                        _queue, null, message.Envelope.Id, message.Envelope.Attempt, e);
+                    return Ack.Release();
                 }
             }).ConfigureAwait(false));
 
@@ -236,7 +259,29 @@ public sealed class StreamReader<T>
 
         internal StreamConsumer(string queue) => Queue = queue;
 
-        internal void Attach(IMessageConsumer consumer) => _consumer = consumer;
+        private int _stopped;
+
+        internal void Attach(IMessageConsumer consumer)
+        {
+            _consumer = consumer;
+
+            // The first delivery can fail before the subscribe has returned, in which
+            // case Stop found nothing to cancel.
+            if (IsStopped) consumer.Dispose();
+        }
+
+        internal bool IsStopped => System.Threading.Volatile.Read(ref _stopped) == 1;
+
+        /// <summary>Stops delivery after a failure, counting the failure once.</summary>
+        internal void Stop()
+        {
+            if (System.Threading.Interlocked.Exchange(ref _stopped, 1) == 1) return;
+            System.Threading.Interlocked.Increment(ref _failed);
+
+            // Safe from inside a handler: the transport cancels on the pool with a
+            // bound rather than waiting on the dispatch thread this runs on.
+            _consumer?.Dispose();
+        }
 
         internal void Handled_(long? offset)
         {
@@ -247,8 +292,6 @@ public sealed class StreamReader<T>
             }
         }
 
-        internal void Failed_() => System.Threading.Interlocked.Increment(ref _failed);
-
         internal void Skipped_()
         {
             System.Threading.Interlocked.Increment(ref _failed);
@@ -256,7 +299,7 @@ public sealed class StreamReader<T>
         }
 
         public string Queue { get; }
-        public bool IsActive => _consumer?.IsActive ?? false;
+        public bool IsActive => !IsStopped && (_consumer?.IsActive ?? false);
 
         public long? LastHandledOffset
         {

@@ -1129,6 +1129,59 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AStreamReaderThatFailsStopsRatherThanWritingTheEntryAgain()
+    {
+        var stream = Name("journal");
+        await _mq.DeclareStreamAsync(stream, TimeSpan.FromHours(1), 10_000_000);
+        _declared.Add(stream);
+
+        var publisher = _mq.Publisher<string>("", stream);
+        foreach (var entry in new[] { "one", "two", "three" }) await publisher.SendAsync(entry);
+
+        // A projection that fails on the second entry. It used to be handed a retry,
+        // and a retry republishes to the queue the message came from -- which, on a
+        // stream, appends a second copy of the entry to the log every other reader
+        // treats as the record. An event-sourced ledger rebuilt from that log counts
+        // the posting twice. Java's reader stops at the failure instead and moves
+        // nothing; this one now does the same.
+        var handled = new ConcurrentQueue<string>();
+        var failing = await _mq.Stream<string>(stream).FromFirst().Prefetch(10).ConsumeAsync(message =>
+        {
+            if (message.Payload == "two") throw new InvalidOperationException("projection failed");
+            handled.Enqueue(message.Payload);
+            return Task.CompletedTask;
+        });
+
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline && failing.IsActive) await Task.Delay(100);
+
+        // Longer than the five seconds the old retry waited before republishing, so a
+        // copy on its way would have landed by now.
+        await Task.Delay(TimeSpan.FromSeconds(7));
+
+        // Stopped at the entry it could not handle, and nothing after it handled: a
+        // projection that carried on would be one that silently missed an entry.
+        Assert.False(failing.IsActive);
+        Assert.Equal(1, failing.Failed);
+        Assert.Equal(new[] { "one" }, handled.ToArray());
+        failing.Dispose();
+
+        // The log is what was written, once each.
+        var seen = new ConcurrentQueue<string>();
+        using var fresh = await _mq.Stream<string>(stream).FromFirst().Prefetch(10).ConsumeAsync(message =>
+        {
+            seen.Enqueue(message.Payload);
+            return Task.CompletedTask;
+        });
+        deadline = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < deadline && seen.Count < 3) await Task.Delay(100);
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(new[] { "one", "two", "three" }, seen.ToArray());
+        Assert.Equal(0, await _mq.MessageCountAsync(Naming.DeadLetterQueue(stream)));
+    }
+
+    [Fact]
     public async Task KeepsOrderWithinAPartition()
     {
         var name = Name("ledger");

@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stream reader whose handler fails stops instead of writing the entry to the
+  stream again.** A failure was answered with a retry, and a retry republishes to the
+  queue the message came from — on a stream, that appends a second copy of the entry
+  to the end of the log. Every other reader then saw the entry twice, and so did any
+  rebuild from offset zero: an event-sourced ledger counted a posting twice because
+  one projection threw once. The reader now does what Java's does: it stops at the
+  entry it could not handle (`IsActive` false, `Failed` counted once), hands back what
+  the prefetch had in flight behind it unhandled, and moves nothing. The entry stays
+  in the stream for a reader restarted from that offset. `SkipFailures()` is
+  unchanged. Found by porting the Java examples' event-sourced ledger app.
+
+### Added
+
+- `AceMqDiagnostics.StreamReaderStopped` (`"acemq.stream.reader.stopped"`), reported
+  at `Error` with the offset the reader stopped at.
+
 ## [0.7.9] - 2026-10-05
 
 ### Fixed

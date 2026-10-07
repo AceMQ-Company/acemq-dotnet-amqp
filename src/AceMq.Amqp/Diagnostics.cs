@@ -191,6 +191,16 @@ public static class AceMqDiagnostics
     /// </remarks>
     public const string ScheduleForeign = "acemq.schedule.foreign.message";
 
+    /// <summary>
+    /// A stream reader's handler failed, so the reader stopped at that entry.
+    /// </summary>
+    /// <remarks>
+    /// A stream has nowhere to retry to: republishing appends the entry to the log a
+    /// second time. So a reader stops instead, and this event is how anybody finds
+    /// out — the entry is still in the stream, at the offset this names.
+    /// </remarks>
+    public const string StreamReaderStopped = "acemq.stream.reader.stopped";
+
     private static readonly List<IDiagnosticSink> Sinks = new List<IDiagnosticSink>();
 
     // Read on every event and written only when a sink is added or removed, so the

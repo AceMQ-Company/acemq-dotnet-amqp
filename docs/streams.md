@@ -82,6 +82,19 @@ It is the wrong shape for distributing work. Consuming does not remove anything,
 two workers reading the same stream both do the same job. Work distribution wants a
 queue.
 
+## When a handler fails
+
+The reader **stops** at the entry it could not handle. `IsActive` turns false,
+`Failed` counts it, and `AceMqDiagnostics.StreamReaderStopped` is reported with the
+offset. Nothing is retried and nothing is moved, because a stream has nowhere to
+retry to: republishing would append the entry to the log a second time, and every
+other reader would then read it twice. The entry is still in the stream — fix the
+handler and start a reader from that offset.
+
+`SkipFailures()` carries on past the entry instead, with a copy in `{stream}.dlq`.
+That is a projection that has a gap in it, which is sometimes what you want and is
+never what you want by accident.
+
 ## Offsets are not stored for you
 
 A reader starts where you tell it to, every time it starts. Nothing is remembered
