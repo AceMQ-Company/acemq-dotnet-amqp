@@ -21,6 +21,18 @@ While the version is `0.x` the public API may change in any release.
   in the stream for a reader restarted from that offset. `SkipFailures()` is
   unchanged. Found by porting the Java examples' event-sourced ledger app.
 
+- **A stream reader carries on from where it was after a lost connection.** The
+  client re-subscribes a recovered consumer with the arguments it was first given, so
+  a stream reader asked for its original `x-stream-offset` again. Against RabbitMQ 4,
+  with the connection closed by the broker half-way through 500 entries and 50 more
+  appended during the outage: a reader that began at `first` was handed 815
+  deliveries for 550 entries, 265 of them a second time; one that began at `next`
+  saw 265 of 550, and none of the 50 appended while it was away. The transport now
+  records the offset of each stream delivery and settles it on ack or nack; just
+  before the consumer is recovered its `x-stream-offset` is moved to the oldest offset
+  still unsettled, or one past the newest settled — what a queue would redeliver.
+  Same rule as Go and Ruby. Queue consumers are unchanged.
+
 ### Added
 
 - `AceMqDiagnostics.StreamReaderStopped` (`"acemq.stream.reader.stopped"`), reported

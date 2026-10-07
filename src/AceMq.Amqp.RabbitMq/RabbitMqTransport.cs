@@ -319,6 +319,20 @@ public sealed class RabbitMqTransport : ITransport
         private readonly bool _confirms;
         private volatile string? _blockedReason;
 
+        /// <summary>
+        /// How far each stream subscription has got, by consumer tag.
+        /// </summary>
+        /// <remarks>
+        /// The client re-subscribes a recovered consumer with the arguments it was
+        /// first given. For a queue that is right; for a stream it asks for the
+        /// original <c>x-stream-offset</c> again, which replayed a reader that began at
+        /// <c>first</c> from the start and moved one that began at <c>next</c> past
+        /// everything appended while it was away. These positions are what the
+        /// arguments are moved to instead, just before the consumer is recovered.
+        /// </remarks>
+        private readonly ConcurrentDictionary<string, StreamPosition> _streams =
+            new ConcurrentDictionary<string, StreamPosition>(StringComparer.Ordinal);
+
         internal Connection(IConnection connection, IChannel channel, ConnectionConfig config)
         {
             _connection = connection;
@@ -327,6 +341,17 @@ public sealed class RabbitMqTransport : ITransport
             _confirms = config.PublisherConfirms;
             _outstanding = new SemaphoreSlim(
                 config.MaxOutstandingPublishes, config.MaxOutstandingPublishes);
+
+            _connection.RecoveringConsumerAsync += (_, e) =>
+            {
+                if (e.ConsumerArguments != null
+                    && _streams.TryGetValue(e.ConsumerTag, out var position))
+                {
+                    var resume = position.Resume();
+                    if (resume.HasValue) e.ConsumerArguments[StreamPosition.Argument] = resume.Value;
+                }
+                return Task.CompletedTask;
+            };
 
             _connection.ConnectionBlockedAsync += (_, e) =>
             {
@@ -672,9 +697,22 @@ public sealed class RabbitMqTransport : ITransport
             await channel.BasicQosAsync(0, (ushort)prefetch, false, cancellationToken)
                 .ConfigureAwait(false);
 
+            // Only a subscription that names a place in a stream is tracked; a queue
+            // forgets what it delivered, so recovering it as it was is already right.
+            var position = arguments != null && arguments.ContainsKey(StreamPosition.Argument)
+                ? new StreamPosition()
+                : null;
+
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.ReceivedAsync += async (_, delivered) =>
             {
+                // Recorded before the handler sees it and settled before the broker
+                // is told, so a recovery at any point finds it either pending or done.
+                var offset = position != null
+                    ? StreamPosition.OffsetOf(delivered.BasicProperties.Headers)
+                    : null;
+                var generation = offset.HasValue ? position!.Delivered(offset.Value) : 0;
+
                 var headers = new Dictionary<string, object>();
                 if (delivered.BasicProperties.Headers != null)
                 {
@@ -705,6 +743,8 @@ public sealed class RabbitMqTransport : ITransport
                 {
                     ack = Ack.Retry(TimeSpan.FromSeconds(5), e.Message);
                 }
+
+                if (offset.HasValue) position!.Settle(offset.Value, generation);
 
                 switch (ack.Kind)
                 {
@@ -754,7 +794,9 @@ public sealed class RabbitMqTransport : ITransport
                 exclusive: false, arguments: consumerArguments, consumer: consumer,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            return new Subscription(queue, channel, tag);
+            if (position == null) return new Subscription(queue, channel, tag, null);
+            _streams[tag] = position;
+            return new Subscription(queue, channel, tag, () => _streams.TryRemove(tag, out _));
         }
 
         /// <summary>Pulls one message with basic.get, acknowledging it.</summary>
@@ -971,13 +1013,15 @@ public sealed class RabbitMqTransport : ITransport
     {
         private readonly IChannel _channel;
         private readonly string _tag;
+        private readonly Action? _forget;
         private bool _cancelled;
 
-        internal Subscription(string queue, IChannel channel, string tag)
+        internal Subscription(string queue, IChannel channel, string tag, Action? forget)
         {
             Queue = queue;
             _channel = channel;
             _tag = tag;
+            _forget = forget;
         }
 
         public string Queue { get; }
@@ -1004,6 +1048,7 @@ public sealed class RabbitMqTransport : ITransport
         {
             if (_cancelled) return;
             _cancelled = true;
+            _forget?.Invoke();
             try
             {
                 Task.Run(() => _channel.BasicCancelAsync(_tag)).Wait(TimeSpan.FromSeconds(5));

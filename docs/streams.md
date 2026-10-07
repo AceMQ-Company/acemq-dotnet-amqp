@@ -95,6 +95,19 @@ handler and start a reader from that offset.
 That is a projection that has a gap in it, which is sometimes what you want and is
 never what you want by accident.
 
+## A lost connection
+
+The client reconnects on its own, and a reader carries on from where it was rather
+than from where it began. A recovered reader starts at the oldest entry it was given
+and had not finished, or just after the newest it finished — the same entries a queue
+would redeliver, and no others. So a `FromFirst()` reader does not read the stream
+again from the start, and a `FromNext()` reader does not skip what was appended while
+it was away. One that had been given nothing yet still starts where you told it to.
+
+An entry the handler was part-way through when the connection went is handed to it
+again, as it would be from a queue. That is within one process; across a restart, see
+below.
+
 ## Offsets are not stored for you
 
 A reader starts where you tell it to, every time it starts. Nothing is remembered
