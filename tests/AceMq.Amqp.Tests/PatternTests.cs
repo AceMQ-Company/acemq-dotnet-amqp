@@ -593,6 +593,20 @@ public sealed class PatternTests : IDisposable
     }
 
     [Fact]
+    public async Task AReplayIntoAQueueThatDoesNotExistKeepsTheMessage()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("orphans.dlq");
+        await mq.Publisher<string>("", "orphans.dlq").SendAsync("recover me");
+
+        // The copy goes nowhere; the original was taken before it went, and counted.
+        await Assert.ThrowsAsync<PublishFailedException>(
+            () => mq.Replay("orphans.dlq").Into("not-there").ReplayAllAsync());
+
+        Assert.Equal(1, await mq.MessageCountAsync("orphans.dlq"));
+    }
+
+    [Fact]
     public async Task GivesAReplayedMessageAFreshSetOfAttempts()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

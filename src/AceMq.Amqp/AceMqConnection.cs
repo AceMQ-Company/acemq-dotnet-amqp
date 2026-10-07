@@ -292,7 +292,8 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// <para>
     /// They are also the two consumers here with no failure path to serve. Both decode
     /// to <c>byte[]</c>, which cannot fail, and both handlers return
-    /// <see cref="Ack.Accept"/> on every path — so neither can reach
+    /// <see cref="Ack.Accept"/> — or, for the scheduler, a retry, which with no policy
+    /// goes back to the same queue — so neither can reach
     /// <c>{queue}.dlq</c> nor <c>{queue}.parked</c>, and queues nothing can reach are
     /// not worth the litter. Give either one a handler that can give up and it needs
     /// the argument turned back on.

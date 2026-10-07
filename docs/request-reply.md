@@ -105,6 +105,14 @@ responder.Unanswerable
 Redelivering it would not make a reply address appear, so retrying only moves the
 same message round the same loop.
 
+## A reply that cannot be delivered
+
+The reply is published mandatory, like every publish. If its reply queue has gone —
+the requester timed out and was disposed, say — the publish fails, the request is
+**not** acknowledged, and the responder's retry policy has it: the handler runs again
+and, once the policy gives up, the request lands in `{queue}.dlq`. The requester sees
+only its own timeout. Nothing is acknowledged into nowhere.
+
 ## What the counters promise
 
 A responder reports two numbers, and both are safe to read the instant a round trip

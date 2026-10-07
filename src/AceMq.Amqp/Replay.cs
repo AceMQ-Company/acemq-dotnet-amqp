@@ -144,37 +144,63 @@ public sealed class Replay
         if (max < 0) throw new ArgumentException("cannot be negative", nameof(max));
 
         var replayed = 0;
-        var skipped = new List<InboundDelivery>();
+        var skipped = new List<IPulledDelivery>();
 
         try
         {
             while (replayed < max)
             {
-                var delivery = await _connection
-                    .ReceiveAsync(From, TimeSpan.FromMilliseconds(200), CancellationToken.None)
+                // Held, not taken: the original is acknowledged only once its copy has
+                // been confirmed and routed. Taking it first lost it whenever the copy
+                // went nowhere -- a target queue that does not exist is confirmed and
+                // dropped by the broker -- and the replay still counted it as replayed.
+                var pulled = await _connection
+                    .PullAsync(From, TimeSpan.FromMilliseconds(200), CancellationToken.None)
                     .ConfigureAwait(false);
-                if (delivery == null) break;
+                if (pulled == null) break;
 
-                if (filter != null && !filter(delivery))
+                if (filter != null && !filter(pulled.Delivery))
                 {
-                    skipped.Add(delivery);
+                    skipped.Add(pulled);
                     continue;
                 }
 
-                await _connection.SendAsync(Republished(delivery), CancellationToken.None)
-                    .ConfigureAwait(false);
+                ConfirmResult result;
+                try
+                {
+                    result = await _connection
+                        .SendAsync(Republished(pulled.Delivery), CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
+                    throw;
+                }
+
+                if (!result.Confirmed || !result.Routed)
+                {
+                    await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
+                    throw new PublishFailedException(
+                        $"could not replay a message from '{From}' into '{_to}': " +
+                        (result.Confirmed
+                            ? "no queue is bound to receive it"
+                            : result.Reason ?? "the broker rejected it") +
+                        $". It is still on '{From}'; {replayed} were replayed before it.");
+                }
+
+                await pulled.AcknowledgeAsync(CancellationToken.None).ConfigureAwait(false);
                 replayed++;
             }
         }
         finally
         {
             // Whatever the filter passed over goes back where it was, even if the
-            // replay threw part way through. Pulling a message off a queue and
-            // failing to return it is data loss dressed up as an error.
-            foreach (var delivery in skipped)
+            // replay threw part way through. Never taken, so handing it back is
+            // enough.
+            foreach (var pulled in skipped)
             {
-                await _connection.SendAsync(ReturnedToSource(delivery), CancellationToken.None)
-                    .ConfigureAwait(false);
+                await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
             }
         }
 
@@ -222,9 +248,11 @@ public sealed class Replay
         headers[AceHeaders.ReplayedAt] = Rfc3339(DateTimeOffset.UtcNow);
         headers[AceHeaders.ReplayCount] = count + 1;
 
+        // A message with no id cannot have a return matched to it, and would be
+        // reported as routed whether it was or not. One is given to the copy.
         return new OutboundMessage(
             string.Empty, _to, delivery.Body, headers,
-            delivery.MessageId, delivery.ContentType,
+            delivery.MessageId ?? Guid.NewGuid().ToString(), delivery.ContentType,
             persistent: true, mandatory: true, expiration: null, priority: null,
             replyTo: delivery.ReplyTo);
     }
@@ -276,14 +304,6 @@ public sealed class Replay
     /// </remarks>
     private static string Rfc3339(DateTimeOffset at) =>
         at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
-
-    private OutboundMessage ReturnedToSource(InboundDelivery delivery) =>
-        new OutboundMessage(
-            string.Empty, From, delivery.Body,
-            new Dictionary<string, object>((IDictionary<string, object>)delivery.Headers),
-            delivery.MessageId, delivery.ContentType,
-            persistent: true, mandatory: true, expiration: null, priority: null,
-            replyTo: delivery.ReplyTo);
 
     public override string ToString() => $"Replay[{From} -> {_to}]";
 }

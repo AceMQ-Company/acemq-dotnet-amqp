@@ -99,6 +99,29 @@ public sealed class SchedulerTests
     }
 
     [Fact]
+    public async Task KeepsAMessageThatFallsDueWithNothingBoundToReceiveIt()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        using var scheduler = await Scheduler.OnAsync(mq);
+        await mq.DeclareExchangeAsync("later", "direct");
+        await mq.DeclareQueueAsync("later.q");
+
+        // Through a rung, so the scheduler's own consumer is the one that finds it
+        // due with nothing bound. It used to accept the control message and drop it.
+        await scheduler.InAsync(TimeSpan.FromSeconds(1.5), "later", "due", "on time");
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        await mq.BindAsync("later.q", "later", "due");
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (DateTime.UtcNow < deadline && await mq.MessageCountAsync("later.q") == 0)
+        {
+            await Task.Delay(50);
+        }
+        Assert.Equal(1, await mq.MessageCountAsync("later.q"));
+        Assert.Equal(1, scheduler.Delivered);
+    }
+
+    [Fact]
     public async Task DeclaresTheLadderAndTheControlQueue()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

@@ -33,6 +33,30 @@ While the version is `0.x` the public API may change in any release.
   still unsettled, or one past the newest settled — what a queue would redeliver.
   Same rule as Go and Ruby. Queue consumers are unchanged.
 
+- **A replay no longer loses a message whose copy goes nowhere.** `Replay` took each
+  message off the queue with an auto-acknowledging `basic.get` and then ignored the
+  answer to the republish, so a replay `Into` a queue that does not exist — confirmed
+  and dropped by the broker — deleted the last copy and counted it as replayed. Each
+  message is now held until its copy is confirmed and routed, then acknowledged; one
+  that is not is put back and the replay stops with `PublishFailedException`. A
+  message with no message id is given one on the copy, since a return cannot be
+  matched to a message without one. Messages the filter skips are handed back rather
+  than republished, so they keep their place in the queue.
+- **The scheduler keeps a message that falls due with nothing bound to receive it.**
+  Its control consumer accepted the control message whatever happened to the hop or
+  the delivery, so a destination with no binding at the due time — or a deleted rung
+  — lost the scheduled message with only a diagnostic. It is now retried in place
+  every five seconds (`acemq.move.failed` each time) until it can be delivered.
+  `Delivered` now counts only deliveries that were routed.
+
+Audited with them, against RabbitMQ 4, and already safe: retry hops, rungs,
+parking, `{queue}.dlq` and the in-progress requeue (mandatory, routed checked before
+the original is acknowledged, released otherwise); routing-slip and pipeline hops,
+the reply side of request/reply and the outbox relay (publishers are mandatory by
+default and an unroutable publish throws, so the step is retried, the request is
+retried and the record stays with its attempt counted). Claim check, sagas and
+consumer groups publish nothing on the caller's behalf.
+
 ### Added
 
 - `AceMqDiagnostics.StreamReaderStopped` (`"acemq.stream.reader.stopped"`), reported

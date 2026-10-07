@@ -370,6 +370,12 @@ await replay.ReplayAsync(1000, delivery =>
     delivery.Headers.TryGetValue("x-tenant", out var t) && (string)t == "acme");
 ```
 
+**Nothing is taken off the queue until its copy has landed.** Each message is held
+while the copy is published, and acknowledged only once the broker has confirmed it
+*and* routed it to a queue. A replay into a queue that does not exist stops with a
+`PublishFailedException` and leaves the message where it was; it used to take the
+message first and lose it, and count it as replayed.
+
 **What the filter rejects is put back, not discarded.** Selective replay is normally
 about picking out one tenant or one kind of failure, and losing the rest as a side
 effect of looking at them would be a poor trade.
@@ -520,6 +526,12 @@ largest rung that does not overshoot. A four-hour delay is four one-hour hops; a
 ninety-second delay is one minute, then three tens. A one-day message takes
 twenty-four hops and a one-minute message takes one, which is the right way round:
 short delays are common and want to be cheap.
+
+A message that falls due with nothing bound to receive it — or whose next rung has
+been deleted — is **kept, not dropped.** The broker would confirm the publish and
+discard it, so the scheduler checks that it was routed, reports
+`acemq.move.failed`, and tries again every five seconds until it can be delivered.
+`Delivered` counts only deliveries that were routed.
 
 `Scheduled`, `Delivered` and `Hops` are on the scheduler. `Hops` divided by
 `Delivered` is the average hop count, which is the number to look at when the

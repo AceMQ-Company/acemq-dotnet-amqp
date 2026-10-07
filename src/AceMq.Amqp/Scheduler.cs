@@ -254,8 +254,9 @@ public sealed class Scheduler : IDisposable
     {
         // Never throws, and never gives up. See the note on the private-queue
         // subscription above: this consumer has no dead-letter queue to give up into,
-        // by design, so anything it cannot handle is reported and dropped rather than
-        // republished into a queue that is not there.
+        // by design. A message it cannot read is reported and dropped; one it read but
+        // could not move on is retried, which with no policy puts it back on this
+        // queue after a pause rather than anywhere that is not there.
         try
         {
             var headers = message.Headers;
@@ -286,7 +287,25 @@ public sealed class Scheduler : IDisposable
 
             var when = DateTimeOffset.FromUnixTimeMilliseconds(
                 Convert.ToInt64(dueAt, CultureInfo.InvariantCulture));
-            await RouteAsync(message.Payload, carried, when).ConfigureAwait(false);
+            try
+            {
+                await RouteAsync(message.Payload, carried, when).ConfigureAwait(false);
+            }
+            catch (Exception failure)
+            {
+                // The hop or the delivery did not happen -- a destination nothing is
+                // bound to, a rung somebody deleted, a confirm that never came. This
+                // used to be accepted with the rest below, which dropped the scheduled
+                // message: the broker confirms an unroutable publish and discards it.
+                // Kept instead, and tried again after a pause, until it can be
+                // delivered or an operator removes it.
+                AceMqDiagnostics.Report(
+                    AceMqDiagnostics.MoveFailed, DiagnosticLevel.Error,
+                    $"a scheduled message for {Text(exchange)}/{Text(routingKey)} could not"
+                    + $" be moved on and will be tried again: {failure.Message}",
+                    ControlQueue, Text(exchange), message.Envelope.Id, message.Attempt, failure);
+                return Ack.Retry(RetryPause, failure.Message);
+            }
             return Ack.Accept();
         }
         catch (Exception failure)
@@ -330,7 +349,10 @@ public sealed class Scheduler : IDisposable
             .SendAsync(payload, envelope.Build());
     }
 
-    private Task DeliverAsync(byte[] payload, IDictionary<string, object> headers)
+    /// <summary>How long a scheduled message that could not be moved on waits to try again.</summary>
+    internal static readonly TimeSpan RetryPause = TimeSpan.FromSeconds(5);
+
+    private async Task DeliverAsync(byte[] payload, IDictionary<string, object> headers)
     {
         var exchange = Text(headers[TargetExchangeHeader]);
         var routingKey = Text(headers[TargetRoutingKeyHeader]);
@@ -341,9 +363,9 @@ public sealed class Scheduler : IDisposable
         // The scheduler's own headers are not passed on: they are bookkeeping, and a
         // consumer that started depending on them would be depending on how a message
         // got to it.
+        await PublisherFor(exchange, routingKey, new VerbatimCodec(contentType))
+            .SendAsync(payload, Envelope.Of(ScheduledType).Build()).ConfigureAwait(false);
         Interlocked.Increment(ref _delivered);
-        return PublisherFor(exchange, routingKey, new VerbatimCodec(contentType))
-            .SendAsync(payload, Envelope.Of(ScheduledType).Build());
     }
 
     /// <summary>

@@ -209,9 +209,8 @@ public interface ITransportConnection : IDisposable
     /// Takes one message and holds it until it is settled.
     /// </summary>
     /// <remarks>
-    /// <see cref="ReceiveAsync"/> acknowledges as it reads, which suits a replay
-    /// that is republishing what it took and loses the message if the process
-    /// dies mid-flight. This one leaves the message on the broker until the
+    /// <see cref="ReceiveAsync"/> acknowledges as it reads, and so loses the
+    /// message if whatever the caller does with it next fails. This one leaves the message on the broker until the
     /// caller says what happened to it, which is what a job reading a queue on a
     /// schedule needs.
     /// </remarks>
