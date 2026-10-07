@@ -731,8 +731,26 @@ public sealed class RabbitMqTransport : ITransport
                 ? new StreamPosition()
                 : null;
 
+            var handlers = new HandlerGate();
             var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.ReceivedAsync += async (_, delivered) =>
+            {
+                // A delivery the client had buffered before the cancel is not handled:
+                // left unacknowledged, it goes back to the queue when the channel
+                // closes. Handling it would hold the close up behind it -- see
+                // Subscription.Dispose for why that wedges the whole connection.
+                if (!handlers.TryEnter()) return;
+                try
+                {
+                    await DeliverAsync(delivered).ConfigureAwait(false);
+                }
+                finally
+                {
+                    handlers.Exit();
+                }
+            };
+
+            async Task DeliverAsync(BasicDeliverEventArgs delivered)
             {
                 // Recorded before the handler sees it and settled before the broker
                 // is told, so a recovery at any point finds it either pending or done.
@@ -808,7 +826,7 @@ public sealed class RabbitMqTransport : ITransport
                             .ConfigureAwait(false);
                         break;
                 }
-            };
+            }
 
             Dictionary<string, object?>? consumerArguments = null;
             if (arguments != null && arguments.Count > 0)
@@ -822,9 +840,10 @@ public sealed class RabbitMqTransport : ITransport
                 exclusive: false, arguments: consumerArguments, consumer: consumer,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            if (position == null) return new Subscription(queue, channel, tag, null);
+            if (position == null) return new Subscription(queue, channel, tag, handlers, null);
             _streams[tag] = position;
-            return new Subscription(queue, channel, tag, () => _streams.TryRemove(tag, out _));
+            return new Subscription(
+                queue, channel, tag, handlers, () => _streams.TryRemove(tag, out _));
         }
 
         /// <summary>Pulls one message with basic.get, acknowledging it.</summary>
@@ -1045,14 +1064,17 @@ public sealed class RabbitMqTransport : ITransport
     {
         private readonly IChannel _channel;
         private readonly string _tag;
+        private readonly HandlerGate _handlers;
         private readonly Action? _forget;
         private bool _cancelled;
 
-        internal Subscription(string queue, IChannel channel, string tag, Action? forget)
+        internal Subscription(
+            string queue, IChannel channel, string tag, HandlerGate handlers, Action? forget)
         {
             Queue = queue;
             _channel = channel;
             _tag = tag;
+            _handlers = handlers;
             _forget = forget;
         }
 
@@ -1075,12 +1097,24 @@ public sealed class RabbitMqTransport : ITransport
         /// answered the broker sends this consumer nothing more, so whatever is
         /// handed back from then on is not handed straight back to it.
         /// </para>
+        /// <para>
+        /// And the close is not even sent until the handler running now has
+        /// returned. The client answers channel.close-ok on the connection's one
+        /// reader loop, and before it moves on it waits for the channel's consumer
+        /// dispatcher to finish -- that is, for the handler. A handler still waiting
+        /// on anything the reader loop delivers (the confirm for a retry hop or a
+        /// move to {queue}.dlq, the answer to a declare) then waits for ever, and so
+        /// does every RPC on every channel of the connection, each timing out after
+        /// 20 seconds. Closing once the handler is out leaves nothing for the
+        /// reader loop to wait on.
+        /// </para>
         /// </remarks>
         public void Dispose()
         {
             if (_cancelled) return;
             _cancelled = true;
             _forget?.Invoke();
+            var idle = _handlers.Close();
             try
             {
                 Task.Run(() => _channel.BasicCancelAsync(_tag)).Wait(TimeSpan.FromSeconds(5));
@@ -1090,10 +1124,54 @@ public sealed class RabbitMqTransport : ITransport
                 // Cancelling a consumer on a connection that has already gone is the
                 // normal shutdown order, not an error worth reporting.
             }
-            Task.Run(() =>
+            Task.Run(async () =>
             {
+                await idle.ConfigureAwait(false);
                 try { _channel.Dispose(); } catch { /* closing a closed channel is not news */ }
             });
+        }
+    }
+
+    /// <summary>
+    /// Counts the handlers running on one subscription, and stops new ones once it
+    /// is closed.
+    /// </summary>
+    private sealed class HandlerGate
+    {
+        private readonly object _lock = new object();
+        private readonly TaskCompletionSource<bool> _idle =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _running;
+        private bool _closed;
+
+        /// <summary>False once closed: the delivery is to be left alone.</summary>
+        internal bool TryEnter()
+        {
+            lock (_lock)
+            {
+                if (_closed) return false;
+                _running++;
+                return true;
+            }
+        }
+
+        internal void Exit()
+        {
+            lock (_lock)
+            {
+                if (--_running == 0 && _closed) _idle.TrySetResult(true);
+            }
+        }
+
+        /// <summary>Stops new handlers; completes when the running ones have returned.</summary>
+        internal Task Close()
+        {
+            lock (_lock)
+            {
+                _closed = true;
+                if (_running == 0) _idle.TrySetResult(true);
+            }
+            return _idle.Task;
         }
     }
 }

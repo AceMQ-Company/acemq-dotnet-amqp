@@ -10,6 +10,16 @@ While the version is `0.x` the public API may change in any release.
 
 ### Fixed
 
+- **Disposing a consumer while its handler is still at work no longer wedges the
+  connection.** The consumer's channel was closed straight away, and RabbitMQ.Client
+  answers channel.close-ok on the connection's one reader loop, where it waits for
+  the channel's handler to return. A handler waiting on something only that loop
+  delivers -- the confirm for a retry hop, a move to `{queue}.dlq` or `{queue}.parked`,
+  its own confirmed publish -- then waited for ever, and every later declare, delete
+  or count on that connection timed out after 20 seconds while another connection
+  worked fine. The channel is now closed once the running handler has returned, and
+  a delivery the client had buffered before the cancel is left unhandled and goes
+  back to the queue when the channel closes.
 - **A stream reader whose handler fails stops instead of writing the entry to the
   stream again.** A failure was answered with a retry, and a retry republishes to the
   queue the message came from — on a stream, that appends a second copy of the entry
