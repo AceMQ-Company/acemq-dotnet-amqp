@@ -186,6 +186,11 @@ Delivery is **at least once**. A relay that publishes and then dies before marki
 the record will publish again, so consumers must tolerate duplicates — the envelope's
 id is the idempotency key.
 
+A record is marked done only once the broker has confirmed its message and routed it
+to a queue — on a connection made `WithoutPublisherConfirms()` too, because the relay
+publishes over the library's own confirmed channel (see
+[Publishing](publishing.md#what-sent-means)).
+
 ### A record the broker will never take
 
 A publish that fails releases its lease and counts the attempt, so the next pass

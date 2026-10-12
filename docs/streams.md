@@ -25,6 +25,16 @@ without a limit is declaring a queue that grows until the disk is full**, and a 
 disk stops the whole broker, not just this stream. Both arguments accept null, and
 both being null is almost always a mistake.
 
+`maxAge` is written as `x-max-age` in the largest unit that holds it exactly — `1h`,
+`90m`, `7D`, and seconds only when nothing larger fits — the same spelling Java, Go,
+Python and Ruby use. The broker compares the argument as a string, so a stream
+declared from here and from another language has to agree on it. Up to 0.7.9 this
+library wrote whole seconds (`3600s` for an hour). A stream that already exists with
+that spelling keeps it — the broker never rewrites an argument — so redeclaring it
+with `DeclareStreamAsync` is refused with `PRECONDITION_FAILED - inequivalent arg
+'x-max-age'`. Until it can be deleted and recreated, declare it through
+`DeclareQueueAsync` with `StreamArguments.MaxAge` set to the old string.
+
 ### Segment size
 
 ```csharp

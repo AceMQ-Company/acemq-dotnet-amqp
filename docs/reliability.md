@@ -213,6 +213,24 @@ close finishes as soon as the last running handler does. Before 0.7.6 a held
 delivery sat out its full thirty seconds first, which made `await using` take longer
 than Kubernetes' default grace period.
 
+**Disposing one consumer while its handler is at work** closes that consumer's
+channel only once the handler has returned, so whatever the handler is waiting on —
+the confirm for a retry hop, a move to `{queue}.dlq`, its own publish — still
+arrives, and the rest of the connection keeps working. A delivery the client had
+buffered but not yet handed over goes back to the queue when the channel closes.
+
+**A handler cancelled on the way out hands its message back at once.** When a
+consumer is disposed or its connection closes — the hosting integration's drain
+running out of time and cancelling the handler token is the usual case — a retry
+delay or in-progress delay the handler was sitting out ends immediately, the message
+is requeued with its attempt count unchanged, and the channel and connection close
+straight away. (0.7.10 left that message unacknowledged, and the connection open,
+until the process exited.) The one remaining limit: a handler that ignores its
+`CancellationToken` and keeps running holds the channel open, so the close waits
+for it until RabbitMQ.Client's five-second abort timeout, and its message is not
+redelivered until that connection is gone. Pass the token to everything the handler
+awaits.
+
 ```csharp
 await using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
 ```
