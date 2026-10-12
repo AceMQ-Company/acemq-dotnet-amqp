@@ -241,18 +241,40 @@ jobs:
         run: |
           git config user.name "acemq-release"
           git config user.email "noreply@acemq.org"
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "nothing to publish; $VERSION may already exist"
-            # Already in the feed, so from a consumer's point of view this version
-            # is published. Reporting otherwise would make a re-run of a good
-            # release look like a release that never happened.
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git add -A
-          git commit -m "Publish AceMq.Amqp $VERSION"
-          git push origin HEAD
-          echo "published=true" >> "$GITHUB_OUTPUT"
+          # Every release of every package pushes to this one repository, so
+          # another one can land between the checkout and this push: on 12
+          # October 2026 a Java release lost exactly that race on the Maven
+          # feed. publish.sh regenerates the flatcontainer index.json files and
+          # the landing page's package table from every file present, so a
+          # rebase would carry a stale index onto the newer commit. A retry
+          # starts again from the feed as it now is and runs publish.sh over it,
+          # which puts both releases in the index.
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "::warning::push $((attempt - 1)) of 5 rejected; another release got there first, regenerating over it"
+              sleep $((RANDOM % 15 + 5))
+              git fetch origin "$branch"
+              git reset --hard FETCH_HEAD
+              ./scripts/publish.sh "$RUNNER_TEMP"/packages/*.nupkg
+            fi
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "nothing to publish; $VERSION may already exist"
+              # Already in the feed, so from a consumer's point of view this version
+              # is published. Reporting otherwise would make a re-run of a good
+              # release look like a release that never happened.
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git add -A
+            git commit -m "Publish AceMq.Amqp $VERSION"
+            if git push origin HEAD; then
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error::$VERSION could not be pushed to the feed after 5 attempts; nothing was pushed"
+          exit 1
 
       # The only check that asks what a consumer will actually get. Restoring from
       # an empty package cache, against the public feed, catches a release whose
@@ -394,6 +416,12 @@ jobs:
         env:
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
+          # The Java and .NET releases both rewrite this page, each its own card,
+          # and two releases can push within seconds of each other. The edit is
+          # a pure function of the page, so a rejected push starts again from
+          # the page as it now is and re-applies it, rather than rebasing a diff
+          # whose context the other card may have moved.
+          edit_page() {
           python3 - "$VERSION" <<'PYTHON'
           import pathlib, re, sys
           version = sys.argv[1]
@@ -412,14 +440,29 @@ jobs:
               path.write_text(updated)
               print(f"the .NET card now shows {version}")
           PYTHON
-          if [ -n "$(git status --porcelain)" ]; then
-            git config user.name "acemq-release"
-            git config user.email "noreply@acemq.org"
+          }
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          git config user.name "acemq-release"
+          git config user.email "noreply@acemq.org"
+          for attempt in 1 2 3 4 5; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "::warning::push $((attempt - 1)) of 5 rejected; the page moved underneath, re-applying"
+              sleep $((RANDOM % 15 + 5))
+              git fetch origin "$branch"
+              git reset --hard FETCH_HEAD
+            fi
+            edit_page
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "landing page already current"
+              exit 0
+            fi
             git commit -am "AceMQ for .NET $VERSION"
-            git push origin HEAD
-          else
-            echo "landing page already current"
-          fi
+            if git push origin HEAD; then
+              exit 0
+            fi
+          done
+          echo "::error::the landing page could not be pushed after 5 attempts"
+          exit 1
 
   # A version that is published but did not finish its release is the genuinely
   # dangerous state: consumers can already resolve it while the documentation and
