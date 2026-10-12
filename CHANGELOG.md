@@ -22,6 +22,16 @@ While the version is `0.x` the public API may change in any release.
   closes, the broker hands the message back to the queue at once, and whatever the
   handler answers when it does finish is dropped, never acknowledged a second time.
 
+### Changed
+
+- **A handler that finishes while the connection is being disposed is acknowledged.**
+  The five seconds above are spent with the channel still open, so a handler that
+  returns inside them now has its acknowledgement reach the broker. Before, that
+  acknowledgement was lost and the message came back to the queue. Code that
+  counted on every in-flight message being redelivered after `Dispose` will see
+  fewer: only the handlers still running at the end of the five seconds give theirs
+  back.
+
 ## [0.7.11] - 2026-10-12
 
 ### Fixed
