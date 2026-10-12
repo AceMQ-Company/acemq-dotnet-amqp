@@ -60,7 +60,10 @@ public class CancelledHandlerOnDisposeTests
                 await before.Publisher<string>("", first).SendAsync("m");
                 await handled.Task.WaitAsync(TimeSpan.FromSeconds(10));
             }
-            await before.DeleteQueueAsync(first);
+            foreach (var name in new[] { first, Naming.DeadLetterQueue(first), Naming.ParkedQueue(first) })
+            {
+                await before.DeleteQueueAsync(name);
+            }
         }
 
         var queue = NewQueue("overrun");
