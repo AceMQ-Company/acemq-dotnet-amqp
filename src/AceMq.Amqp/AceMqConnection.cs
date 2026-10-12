@@ -1677,9 +1677,11 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// duplicate rather than a loss, and still work done twice.
     /// <para>
     /// <b>Nor does it return at once.</b> On RabbitMQ the client finishes closing a
-    /// connection only when every handler on it has returned, so this blocks for as
-    /// long as the longest handler still running takes — without the benefit of its
-    /// result. A delivery held at the pause gate is not waited for: once the consumers
+    /// connection only when every handler on it has returned, so this waits for the
+    /// handlers still running — up to five seconds. A handler still running after that
+    /// (one that ignores its cancellation) is abandoned: the connection closes anyway,
+    /// the broker redelivers its message, and whatever it answers later is dropped.
+    /// A delivery held at the pause gate is not waited for: once the consumers
     /// are cancelled it is handed back with requeue, so the broker redelivers it and
     /// nothing is lost or dead-lettered.
     /// </para>

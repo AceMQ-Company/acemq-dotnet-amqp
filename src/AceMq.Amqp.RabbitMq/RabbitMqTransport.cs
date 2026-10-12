@@ -347,6 +347,21 @@ public sealed class RabbitMqTransport : ITransport
         private readonly bool _confirms;
         private volatile string? _blockedReason;
 
+        /// <summary>How long disposing waits for running handlers before abandoning them.</summary>
+        /// <remarks>The same five seconds RabbitMQ.Client allows an abort.</remarks>
+        private static readonly TimeSpan HandlerGrace = TimeSpan.FromSeconds(5);
+
+        /// <summary>Completed when disposing gives up on the handlers still running.</summary>
+        private readonly TaskCompletionSource<bool> _abandoned =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>
+        /// Every subscription's handlers, until a disposed subscription's last one has
+        /// returned.
+        /// </summary>
+        private readonly ConcurrentDictionary<HandlerGate, byte> _gates =
+            new ConcurrentDictionary<HandlerGate, byte>();
+
         /// <summary>
         /// How far each stream subscription has got, by consumer tag.
         /// </summary>
@@ -733,22 +748,40 @@ public sealed class RabbitMqTransport : ITransport
 
             var handlers = new HandlerGate();
             var consumer = new AsyncEventingBasicConsumer(channel);
-            consumer.ReceivedAsync += async (_, delivered) =>
+            consumer.ReceivedAsync += (_, delivered) =>
             {
                 // A delivery the client had buffered before the cancel is not handled:
                 // left unacknowledged, it goes back to the queue when the channel
                 // closes. Handling it would hold the close up behind it -- see
                 // Subscription.Dispose for why that wedges the whole connection.
-                if (!handlers.TryEnter()) return;
+                if (!handlers.TryEnter()) return Task.CompletedTask;
+
+                // The client's dispatcher is let go once the connection gives up on
+                // the handler (see Dispose), because the client will not close the
+                // connection -- socket included -- while any dispatcher is busy.
+                var handling = HandleAsync(delivered);
+                return handling.IsCompleted
+                    ? handling
+                    : Task.WhenAny(handling, _abandoned.Task).Unwrap();
+            };
+
+            async Task HandleAsync(BasicDeliverEventArgs delivered)
+            {
                 try
                 {
                     await DeliverAsync(delivered).ConfigureAwait(false);
+                }
+                catch when (_abandoned.Task.IsCompleted)
+                {
+                    // A handler that outlived its connection: the channel its answer
+                    // was for is gone, and the broker has already handed the message
+                    // back. Nothing is left to settle and nobody to tell.
                 }
                 finally
                 {
                     handlers.Exit();
                 }
-            };
+            }
 
             async Task DeliverAsync(BasicDeliverEventArgs delivered)
             {
@@ -839,6 +872,10 @@ public sealed class RabbitMqTransport : ITransport
                 queue, autoAck: false, consumerTag: string.Empty, noLocal: false,
                 exclusive: false, arguments: consumerArguments, consumer: consumer,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            _gates[handlers] = 0;
+            _ = handlers.Idle.ContinueWith(
+                idle => _gates.TryRemove(handlers, out _), TaskScheduler.Default);
 
             if (position == null) return new Subscription(queue, channel, tag, handlers, null);
             _streams[tag] = position;
@@ -1049,6 +1086,20 @@ public sealed class RabbitMqTransport : ITransport
             // Before the channel goes, so a caller still awaiting a confirm is told
             // rather than left waiting for an answer nothing will now deliver.
             FailAllPending("the connection was disposed");
+
+            // The client closes the connection only once every consumer's handler has
+            // returned. It waits for them with no limit, and then its own five-second
+            // abort timeout has already run out: it gives up without sending
+            // connection.close or closing the socket, so the broker keeps the
+            // connection and every unacknowledged message until the process exits.
+            // The handlers are therefore waited for here, for HandlerGrace, and any
+            // still running -- one that ignores its cancellation -- are abandoned
+            // before the client is asked to close. Its message is requeued by the
+            // broker; whatever it answers later is dropped.
+            var running = Task.WhenAll(
+                System.Linq.Enumerable.Select(_gates.Keys, gate => gate.Close()));
+            if (!running.Wait(HandlerGrace)) _abandoned.TrySetResult(true);
+
             if (_confirming != _channel)
             {
                 try { _confirming.Dispose(); } catch { /* closing a closed channel is not news */ }
@@ -1162,6 +1213,9 @@ public sealed class RabbitMqTransport : ITransport
                 if (--_running == 0 && _closed) _idle.TrySetResult(true);
             }
         }
+
+        /// <summary>Completes once closed and the running handlers have returned.</summary>
+        internal Task Idle => _idle.Task;
 
         /// <summary>Stops new handlers; completes when the running ones have returned.</summary>
         internal Task Close()

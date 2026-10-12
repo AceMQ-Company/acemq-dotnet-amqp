@@ -8,6 +8,20 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-10-12
+
+### Fixed
+
+- **A handler that ignores its cancellation no longer keeps the connection open.**
+  A handler still running when the connection was disposed -- one that does not
+  pass its `CancellationToken` to what it awaits -- held the close up: `Dispose`
+  waited for it with no limit, and RabbitMQ.Client then gave up on the close
+  without closing the socket, so the broker kept the connection and the
+  unacknowledged message until the process exited. Disposing now waits up to five
+  seconds for the handlers still running and then abandons the rest: the connection
+  closes, the broker hands the message back to the queue at once, and whatever the
+  handler answers when it does finish is dropped, never acknowledged a second time.
+
 ## [0.7.11] - 2026-10-12
 
 ### Fixed

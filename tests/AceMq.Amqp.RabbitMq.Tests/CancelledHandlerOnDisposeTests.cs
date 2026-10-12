@@ -111,4 +111,75 @@ public class CancelledHandlerOnDisposeTests
             }
         }
     }
+
+    /// <summary>
+    /// A handler that ignores its cancellation and never returns in time: the connection
+    /// still closes, the message comes back once, and the handler's late answer is
+    /// dropped.
+    /// </summary>
+    /// <remarks>
+    /// In 0.7.11 the client's close waited for that handler, gave up after five seconds
+    /// without closing the socket, and the broker kept the connection and the
+    /// unacknowledged message until the process exited.
+    /// </remarks>
+    [Fact]
+    public async Task AHandlerThatIgnoresCancellationDoesNotHoldTheConnectionOpen()
+    {
+        var queue = NewQueue("stuck");
+        var mq = await ConnectAsync();
+        await mq.DeclareQueueAsync(queue);
+
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var returned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<string>(queue, async _ =>
+        {
+            entered.TrySetResult();
+            await release.Task; // no token: it runs on whatever happens
+            returned.TrySetResult();
+            return Ack.Accept();
+        });
+
+        await mq.Publisher<string>("", queue).SendAsync("m");
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.False(await mq.DrainConsumersAsync(TimeSpan.FromSeconds(1)));
+        var clock = Stopwatch.StartNew();
+        // Bounded here, so a dispose that never returns fails the test rather than
+        // hanging it.
+        var disposed = Task.Run(mq.Dispose);
+        await Task.WhenAny(disposed, Task.Delay(TimeSpan.FromSeconds(15)));
+        clock.Stop();
+
+        using var after = await ConnectAsync();
+        try
+        {
+            Assert.True(disposed.IsCompleted, "disposing did not return");
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(8), $"disposing took {clock.Elapsed}");
+
+            // Back on the queue only once the broker has dropped the connection.
+            var count = 0L;
+            for (var i = 0; i < 50 && count == 0; i++)
+            {
+                count = await after.MessageCountAsync(queue);
+                if (count == 0) await Task.Delay(200);
+            }
+            Assert.Equal(1, count);
+
+            // The handler finishes late. Its acknowledgement goes nowhere: the message
+            // is still there, once.
+            release.SetResult();
+            await returned.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(500);
+            Assert.Equal(1, await after.MessageCountAsync(queue));
+        }
+        finally
+        {
+            release.TrySetResult();
+            foreach (var name in new[] { queue, Naming.DeadLetterQueue(queue), Naming.ParkedQueue(queue) })
+            {
+                try { await after.DeleteQueueAsync(name); } catch { /* already gone */ }
+            }
+        }
+    }
 }

@@ -200,11 +200,9 @@ delay.
 ## Shutting down
 
 **`await using`, not `using`.** `DisposeAsync` drains first; `Dispose` does not.
-`Dispose` is not instant either: on RabbitMQ it returns only once the handlers
-already running have returned, because the client closes a channel only after its
-handlers are done — but it has already told the broker the channel is closing, so
-what those handlers settle never arrives. The messages come back, and any side
-effect already applied has happened twice by the time they do.
+`Dispose` is not instant either: on RabbitMQ it waits — up to five seconds — for
+the handlers already running to return, because the client closes a connection only
+after its handlers are done.
 
 Neither way of closing waits for a delivery held at the pause gate. Once the
 consumers are cancelled — so the broker sends them nothing more — held deliveries
@@ -225,11 +223,18 @@ running out of time and cancelling the handler token is the usual case — a ret
 delay or in-progress delay the handler was sitting out ends immediately, the message
 is requeued with its attempt count unchanged, and the channel and connection close
 straight away. (0.7.10 left that message unacknowledged, and the connection open,
-until the process exited.) The one remaining limit: a handler that ignores its
-`CancellationToken` and keeps running holds the channel open, so the close waits
-for it until RabbitMQ.Client's five-second abort timeout, and its message is not
-redelivered until that connection is gone. Pass the token to everything the handler
-awaits.
+until the process exited.)
+
+**A handler that ignores its cancellation is abandoned, not waited for.** Closing
+the connection waits up to five seconds for the handlers still running. A handler
+still going after that — one that never passes its `CancellationToken` to what it
+awaits — is left behind: the connection and its socket close anyway, the broker
+hands the message back to the queue at once, and when the handler finally returns
+its acknowledgement is dropped rather than sent, so the message is never settled
+twice. Its side effects are another matter: the message is redelivered, so whatever
+the abandoned handler goes on to do happens a second time. Pass the token to
+everything the handler awaits. (Before 0.7.12 such a handler kept the connection,
+and its unacknowledged message, until the process exited.)
 
 ```csharp
 await using var mq = await AceMqConnection.ConnectAsync("amqp://localhost");
