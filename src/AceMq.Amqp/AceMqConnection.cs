@@ -333,6 +333,13 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             await ladder.DeclareAsync(_connection, CancellationToken.None).ConfigureAwait(false);
         }
 
+        // Completed when this consumer is disposed, so a handler's message waiting out a
+        // retry or in-progress delay in this process is handed back at once. The
+        // transport closes the channel only once the handler has returned, so a wait
+        // that ran on held the channel, the connection's close behind it, and the
+        // message unacknowledged for as long as the process lived.
+        var stopped = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
         var subscription = await _connection.SubscribeAsync(
             queue, options.PrefetchCount, consumerArguments,
             async delivery =>
@@ -355,7 +362,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                     var parked = await SettleAsync(
                         queue, ladder, policy, delivery, envelope,
                         Ack.Park($"could not decode as {typeof(T).Name}: {e.Message}"),
-                        span: null)
+                        span: null, stopped.Task)
                         .ConfigureAwait(false);
                     return parked.Ack;
                 }
@@ -414,7 +421,8 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                         using var waiting = AceMqTelemetry.StartConsume(queue, envelope, delivery.Headers);
                         var inProgress = Ack.InProgress(options.InProgressDelay);
                         var putBack = await SettleAsync(
-                                queue, ladder, policy, delivery, envelope, inProgress, waiting)
+                                queue, ladder, policy, delivery, envelope, inProgress, waiting,
+                                stopped.Task)
                             .ConfigureAwait(false);
                         RecordConsume(
                             queue, envelope, attempt, inProgress, putBack.Outcome,
@@ -546,7 +554,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                 // dead-letter, and recording before settling is what used to tag that
                 // span outcome="retried" and count it as a retry that never happened.
                 var settled = await SettleAsync(
-                        queue, ladder, policy, delivery, envelope, ack, span)
+                        queue, ladder, policy, delivery, envelope, ack, span, stopped.Task)
                     .ConfigureAwait(false);
 
                 RecordConsume(queue, envelope, attempt, ack, settled.Outcome, elapsed, span);
@@ -555,7 +563,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             },
             CancellationToken.None).ConfigureAwait(false);
 
-        var consumer = new MessageConsumer(subscription);
+        var consumer = new MessageConsumer(subscription, stopped);
         lock (_owned) _owned.Add(consumer);
         return consumer;
     }
@@ -676,7 +684,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     private async Task<Settled> SettleAsync(
         string queue, RetryLadder ladder, RetryPolicy? policy,
         InboundDelivery delivery, Envelope envelope, Ack ack,
-        System.Diagnostics.Activity? span)
+        System.Diagnostics.Activity? span, Task stopped)
     {
         switch (ack.Kind)
         {
@@ -692,18 +700,13 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                 // message can be handled, so the retry policy is not asked: it can
                 // neither spend an attempt nor run out and dead-letter a message
                 // nobody has failed to handle. Same queue, same attempt.
-                var wait = ack.Delay ?? TimeSpan.Zero;
-                if (wait > TimeSpan.Zero)
+                //
+                // Not waited out by a close, which would bring back the slow
+                // shutdowns 0.7.6 removed. Handed back with requeue instead: the
+                // attempt does not move either way.
+                if (!await WaitOutAsync(ack.Delay ?? TimeSpan.Zero, stopped).ConfigureAwait(false))
                 {
-                    // Not waited out by a close, which would bring back the slow
-                    // shutdowns 0.7.6 removed. Handed back with requeue instead: the
-                    // attempt does not move either way.
-                    var woke = await Task.WhenAny(Task.Delay(wait), _closed.Task)
-                        .ConfigureAwait(false);
-                    if (woke == _closed.Task)
-                    {
-                        return new Settled(Ack.Release(), MetricNames.OutcomeInProgress);
-                    }
+                    return new Settled(Ack.Release(), MetricNames.OutcomeInProgress);
                 }
                 var back = await MoveAsync(queue, delivery, envelope).ConfigureAwait(false);
                 return new Settled(back, MetricNames.OutcomeInProgress);
@@ -752,9 +755,28 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             }
 
             default:
-                return await RetryAsync(queue, ladder, policy, delivery, envelope, ack, span)
+                return await RetryAsync(queue, ladder, policy, delivery, envelope, ack, span, stopped)
                     .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Waits out a delay spent in this process, unless the consumer is disposed or the
+    /// connection closes first.
+    /// </summary>
+    /// <returns>True if the delay ran its course; false if it was cut short.</returns>
+    /// <remarks>
+    /// Cut short, the caller hands the message back with requeue rather than moving
+    /// it. The transport closes a consumer's channel only once its handler has
+    /// returned, and before 0.7.11 a retry delay ran on through a dispose: the
+    /// channel stayed open, the connection's close gave up waiting for it, and the
+    /// message stayed unacknowledged on a connection that never closed.
+    /// </remarks>
+    private async Task<bool> WaitOutAsync(TimeSpan wait, Task stopped)
+    {
+        if (wait <= TimeSpan.Zero) return true;
+        var delay = Task.Delay(wait);
+        return await Task.WhenAny(delay, stopped, _closed.Task).ConfigureAwait(false) == delay;
     }
 
     /// <summary>
@@ -795,7 +817,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     private async Task<Settled> RetryAsync(
         string queue, RetryLadder ladder, RetryPolicy? policy,
         InboundDelivery delivery, Envelope envelope, Ack ack,
-        System.Diagnostics.Activity? span)
+        System.Diagnostics.Activity? span, Task stopped)
     {
         var reason = ack.Reason ?? "no reason given";
         var advanced = envelope.WithAttempt(envelope.Attempt + 1);
@@ -807,7 +829,10 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             // why one is worth configuring.
             var asked = ack.Delay ?? TimeSpan.Zero;
             AceMqTelemetry.MessageRetried(span, asked, queue, reason);
-            if (asked > TimeSpan.Zero) await Task.Delay(asked).ConfigureAwait(false);
+            if (!await WaitOutAsync(asked, stopped).ConfigureAwait(false))
+            {
+                return new Settled(Ack.Release(), MetricNames.OutcomeRetried);
+            }
             var requeued = await MoveAsync(queue, delivery, advanced).ConfigureAwait(false);
             return new Settled(requeued, MetricNames.OutcomeRetried);
         }
@@ -873,7 +898,10 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         }
 
         AceMqTelemetry.MessageRetried(span, next.Delay, queue, reason);
-        if (next.Delay > TimeSpan.Zero) await Task.Delay(next.Delay).ConfigureAwait(false);
+        if (!await WaitOutAsync(next.Delay, stopped).ConfigureAwait(false))
+        {
+            return new Settled(Ack.Release(), MetricNames.OutcomeRetried);
+        }
         var again = await MoveAsync(queue, delivery, advanced).ConfigureAwait(false);
         return new Settled(again, MetricNames.OutcomeRetried);
     }

@@ -369,10 +369,22 @@ public interface IMessageConsumer : IDisposable
 internal sealed class MessageConsumer : IMessageConsumer
 {
     private readonly ISubscription _subscription;
+    private readonly TaskCompletionSource<bool> _stopped;
 
-    internal MessageConsumer(ISubscription subscription) => _subscription = subscription;
+    internal MessageConsumer(ISubscription subscription, TaskCompletionSource<bool> stopped)
+    {
+        _subscription = subscription;
+        _stopped = stopped;
+    }
 
     public string Queue => _subscription.Queue;
     public bool IsActive => _subscription.IsActive;
-    public void Dispose() => _subscription.Dispose();
+
+    public void Dispose()
+    {
+        // First, so a handler's message waiting out a delay is handed back while the
+        // channel it came on is still open to take the requeue.
+        _stopped.TrySetResult(true);
+        _subscription.Dispose();
+    }
 }

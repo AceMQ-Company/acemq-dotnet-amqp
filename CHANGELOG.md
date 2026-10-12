@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.11] - 2026-10-12
+
+### Fixed
+
+- **A message whose handler was cancelled at shutdown comes back again, and the
+  connection closes.** 0.7.10 began closing a disposed consumer's channel only once
+  its handler had returned. A handler that failed -- a hosted service cancelling it
+  when the drain ran out of time is the common case -- then sat out its retry delay
+  in the process, five seconds by default, before it returned. The connection's
+  close gave up waiting for it after five seconds and left the socket open, so the
+  broker kept the message unacknowledged and the connection open until the process
+  exited: the message was neither handled nor redelivered. A retry or in-progress
+  delay waited in the process now ends as soon as the consumer is disposed or the
+  connection closes, the message is handed back to the queue with its attempt
+  unchanged, and the channel and connection close straight away. Whether 0.7.10 lost
+  the message depended on timing -- it usually showed only once something else had
+  already run in the same process.
+
 ## [0.7.10] - 2026-10-11
 
 ### Fixed
