@@ -27,7 +27,7 @@ While the version is `0.x` the public API may change in any release.
   on `Failure` -- instead of waiting out its timeout. `Requester.ErrorHeader` names
   the header. It is the header Go, Python and Ruby already use, so failures now
   cross between .NET and those three in both directions.
-- Runs the AceMQ TCK v0.1.0: a `tck` CI job drives the library through
+- Runs the AceMQ TCK v0.2.0: a `tck` CI job drives the library through
   `tests/AceMq.Amqp.TckDriver` and the shared checker.
 - **`ConnectionConfig.Builder.Origin`.** The `x-acemq-origin` a connection's
   publishes carry when their envelope names none, the setting Go's `WithOrigin` and
