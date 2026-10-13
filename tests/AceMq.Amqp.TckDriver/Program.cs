@@ -9,6 +9,7 @@
 //     dotnet tests/AceMq.Amqp.TckDriver/bin/Release/net10.0/AceMq.Amqp.TckDriver.dll
 
 using System.Collections.Concurrent;
+using System.Diagnostics.Metrics;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -29,7 +30,7 @@ internal static class Program
         Transports.Register(new RabbitMqTransport());
         var driver = new Driver(
             Environment.GetEnvironmentVariable("ACEMQ_TCK_AMQP_URL")
-            ?? "amqp://guest:guest@localhost:5672/");
+            ?? "amqp://guest:guest@localhost:5672");
 
         string? line;
         while ((line = await Console.In.ReadLineAsync().ConfigureAwait(false)) != null)
@@ -63,26 +64,63 @@ internal static class Program
         RequestTimedOutException => "timeout",
         // The JSON codec throws the serializer's own exception for a body it cannot read.
         AceFatalException or JsonException => "decode",
-        // The library has one type for both; only the message tells them apart.
+        // One type for unroutable, nacked and unconfirmed; only the message tells them apart.
         PublishFailedException e when e.Message.Contains("matched no queue", StringComparison.Ordinal)
             => "unroutable",
-        PublishFailedException or ConnectionBlockedException or PublishingPausedException => "refused",
+        PublishFailedException e when e.Message.Contains("the broker rejected", StringComparison.Ordinal)
+            => "nacked",
+        // Thrown before anything is written: the library declined to send.
+        ConnectionBlockedException or PublishingPausedException => "paused",
         _ => "other",
     };
+}
+
+/// <summary>What a consumer or stream reader under one handle has seen.</summary>
+internal sealed class Tally
+{
+    private readonly ConcurrentDictionary<string, int> _counts = new();
+    private readonly ConcurrentDictionary<string, int> _redelivered = new();
+    private readonly ConcurrentQueue<string> _order = new();
+
+    /// <summary>Counts a delivery and returns how many of this id there have been.</summary>
+    internal int Count(IMessage<JsonElement> message)
+    {
+        var id = message.Payload.ValueKind == JsonValueKind.Object
+                 && message.Payload.TryGetProperty("id", out var value) ? value.ToString() : "";
+        _order.Enqueue(id);
+        if (message.Redelivered) _redelivered.AddOrUpdate(id, 1, (_, n) => n + 1);
+        return _counts.AddOrUpdate(id, 1, (_, n) => n + 1);
+    }
+
+    internal JsonObject ToJson()
+    {
+        static JsonObject Of(ConcurrentDictionary<string, int> c) =>
+            new(c.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value)));
+        return new JsonObject
+        {
+            ["counts"] = Of(_counts),
+            ["redelivered"] = Of(_redelivered),
+            ["order"] = new JsonArray(_order.Select(id => (JsonNode)id).ToArray()),
+        };
+    }
 }
 
 internal sealed class Driver
 {
     private static readonly string[] Ops =
-        ["hello", "begin", "end", "publish", "consume", "handled", "schedule", "request"];
+    [
+        "hello", "begin", "end", "publish", "consume", "handled", "schedule", "request",
+        "declareStream", "readStream", "metrics",
+    ];
 
     private readonly string _url;
     private AceMqConnection? _connection;
-    private readonly Dictionary<string, IMessageConsumer> _consumers = new();
-    private readonly Dictionary<string, ConcurrentDictionary<string, int>> _counts = new();
-    private readonly Dictionary<string, ConcurrentDictionary<string, int>> _redelivered = new();
+    private readonly List<IDisposable> _consumers = new();
+    private readonly Dictionary<string, Tally> _tallies = new();
     private Scheduler? _scheduler;
     private readonly Dictionary<(string, string), Requester> _requesters = new();
+    private MeterListener? _listener;
+    private readonly ConcurrentQueue<(string Name, JsonObject Tags)> _samples = new();
 
     internal Driver(string url) => _url = url;
 
@@ -97,9 +135,12 @@ internal sealed class Driver
             case "end": await EndAsync().ConfigureAwait(false); return new JsonObject();
             case "publish": return await PublishAsync(a).ConfigureAwait(false);
             case "consume": await ConsumeAsync(a).ConfigureAwait(false); return new JsonObject();
-            case "handled": return Handled(a);
+            case "handled": return _tallies[(string)a["handle"]!].ToJson();
             case "schedule": await ScheduleAsync(a).ConfigureAwait(false); return new JsonObject();
             case "request": return await RequestAsync(a).ConfigureAwait(false);
+            case "declareStream": await DeclareStreamAsync(a).ConfigureAwait(false); return new JsonObject();
+            case "readStream": await ReadStreamAsync(a).ConfigureAwait(false); return new JsonObject();
+            case "metrics": return Metrics();
             default: throw new NotSupportedException((string?)a["op"]);
         }
     }
@@ -120,12 +161,33 @@ internal sealed class Driver
     private async Task BeginAsync(JsonObject a)
     {
         await EndAsync().ConfigureAwait(false);
+
+        // The library's telemetry seam is its System.Diagnostics.Metrics meter.
+        _listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == MetricNames.Meter) listener.EnableMeasurementEvents(instrument);
+            },
+        };
+        _listener.SetMeasurementEventCallback<long>((i, _, tags, _) => Sample(i, tags));
+        _listener.SetMeasurementEventCallback<int>((i, _, tags, _) => Sample(i, tags));
+        _listener.SetMeasurementEventCallback<double>((i, _, tags, _) => Sample(i, tags));
+        _listener.Start();
+
         var clientName = (string?)a["clientName"] ?? "tck";
         var config = ConnectionConfig.ForUrl(_url)
             .ClientName(clientName)
-            .Origin($"{clientName}@{Environment.MachineName}")
-            .Build();
-        _connection = await AceMqConnection.ConnectAsync(config).ConfigureAwait(false);
+            .Origin($"{clientName}@{Environment.MachineName}");
+        if ((bool?)a["confirms"] == false) config.WithoutPublisherConfirms();
+        _connection = await AceMqConnection.ConnectAsync(config.Build()).ConfigureAwait(false);
+    }
+
+    private void Sample(Instrument instrument, ReadOnlySpan<KeyValuePair<string, object?>> tags)
+    {
+        var json = new JsonObject();
+        foreach (var tag in tags) json[tag.Key] = tag.Value?.ToString();
+        _samples.Enqueue((instrument.Name, json));
     }
 
     internal async Task EndAsync()
@@ -134,15 +196,17 @@ internal sealed class Driver
         _requesters.Clear();
         _scheduler?.Dispose();
         _scheduler = null;
-        foreach (var consumer in _consumers.Values) consumer.Dispose();
+        foreach (var consumer in _consumers) consumer.Dispose();
         _consumers.Clear();
-        _counts.Clear();
-        _redelivered.Clear();
+        _tallies.Clear();
         if (_connection != null)
         {
             await _connection.CloseAsync().ConfigureAwait(false);
             _connection = null;
         }
+        _listener?.Dispose();
+        _listener = null;
+        _samples.Clear();
     }
 
     private async Task<JsonNode> PublishAsync(JsonObject a)
@@ -181,7 +245,6 @@ internal sealed class Driver
     private async Task ConsumeAsync(JsonObject a)
     {
         var queue = (string)a["queue"]!;
-        var handle = (string)a["handle"]!;
         var retry = a["retry"] as JsonObject;
         var policy = RetryPolicy.Fixed(
             (int?)retry?["maxAttempts"] ?? 3,
@@ -190,14 +253,12 @@ internal sealed class Driver
         var failFirst = (behaviour?["failFirst"] as JsonObject)?
             .ToDictionary(p => p.Key, p => (int)p.Value!) ?? new Dictionary<string, int>();
         var sleep = TimeSpan.FromMilliseconds((double?)behaviour?["sleepMs"] ?? 0);
-        var counts = new ConcurrentDictionary<string, int>();
-        var redelivered = new ConcurrentDictionary<string, int>();
+        var tally = new Tally();
 
         async Task<Ack> HandleAsync(IMessage<JsonElement> message)
         {
+            var seen = tally.Count(message);
             var id = message.Payload.TryGetProperty("id", out var value) ? value.ToString() : "";
-            var seen = counts.AddOrUpdate(id, 1, (_, n) => n + 1);
-            if (message.Redelivered) redelivered.AddOrUpdate(id, 1, (_, n) => n + 1);
             if (sleep > TimeSpan.Zero) await Task.Delay(sleep).ConfigureAwait(false);
             if (seen <= failFirst.GetValueOrDefault(id))
             {
@@ -208,17 +269,44 @@ internal sealed class Driver
 
         await Mq.ApplyAsync(Topology.Define().QueueWithRetry(queue, policy).Build()).ConfigureAwait(false);
         var options = ConsumerOptions.Prefetch((int?)a["prefetch"] ?? 10).WithRetry(policy);
-        _consumers[handle] = await Mq.ConsumeAsync<JsonElement>(queue, options, HandleAsync).ConfigureAwait(false);
-        _counts[handle] = counts;
-        _redelivered[handle] = redelivered;
+        _consumers.Add(await Mq.ConsumeAsync<JsonElement>(queue, options, HandleAsync).ConfigureAwait(false));
+        _tallies[(string)a["handle"]!] = tally;
     }
 
-    private JsonObject Handled(JsonObject a)
+    private async Task DeclareStreamAsync(JsonObject a)
     {
-        var handle = (string)a["handle"]!;
-        static JsonObject Of(ConcurrentDictionary<string, int> c) =>
-            new(c.Select(p => KeyValuePair.Create(p.Key, (JsonNode?)p.Value)));
-        return new JsonObject { ["counts"] = Of(_counts[handle]), ["redelivered"] = Of(_redelivered[handle]) };
+        var maxAge = (double?)a["maxAgeMs"] is { } ms ? TimeSpan.FromMilliseconds(ms) : (TimeSpan?)null;
+        await Mq.DeclareStreamAsync((string)a["queue"]!, maxAge, null).ConfigureAwait(false);
+    }
+
+    private async Task ReadStreamAsync(JsonObject a)
+    {
+        var reader = Mq.Stream<JsonElement>((string)a["queue"]!);
+        reader = (string?)a["offset"] switch
+        {
+            "first" => reader.FromFirst(),
+            "next" or null => reader.FromNext(),
+            var other => throw new NotSupportedException($"offset {other}"),
+        };
+        var tally = new Tally();
+        _consumers.Add(await reader.ConsumeAsync(message =>
+        {
+            tally.Count(message);
+            return Task.CompletedTask;
+        }).ConfigureAwait(false));
+        _tallies[(string)a["handle"]!] = tally;
+    }
+
+    private JsonObject Metrics()
+    {
+        var samples = _samples.ToArray();
+        return new JsonObject
+        {
+            ["names"] = new JsonArray(samples.Select(s => s.Name).Distinct().Select(n => (JsonNode)n).ToArray()),
+            ["samples"] = new JsonArray(samples
+                .Select(s => (JsonNode)new JsonObject { ["name"] = s.Name, ["tags"] = s.Tags.DeepClone() })
+                .ToArray()),
+        };
     }
 
     private async Task ScheduleAsync(JsonObject a)
