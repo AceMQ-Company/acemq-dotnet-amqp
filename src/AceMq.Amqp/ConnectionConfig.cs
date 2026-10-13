@@ -31,6 +31,7 @@ public sealed class ConnectionConfig
         Password = b.PasswordValue;
         VirtualHost = b.VirtualHostValue;
         ClientName = b.ClientNameValue;
+        Origin = b.OriginValue;
         ConnectionTimeout = b.ConnectionTimeoutValue;
         ConfirmTimeout = b.ConfirmTimeoutValue;
         MaxOutstandingPublishes = b.MaxOutstandingPublishesValue;
@@ -63,6 +64,16 @@ public sealed class ConnectionConfig
 
     /// <summary>Name this connection reports to the broker, so it is identifiable in the UI.</summary>
     public string ClientName { get; }
+
+    /// <summary>
+    /// The <c>x-acemq-origin</c> this connection's publishes carry when their envelope
+    /// names none, conventionally <c>service@host</c>.
+    /// </summary>
+    /// <remarks>
+    /// Null leaves the envelope's own default, <c>acemq@{host}</c>. Go's
+    /// <c>WithOrigin</c> and Python's and Ruby's <c>origin:</c> are the same setting.
+    /// </remarks>
+    public string? Origin { get; }
 
     public TimeSpan ConnectionTimeout { get; }
 
@@ -114,6 +125,7 @@ public sealed class ConnectionConfig
         internal string? PasswordValue;
         internal string? VirtualHostValue;
         internal string ClientNameValue = "acemq-dotnet";
+        internal string? OriginValue;
         internal TimeSpan ConnectionTimeoutValue = TimeSpan.FromSeconds(30);
         internal TimeSpan ConfirmTimeoutValue = TimeSpan.FromSeconds(30);
         internal int MaxOutstandingPublishesValue = 1000;
@@ -156,6 +168,7 @@ public sealed class ConnectionConfig
             return this;
         }
         public Builder ClientName(string clientName) { ClientNameValue = clientName; return this; }
+        public Builder Origin(string? origin) { OriginValue = origin; return this; }
         public Builder ConnectionTimeout(TimeSpan timeout) { ConnectionTimeoutValue = timeout; return this; }
         public Builder ConfirmTimeout(TimeSpan timeout) { ConfirmTimeoutValue = timeout; return this; }
 

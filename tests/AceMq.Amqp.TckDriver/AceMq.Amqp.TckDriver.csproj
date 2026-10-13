@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The AceMQ TCK driver: a console program the TCK runner
+    (github.com/AceMQ-Company/acemq-amqp-tck) starts once and talks to in JSON
+    lines. Test code, never shipped.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\AceMq.Amqp\AceMq.Amqp.csproj" />
+    <ProjectReference Include="..\..\src\AceMq.Amqp.RabbitMq\AceMq.Amqp.RabbitMq.csproj" />
+  </ItemGroup>
+
+</Project>

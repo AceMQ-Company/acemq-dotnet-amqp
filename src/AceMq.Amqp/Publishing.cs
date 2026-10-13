@@ -140,6 +140,7 @@ internal sealed class Publisher<T> : IPublisher<T>
     private readonly SemaphoreSlim _inFlight;
     private readonly TimeSpan _confirmTimeout;
     private readonly string? _replyTo;
+    private readonly string? _origin;
     private readonly Func<bool>? _paused;
     private readonly IPublishInterceptor[] _interceptors;
     private bool _disposed;
@@ -148,8 +149,9 @@ internal sealed class Publisher<T> : IPublisher<T>
         ITransportConnection connection, ICodec codec, string exchange, string routingKey,
         PublishOptions options, SemaphoreSlim inFlight, TimeSpan confirmTimeout,
         string? replyTo = null, Func<bool>? paused = null,
-        IPublishInterceptor[]? interceptors = null)
+        IPublishInterceptor[]? interceptors = null, string? origin = null)
     {
+        _origin = origin;
         _replyTo = replyTo;
         _paused = paused;
         _interceptors = interceptors ?? Array.Empty<IPublishInterceptor>();
@@ -163,7 +165,10 @@ internal sealed class Publisher<T> : IPublisher<T>
     }
 
     public Task<PublishResult> SendAsync(T payload) =>
-        SendAsync(payload, Envelope.Of(_routingKey).Build(), CancellationToken.None);
+        SendAsync(
+            payload,
+            Envelope.Of(_routingKey.Length == 0 ? "message" : _routingKey).Build(),
+            CancellationToken.None);
 
     public Task<PublishResult> SendAsync(T payload, Envelope envelope) =>
         SendAsync(payload, envelope, CancellationToken.None);
@@ -188,6 +193,7 @@ internal sealed class Publisher<T> : IPublisher<T>
     {
         if (_disposed) throw new ObjectDisposedException(nameof(Publisher<T>));
         if (envelope == null) throw new ArgumentNullException(nameof(envelope));
+        if (_origin != null && envelope.OriginDefaulted) envelope = envelope.WithOrigin(_origin);
         if (_paused != null && _paused())
         {
             // Refused, not failed: nothing was written, so the caller still has it.

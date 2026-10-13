@@ -8,6 +8,25 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- Runs the AceMQ TCK v0.1.0: a `tck` CI job drives the library through
+  `tests/AceMq.Amqp.TckDriver` and the shared checker.
+- **`ConnectionConfig.Builder.Origin`.** The `x-acemq-origin` a connection's
+  publishes carry when their envelope names none, the setting Go's `WithOrigin` and
+  Python's and Ruby's `origin:` already were. Unset, the origin is `acemq@{host}` as
+  before. Found by TCK ENV-001 and ENV-002: there was no way to name a service's
+  origin short of building every envelope by hand.
+- **`IMessage<T>.Redelivered`**, the broker's flag that a delivery was requeued
+  rather than delivered for the first time, which Go, Python and Ruby handlers
+  could already read. `IMessage<T>` gains a member, so a type implementing it
+  outside this library has to add it.
+
+### Fixed
+
+- **A publish under an empty routing key is typed `message`**, not the empty
+  string, as Java has always typed it (TCK ENV-003).
+
 ## [0.7.12] - 2026-10-12
 
 ### Fixed

@@ -21,6 +21,7 @@
     <Project Path="tests/AceMq.Amqp.Toml.Tests/AceMq.Amqp.Toml.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.Xml.Tests/AceMq.Amqp.Xml.Tests.csproj" />
     <Project Path="tests/AceMq.Amqp.Crypto.Tests/AceMq.Amqp.Crypto.Tests.csproj" />
+    <Project Path="tests/AceMq.Amqp.TckDriver/AceMq.Amqp.TckDriver.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/vb-audit/vb-audit.csproj" />

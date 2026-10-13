@@ -239,7 +239,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
 
         var publisher = new Publisher<T>(
             _connection, codec, exchange, routingKey, options, _inFlight,
-            _config.ConfirmTimeout, replyTo, () => _publishingPaused, interceptors);
+            _config.ConfirmTimeout, replyTo, () => _publishingPaused, interceptors, _config.Origin);
         lock (_owned) _owned.Add(publisher);
         return publisher;
     }

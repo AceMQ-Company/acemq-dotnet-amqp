@@ -131,6 +131,15 @@ public sealed class Envelope
             Id, Type, Version, CorrelationId, CausationId, attempt, FirstSeen, Origin, Error,
             Claim, Headers);
 
+    /// <summary>True when the builder filled <see cref="Origin"/> in because nobody named one.</summary>
+    internal bool OriginDefaulted { get; private set; }
+
+    /// <summary>The same envelope from a different origin, for a connection that configures one.</summary>
+    internal Envelope WithOrigin(string origin) =>
+        new Envelope(
+            Id, Type, Version, CorrelationId, CausationId, Attempt, FirstSeen, origin, Error,
+            Claim, Headers);
+
     /// <summary>
     /// The same envelope carrying a reason it could not be handled, or none.
     /// </summary>
@@ -296,7 +305,10 @@ public sealed class Envelope
                 _origin ?? DefaultOrigin(),
                 _error,
                 _claim,
-                _headers);
+                _headers)
+            {
+                OriginDefaulted = _origin == null,
+            };
         }
 
         private static string DefaultOrigin()

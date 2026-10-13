@@ -473,6 +473,30 @@ jobs:
           fi
           echo "$ran TLS tests ran and none skipped"
 
+  tck:
+    # The AceMQ TCK: the same cases, run by the same checker, against every library
+    # in the family. The pin on the `uses:` line is the TCK version this library
+    # passes; the action starts its own broker on 5682/15682.
+    name: AceMQ TCK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          # 8.0.x as well as 10.0.x, for the net8.0 half of the multi-target, as in
+          # the jobs above.
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build the TCK driver
+        run: dotnet build tests/AceMq.Amqp.TckDriver/AceMq.Amqp.TckDriver.csproj --configuration Release
+
+      - uses: AceMQ-Company/acemq-amqp-tck@v0.1.0
+        with:
+          driver: dotnet tests/AceMq.Amqp.TckDriver/bin/Release/net10.0/AceMq.Amqp.TckDriver.dll
+
   badge-matches-the-release:
     name: the README badge names the current release
     runs-on: ubuntu-latest

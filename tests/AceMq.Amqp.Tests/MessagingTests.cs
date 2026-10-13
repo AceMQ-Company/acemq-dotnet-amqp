@@ -80,6 +80,56 @@ public sealed class MessagingTests : IDisposable
     }
 
     [Fact]
+    public async Task StampsTheConnectionOriginAndTypesAnEmptyRoutingKeyMessage()
+    {
+        // TCK ENV-001 and ENV-003: an origin the connection configures reaches every
+        // publish that names none, and an empty routing key is typed `message`.
+        var config = ConnectionConfig.ForUrl(_url).Origin("billing@host-1").Build();
+        using var mq = await AceMqConnection.ConnectAsync(config);
+        await mq.DeclareExchangeAsync("fan", "fanout");
+        await mq.DeclareQueueAsync("all");
+        await mq.BindAsync("all", "fan", "");
+
+        var received = new ConcurrentQueue<IMessage<OrderPlaced>>();
+        using var consumer = await mq.ConsumeAsync<OrderPlaced>("all", msg =>
+        {
+            received.Enqueue(msg);
+            return Task.FromResult(Ack.Accept());
+        });
+
+        var publisher = mq.Publisher<OrderPlaced>("fan", "");
+        await publisher.SendAsync(new OrderPlaced { OrderId = "A-1" });
+        await publisher.SendAsync(
+            new OrderPlaced { OrderId = "A-2" },
+            Envelope.Of("order.placed").Origin("named@host-2").Build());
+
+        await Eventually(() => received.Count == 2 ? received : null, "both messages");
+        var messages = received.ToArray();
+        Assert.Equal("billing@host-1", messages[0].Envelope.Origin);
+        Assert.Equal("message", messages[0].Envelope.Type);
+        Assert.Equal("named@host-2", messages[1].Envelope.Origin);
+    }
+
+    [Fact]
+    public async Task ReportsTheBrokersRedeliveredFlag()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("again");
+
+        var flags = new ConcurrentQueue<bool>();
+        using var consumer = await mq.ConsumeAsync<OrderPlaced>("again", msg =>
+        {
+            flags.Enqueue(msg.Redelivered);
+            return Task.FromResult(flags.Count == 1 ? Ack.Release() : Ack.Accept());
+        });
+
+        await mq.Publisher<OrderPlaced>("", "again").SendAsync(new OrderPlaced { OrderId = "A-1" });
+
+        await Eventually(() => flags.Count >= 2 ? flags : null, "the requeued delivery");
+        Assert.Equal(new[] { false, true }, flags.Take(2));
+    }
+
+    [Fact]
     public async Task FailsAPublishThatMatchesNoQueue()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

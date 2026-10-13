@@ -197,6 +197,17 @@ public interface IMessage<out T>
     string? ContentType { get; }
 
     string? ReplyTo { get; }
+
+    /// <summary>
+    /// The broker's own flag that it has handed these bytes over before.
+    /// </summary>
+    /// <remarks>
+    /// Set on a requeued delivery and never on a retry, which is a new publish. It
+    /// is not <see cref="Attempt"/> and must not be used to count one; it is here so
+    /// a handler can tell a requeue from a first delivery, as Go, Python and Ruby
+    /// handlers already can.
+    /// </remarks>
+    bool Redelivered { get; }
 }
 
 internal sealed class ReceivedMessage<T> : IMessage<T>
@@ -212,6 +223,7 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
         Queue = delivery.Queue;
         ContentType = delivery.ContentType;
         ReplyTo = delivery.ReplyTo;
+        Redelivered = delivery.Redelivered;
         ReceivedAt = DateTimeOffset.UtcNow;
     }
 
@@ -226,6 +238,7 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
     public bool IsFirstAttempt => Attempt <= 1;
     public string? ContentType { get; }
     public string? ReplyTo { get; }
+    public bool Redelivered { get; }
 }
 
 /// <summary>How a consumer should behave.</summary>
