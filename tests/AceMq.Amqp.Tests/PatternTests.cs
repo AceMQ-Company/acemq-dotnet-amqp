@@ -236,6 +236,84 @@ public sealed class PatternTests : IDisposable
     }
 
     [Fact]
+    public async Task SendsAResponderFailureBackToTheCaller()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("stock");
+
+        using var responder = await mq.RespondAsync<string, string>(
+            "stock", _ => throw new InvalidOperationException("out of stock"));
+
+        using var requester = await mq.RequesterAsync();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var failed = await Assert.ThrowsAsync<ResponderFailedException>(
+            () => requester.RequestAsync<string, string>(
+                "", "stock", "A-1", TimeSpan.FromSeconds(10), CancellationToken.None));
+
+        // Told, not left to wait out the ten seconds.
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5));
+        Assert.Equal("InvalidOperationException: out of stock", failed.Failure);
+        Assert.Equal(0, responder.Answered);
+        Assert.Equal(0, requester.TimedOut);
+
+        // Settled rather than retried: the caller has its answer.
+        for (var i = 0; i < 100 && await mq.MessageCountAsync("stock.dlq") == 0; i++)
+            await Task.Delay(20);
+        Assert.Equal(1, await mq.MessageCountAsync("stock.dlq"));
+    }
+
+    [Fact]
+    public async Task ChecksForAFailureBeforeDecodingTheReply()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("foreign");
+
+        // A responder in another language: the failure on acemq-error, and a body
+        // the requester's codec could never read as an int.
+        using var foreign = await mq.ConsumeAsync<string>("foreign", async request =>
+        {
+            await mq.Publisher<string>("", request.ReplyTo!).SendAsync(
+                "not a number",
+                Envelope.Of("reply")
+                    .CorrelationId(request.Envelope.Id)
+                    .Header(Requester.ErrorHeader, "no such product")
+                    .Build());
+            return Ack.Accept();
+        });
+
+        using var requester = await mq.RequesterAsync();
+        var failed = await Assert.ThrowsAsync<ResponderFailedException>(
+            () => requester.RequestAsync<string, int>(
+                "", "foreign", "A-1", TimeSpan.FromSeconds(10), CancellationToken.None));
+
+        Assert.Equal("no such product", failed.Failure);
+    }
+
+    [Fact]
+    public void RedeliveredHasADefaultForImplementationsOutsideTheLibrary()
+    {
+        // Compiles without declaring Redelivered, which is the point.
+        IMessage<string> message = new HandMadeMessage();
+
+        Assert.False(message.Redelivered);
+    }
+
+    private sealed class HandMadeMessage : IMessage<string>
+    {
+        public string Payload => "hand made";
+        public Envelope Envelope { get; } = Envelope.Of("test").Build();
+        public IReadOnlyDictionary<string, object> Headers { get; } = new Dictionary<string, object>();
+        public IReadOnlyDictionary<string, object> WireHeaders { get; } = new Dictionary<string, object>();
+        public string? RoutingKey => null;
+        public string Queue => "test";
+        public DateTimeOffset ReceivedAt => DateTimeOffset.UnixEpoch;
+        public int Attempt => 1;
+        public bool IsFirstAttempt => true;
+        public string? ContentType => null;
+        public string? ReplyTo => null;
+    }
+
+    [Fact]
     public async Task MatchesEachReplyToItsOwnRequest()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

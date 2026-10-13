@@ -1083,6 +1083,25 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SendsAResponderFailureBackOverARealBroker()
+    {
+        var queue = await QueueAsync("stock");
+
+        using var responder = await _mq.RespondAsync<string, string>(
+            queue, _ => throw new InvalidOperationException("out of stock"));
+        using var requester = await _mq.RequesterAsync();
+        _declared.Add(requester.ReplyQueue);
+
+        // The header crosses the real wire, where RabbitMQ hands a string header back
+        // as bytes; the requester still reads it before touching the empty body.
+        var failed = await Assert.ThrowsAsync<ResponderFailedException>(
+            () => requester.RequestAsync<string, string>(
+                "", queue, "A-1", TimeSpan.FromSeconds(20), CancellationToken.None));
+
+        Assert.Equal("InvalidOperationException: out of stock", failed.Failure);
+    }
+
+    [Fact]
     public async Task ReplaysMessagesWithBasicGet()
     {
         var source = await QueueAsync("parked");

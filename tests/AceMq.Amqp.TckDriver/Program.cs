@@ -62,6 +62,7 @@ internal static class Program
     {
         NotSupportedException => "unsupported",
         RequestTimedOutException => "timeout",
+        ResponderFailedException => "responder",
         // The JSON codec throws the serializer's own exception for a body it cannot read.
         AceFatalException or JsonException => "decode",
         // One type for unroutable, nacked and unconfirmed; only the message tells them apart.

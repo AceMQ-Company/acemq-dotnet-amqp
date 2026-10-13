@@ -71,6 +71,27 @@ public sealed class Requester : IDisposable
     /// </remarks>
     public const string ReplyToHeader = AceHeaders.SharedPrefix + "reply-to";
 
+    /// <summary>
+    /// The application header a responder's failure travels back in.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Its value is a description of what went wrong, conventionally
+    /// <c>{ExceptionType}: {message}</c>, on a reply whose body carries nothing. A
+    /// requester that finds it raises <see cref="ResponderFailedException"/> without
+    /// decoding the body. Go, Python and Ruby use the same header, so a failure
+    /// crosses between any two of them.
+    /// </para>
+    /// <para>
+    /// In <see cref="AceHeaders.SharedPrefix"/> for the reason
+    /// <see cref="ReplyToHeader"/> is: a responder in any language has to be able to
+    /// write it and a requester in any language to read it. It is not
+    /// <see cref="AceHeaders.Error"/>, the reserved <c>x-acemq-error</c> a
+    /// dead-lettered message carries.
+    /// </para>
+    /// </remarks>
+    public const string ErrorHeader = AceHeaders.SharedPrefix + "error";
+
     private readonly AceMqConnection _mq;
     private readonly ICodec _codec;
     private IMessageConsumer? _consumer;
@@ -150,7 +171,7 @@ public sealed class Requester : IDisposable
         var correlation = reply.Envelope.CorrelationId;
         if (correlation != null && _pending.TryRemove(correlation, out var pending))
         {
-            pending.Completion.TrySetResult(reply.Payload);
+            pending.Completion.TrySetResult(reply);
         }
         else
         {
@@ -200,8 +221,21 @@ public sealed class Requester : IDisposable
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timer.Token);
             using (linked.Token.Register(() => pending.Completion.TrySetCanceled()))
             {
-                var body = await pending.Completion.Task.ConfigureAwait(false);
-                var answer = (TResponse)_codec.Decode(body, typeof(TResponse));
+                var reply = await pending.Completion.Task.ConfigureAwait(false);
+
+                // Checked before the body is decoded: a failure's body carries
+                // nothing, and decoding it would report the codec's complaint
+                // instead of the responder's. The outcome stays failed -- the round
+                // trip completed, but the answer was that it could not be done.
+                if (reply.Headers.TryGetValue(ErrorHeader, out var failure) && failure != null)
+                {
+                    throw new ResponderFailedException(
+                        $"the responder could not answer {envelope.Id} on " +
+                        $"{exchange}/{routingKey}: {failure}",
+                        failure as string ?? failure.ToString() ?? string.Empty);
+                }
+
+                var answer = (TResponse)_codec.Decode(reply.Payload, typeof(TResponse));
                 outcome = MetricNames.OutcomeAnswered;
                 return answer;
             }
@@ -247,8 +281,8 @@ public sealed class Requester : IDisposable
     {
         // Asynchronous continuations, so completing a request from the consumer's
         // dispatch thread does not run the caller's code on it.
-        internal TaskCompletionSource<byte[]> Completion { get; } =
-            new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource<IMessage<byte[]>> Completion { get; } =
+            new TaskCompletionSource<IMessage<byte[]>>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 
@@ -256,6 +290,26 @@ public sealed class Requester : IDisposable
 public sealed class RequestTimedOutException : AceMqException
 {
     public RequestTimedOutException(string message) : base(message) { }
+}
+
+/// <summary>
+/// The responder answered, and the answer was that it could not do it.
+/// </summary>
+/// <remarks>
+/// Raised when a reply carries <see cref="Requester.ErrorHeader"/>, whichever
+/// language the responder was written in. The responder's exception crossed a broker
+/// as text, so only its description arrives: a caller that has to tell failures apart
+/// needs that distinction in the response type rather than in this exception.
+/// </remarks>
+public sealed class ResponderFailedException : AceMqException
+{
+    public ResponderFailedException(string message, string failure) : base(message)
+    {
+        Failure = failure;
+    }
+
+    /// <summary>What the responder said went wrong, as it wrote it.</summary>
+    public string Failure { get; }
 }
 
 /// <summary>
@@ -307,15 +361,42 @@ public sealed class Responder : IDisposable
                 return Ack.Accept();
             }
 
-            var answer = await handler(message.Payload).ConfigureAwait(false);
-
             // The reply carries the request's id as its correlation, which is what
             // the requester matches on. The default exchange addresses the reply
             // queue by name.
             var envelope = Envelope.Of(message.Envelope.Type)
                 .CorrelationId(message.Envelope.Id)
-                .CausationId(message.Envelope.Id)
-                .Build();
+                .CausationId(message.Envelope.Id);
+
+            TResponse answer;
+            try
+            {
+                answer = await handler(message.Payload).ConfigureAwait(false);
+            }
+            catch (Exception failure)
+            {
+                // The failure goes back to the caller, who would otherwise wait out
+                // its timeout for an answer that is never coming. Go, Python and
+                // Ruby responders do the same. The body is empty and the requester
+                // never decodes it; a reply that cannot be sent throws, and the
+                // request is retried like any other failed delivery, since the
+                // caller has still not been told.
+                //
+                // Not counted as answered, as Python does not count it: a responder
+                // that fails every request should not report a healthy answered rate.
+                var description = $"{failure.GetType().Name}: {failure.Message}";
+                await mq.Publisher<byte[]>(
+                        string.Empty, replyTo!, PublishOptions.OnBehalfOfCaller(), null,
+                        new BytesCodec())
+                    .SendAsync(
+                        Array.Empty<byte>(),
+                        envelope.Header(Requester.ErrorHeader, description).Build())
+                    .ConfigureAwait(false);
+
+                // Settled rather than retried: the caller has its answer, and a retry
+                // would answer the same question twice.
+                return Ack.DeadLetter(description);
+            }
 
             var publisher = mq.Publisher<TResponse>(
                 string.Empty, replyTo!, PublishOptions.OnBehalfOfCaller());
@@ -334,7 +415,7 @@ public sealed class Responder : IDisposable
             counters.CountAnswered();
             try
             {
-                await publisher.SendAsync(answer, envelope).ConfigureAwait(false);
+                await publisher.SendAsync(answer, envelope.Build()).ConfigureAwait(false);
             }
             catch
             {

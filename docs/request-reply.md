@@ -93,6 +93,41 @@ handler succeeded a moment later has still been carried out, so anything that mu
 not happen twice needs the request to be idempotent — the envelope's id is the key
 for that.
 
+## When the responder fails
+
+A responder whose handler throws sends the failure back to the caller, which throws
+`ResponderFailedException` at once instead of waiting out its timeout. The failure
+travels as the `acemq-error` header (`Requester.ErrorHeader`), valued
+`{ExceptionType}: {message}`, on a reply with an empty body; the requester checks
+for the header before decoding anything, and `Failure` holds its text. Go, Python
+and Ruby use the same header, so a failure crosses between any two of the four in
+either direction.
+
+```csharp
+try
+{
+    var quote = await requester.RequestAsync<QuoteRequest, Quote>(
+        "pricing", "quote.requested", request);
+}
+catch (ResponderFailedException e)
+{
+    logger.LogWarning("pricing could not quote: {Failure}", e.Failure);
+}
+```
+
+Only the description crosses the broker, not the exception: a caller that has to
+tell failures apart needs that in the response type. Once the failure is sent the
+request is dead-lettered to `{queue}.dlq` with the same reason rather than retried —
+the caller has its answer, and a retry would answer twice — and it is not counted in
+`Answered`.
+
+Before 0.7.13 a .NET responder sent nothing when its handler threw: the request went
+through the responder's retry policy and the caller timed out. A 0.7.12 or older
+requester that receives one of these failure replies does not know the header and
+decodes the empty body: with the JSON codec that is a decode error raised at once
+rather than a timeout. Upgrade requesters with responders to get the responder's
+own description.
+
 ## Requests that cannot be answered
 
 A request that names **neither** reply address — no `acemq-reply-to` header and no

@@ -6,10 +6,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 While the version is `0.x` the public API may change in any release.
 
-## [Unreleased]
+## [0.7.13] - 2026-10-13
+
+### Breaking
+
+- **`IMessage<T>` gains `Redelivered`** (below). On .NET 8 and later the interface
+  supplies a default of `false`, so a C# type implementing `IMessage<T>` outside
+  this library keeps compiling. A type built against the netstandard2.0 build
+  (.NET Framework, say), which cannot carry a default implementation, and a type
+  written in Visual Basic, which does not take default implementations, have to
+  add the property. Types that only consume `IMessage<T>` are unaffected.
 
 ### Added
 
+- **A responder's failure reaches the caller** (TCK RR-004). A handler that throws
+  now answers its request with an empty reply carrying the `acemq-error` header,
+  valued `{ExceptionType}: {message}`, and the requester raises the new
+  `ResponderFailedException` -- checked before the body is decoded, with the text
+  on `Failure` -- instead of waiting out its timeout. `Requester.ErrorHeader` names
+  the header. It is the header Go, Python and Ruby already use, so failures now
+  cross between .NET and those three in both directions.
 - Runs the AceMQ TCK v0.1.0: a `tck` CI job drives the library through
   `tests/AceMq.Amqp.TckDriver` and the shared checker.
 - **`ConnectionConfig.Builder.Origin`.** The `x-acemq-origin` a connection's
@@ -19,8 +35,19 @@ While the version is `0.x` the public API may change in any release.
   origin short of building every envelope by hand.
 - **`IMessage<T>.Redelivered`**, the broker's flag that a delivery was requeued
   rather than delivered for the first time, which Go, Python and Ruby handlers
-  could already read. `IMessage<T>` gains a member, so a type implementing it
-  outside this library has to add it.
+  could already read. See Breaking above for implementers.
+
+### Changed
+
+- **A responder whose handler throws settles the request instead of retrying it.**
+  Once the failure has been sent back, the request is dead-lettered to
+  `{queue}.dlq` with the same reason, as the Go, Python and Ruby responders do; a
+  retry would answer the caller twice. Before, a .NET responder sent nothing, the
+  request went through the responder's retry policy, and the caller timed out. A
+  failure reply that cannot be sent still fails the delivery, which is retried as
+  before. A failure is not counted in `Responder.Answered`. A 0.7.12 or older .NET
+  requester does not know the header and decodes the empty body -- with the JSON
+  codec, a decode error raised at once rather than a timeout.
 
 ### Fixed
 

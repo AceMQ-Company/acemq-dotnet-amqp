@@ -206,8 +206,20 @@ public interface IMessage<out T>
     /// is not <see cref="Attempt"/> and must not be used to count one; it is here so
     /// a handler can tell a requeue from a first delivery, as Go, Python and Ruby
     /// handlers already can.
+    /// <para>
+    /// On .NET 8 and later the interface supplies <see langword="false"/> by
+    /// default, so a C# type implementing <see cref="IMessage{T}"/> outside this
+    /// library — a test double, say — keeps compiling. Two kinds of implementer still
+    /// have to add the member: one built against the netstandard2.0 build, which
+    /// cannot carry a default implementation, and one written in Visual Basic, which
+    /// does not inherit default implementations at all.
+    /// </para>
     /// </remarks>
+#if NET8_0_OR_GREATER
+    bool Redelivered => false;
+#else
     bool Redelivered { get; }
+#endif
 }
 
 internal sealed class ReceivedMessage<T> : IMessage<T>
