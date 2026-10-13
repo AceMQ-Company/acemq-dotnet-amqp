@@ -290,30 +290,6 @@ public sealed class PatternTests : IDisposable
     }
 
     [Fact]
-    public void RedeliveredHasADefaultForImplementationsOutsideTheLibrary()
-    {
-        // Compiles without declaring Redelivered, which is the point.
-        IMessage<string> message = new HandMadeMessage();
-
-        Assert.False(message.Redelivered);
-    }
-
-    private sealed class HandMadeMessage : IMessage<string>
-    {
-        public string Payload => "hand made";
-        public Envelope Envelope { get; } = Envelope.Of("test").Build();
-        public IReadOnlyDictionary<string, object> Headers { get; } = new Dictionary<string, object>();
-        public IReadOnlyDictionary<string, object> WireHeaders { get; } = new Dictionary<string, object>();
-        public string? RoutingKey => null;
-        public string Queue => "test";
-        public DateTimeOffset ReceivedAt => DateTimeOffset.UnixEpoch;
-        public int Attempt => 1;
-        public bool IsFirstAttempt => true;
-        public string? ContentType => null;
-        public string? ReplyTo => null;
-    }
-
-    [Fact]
     public async Task MatchesEachReplyToItsOwnRequest()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

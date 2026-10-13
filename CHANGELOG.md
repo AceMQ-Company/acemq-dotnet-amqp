@@ -10,12 +10,13 @@ While the version is `0.x` the public API may change in any release.
 
 ### Breaking
 
-- **`IMessage<T>` gains `Redelivered`** (below). On .NET 8 and later the interface
-  supplies a default of `false`, so a C# type implementing `IMessage<T>` outside
-  this library keeps compiling. A type built against the netstandard2.0 build
-  (.NET Framework, say), which cannot carry a default implementation, and a type
-  written in Visual Basic, which does not take default implementations, have to
-  add the property. Types that only consume `IMessage<T>` are unaffected.
+- **`IMessage<T>` gains `Redelivered`** (below), so a type implementing
+  `IMessage<T>` outside this library -- a hand-written test double, say -- has to
+  add the property; returning `false` matches what it was before. Code that only
+  consumes `IMessage<T>` is unaffected. A default interface implementation was
+  considered and declined: the netstandard2.0 build cannot carry one and Visual
+  Basic does not inherit one, so it would have spared only C# implementers on
+  .NET 8 and later, and the VB audit refuses default interface members.
 
 ### Added
 
