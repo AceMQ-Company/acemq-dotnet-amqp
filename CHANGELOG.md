@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 While the version is `0.x` the public API may change in any release.
 
+## [Unreleased]
+
+### Fixed
+
+- **A filtered `ReplayAsync` returns only once the messages it passed over are
+  back on the source queue.** They were handed back with a requeueing nack and
+  nothing waited for the broker to apply it, so on a quorum queue a
+  `PendingAsync()` straight after the replay could read 0.
+
 ## [0.7.13] - 2026-10-13
 
 ### Breaking

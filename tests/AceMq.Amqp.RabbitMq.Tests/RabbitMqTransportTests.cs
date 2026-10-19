@@ -1117,6 +1117,35 @@ public sealed class RabbitMqPatternTests : IAsyncLifetime
         Assert.Equal(2, await _mq.MessageCountAsync(target));
     }
 
+    /// <summary>
+    /// A filtered replay does not return until what it passed over is back.
+    /// </summary>
+    /// <remarks>
+    /// The count is read the moment the replay returns, with no sleep. The skipped
+    /// messages used to be handed back with a nack and nothing waited for the broker
+    /// to have them, so on a quorum queue the count right after read 0.
+    /// </remarks>
+    [Fact]
+    public async Task AFilteredReplayReturnsOnlyOnceTheSkippedMessagesAreBack()
+    {
+        for (var round = 0; round < 10; round++)
+        {
+            var source = await QueueAsync($"parked-{round}");
+            var target = await QueueAsync($"live-{round}");
+
+            var publisher = _mq.Publisher<string>("", source);
+            for (var i = 0; i < 20; i++) await publisher.SendAsync(i % 4 == 0 ? "pick" : "leave");
+
+            var replay = _mq.Replay(source).Into(target);
+            var moved = await replay.ReplayAsync(
+                int.MaxValue, d => System.Text.Encoding.UTF8.GetString(d.Body).Contains("pick"));
+
+            Assert.Equal(15, await replay.PendingAsync());
+            Assert.Equal(5, moved);
+            Assert.Equal(5, await _mq.MessageCountAsync(target));
+        }
+    }
+
     [Fact]
     public async Task ReadsAStreamFromTheBeginning()
     {

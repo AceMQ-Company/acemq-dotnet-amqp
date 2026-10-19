@@ -198,9 +198,25 @@ public sealed class Replay
             // Whatever the filter passed over goes back where it was, even if the
             // replay threw part way through. Never taken, so handing it back is
             // enough.
-            foreach (var pulled in skipped)
+            if (skipped.Count > 0)
             {
-                await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
+                // A requeue has no reply, and on a quorum queue it is applied after the
+                // nack returns, so a count read straight after the replay saw none of
+                // them. The count is taken while they are still held, and the replay
+                // waits until the queue has at least that many more.
+                var expected = await PendingAsync().ConfigureAwait(false) + skipped.Count;
+                foreach (var pulled in skipped)
+                {
+                    await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
+                }
+                // ponytail: a consumer on the source queue can keep the count below
+                // expected, so the wait is bounded; per-message confirms if that matters.
+                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+                while (await PendingAsync().ConfigureAwait(false) < expected
+                       && DateTime.UtcNow < deadline)
+                {
+                    await Task.Delay(10).ConfigureAwait(false);
+                }
             }
         }
 
