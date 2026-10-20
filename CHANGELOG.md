@@ -8,6 +8,8 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-10-20
+
 ### Fixed
 
 - **A filtered `ReplayAsync` returns only once the messages it passed over are
