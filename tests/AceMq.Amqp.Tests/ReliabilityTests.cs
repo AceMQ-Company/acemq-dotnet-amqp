@@ -304,6 +304,43 @@ public sealed class ReliabilityTests : IDisposable
     }
 
     [Fact]
+    public async Task WithNoPolicyAFailureWhileDrainingIsHandedBackNotDeadLettered()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var calls = 0;
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var go = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q, ConsumerOptions.Defaults(),
+            async _ =>
+            {
+                if (Interlocked.Increment(ref calls) == 1)
+                {
+                    entered.TrySetResult();
+                    await go.Task;
+                    throw new OperationCanceledException("cancelled by the shutdown");
+                }
+                return Ack.Accept();
+            });
+
+        await mq.Publisher<string>("", _q).SendAsync("in flight");
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // A drain is under way when the handler gives up: it learned nothing about
+        // the message, so the message goes back rather than to the dead letters.
+        mq.PauseConsuming();
+        go.TrySetResult();
+        await Task.Delay(200);
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+
+        mq.ResumeConsuming();
+        await Eventually(() => Volatile.Read(ref calls) >= 2, "the message handed back");
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+    }
+
+    [Fact]
     public async Task WithRetryDelayIsTheOptInToRetryingForEver()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

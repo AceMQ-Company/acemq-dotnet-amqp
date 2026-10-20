@@ -519,9 +519,17 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                     // With no policy and no WithRetryDelay, a retry with no delay of
                     // its own: RetryAsync reads that as one attempt and dead-letters
                     // it (AMQP-RETRY-008). Up to 0.7.14 it went round for ever.
+                    //
+                    // Except while draining or closing: a handler cancelled by a
+                    // shutdown has said nothing about the message, so it is handed
+                    // back rather than dead-lettered, as the old five-second wait,
+                    // cut short by the close, used to hand it back.
+                    var oneAttempt = policy == null && !options.RetriesForEver;
                     ack = options.RequeueOnFailure
+                          || (oneAttempt && (_consumingPaused != null
+                                             || stopped.Task.IsCompleted || _closed.Task.IsCompleted))
                         ? Ack.Release()
-                        : policy == null && !options.RetriesForEver
+                        : oneAttempt
                             ? Ack.Retry(e.Message)
                             : Ack.Retry(options.RetryDelay, e.Message);
                 }
