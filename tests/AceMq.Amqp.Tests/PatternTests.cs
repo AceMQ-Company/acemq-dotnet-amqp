@@ -931,6 +931,37 @@ public sealed class PatternTests : IDisposable
         Assert.Equal(0, pipeline.Completed);
     }
 
+    // AMQP-SLIP-004. Up to 0.7.15 the step answered a throw with a five-second
+    // Ack.Retry of its own, and with no policy that was waited out and republished
+    // to the step queue for ever.
+    [Fact]
+    public async Task AFailingStepWithNoRetryPolicyIsAttemptedOnceThenDeadLettered()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        var calls = 0;
+
+        using var pipeline = await mq.Pipeline<string>("orders")
+            .Step("charge", (string order) =>
+            {
+                Interlocked.Increment(ref calls);
+                return Task.FromException<string?>(new InvalidOperationException("card declined"));
+            })
+            .Step("store", (string order) => Task.FromResult<string?>(order))
+            .BuildAsync();
+
+        await pipeline.SendAsync("A-1");
+
+        for (var i = 0; i < 100 && await mq.MessageCountAsync("orders.charge.dlq") == 0; i++)
+        {
+            await Task.Delay(20);
+        }
+        var dead = await mq.PullAsync<string>("orders.charge.dlq");
+        Assert.Equal(1, dead!.Envelope.Attempt);
+        Assert.Contains("card declined", dead.Envelope.Error);
+        Assert.Equal(1, Volatile.Read(ref calls));
+        Assert.Equal(0, await mq.MessageCountAsync("orders.store"));
+    }
+
     // ---- outbox ----------------------------------------------------------
 
     // The property a message count cannot see: what the relay published is

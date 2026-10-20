@@ -126,6 +126,9 @@ public class UnroutablePublishTests : IAsyncLifetime
     {
         var source = await QueueAsync("dead");
         await _mq.Publisher<string>("", source).SendAsync("recover me");
+        // Without confirms SendAsync returns before the broker has the message, and a
+        // replay that looks first finds an empty queue and has nothing to fail on.
+        await SettledInAsync(source);
 
         await Assert.ThrowsAsync<PublishFailedException>(
             () => _mq.Replay(source).Into(Name("not-there")).ReplayAllAsync());
@@ -148,7 +151,7 @@ public class UnroutablePublishTests : IAsyncLifetime
         {
             await channel.BasicPublishAsync("", source, true, new BasicProperties(), "no id"u8.ToArray());
         }
-        await EventuallyAsync(async () => await _mq.MessageCountAsync(source) == 1);
+        await SettledInAsync(source);
 
         await Assert.ThrowsAsync<PublishFailedException>(
             () => _mq.Replay(source).Into(Name("not-there")).ReplayAllAsync());
@@ -228,6 +231,13 @@ public class UnroutablePublishTests : IAsyncLifetime
         Assert.Equal(1, await _mq.MessageCountAsync(replies));
     }
 
+    /// <summary>Waits until the broker reports one message ready on the queue.</summary>
+    protected async Task SettledInAsync(string queue)
+    {
+        await EventuallyAsync(async () => await _mq.MessageCountAsync(queue) == 1);
+        Assert.Equal(1, await _mq.MessageCountAsync(queue));
+    }
+
     protected static Task EventuallyAsync(Func<bool> probe, int seconds = 30) =>
         EventuallyAsync(() => Task.FromResult(probe()), seconds);
 
@@ -269,6 +279,7 @@ public sealed class UnroutablePublishWithoutConfirmsTests : UnroutablePublishTes
             ConnectionConfig.ForUrl(_url).ClientName(name).WithoutPublisherConfirms().Build());
         var source = await QueueAsync("recovered");
         await mq.Publisher<string>("", source).SendAsync("recover me");
+        await SettledInAsync(source);
 
         var pid = StreamRecoveryTests.Control("list_connections", "--silent", "pid", "client_properties")
             .Split('\n').Where(line => line.Contains(name)).Select(line => line.Split('\t')[0].Trim()).Single();

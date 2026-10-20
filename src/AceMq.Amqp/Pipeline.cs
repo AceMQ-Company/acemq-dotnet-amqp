@@ -137,6 +137,13 @@ public sealed class Pipeline<T> : IDisposable
     /// <summary>Messages somewhere between the first and last step.</summary>
     public long InFlight => Entered - Completed - EndedEarly;
 
+    /// <summary>
+    /// How long a hop that was not taken waits before the step tries again, when
+    /// <c>WithRetryDelay</c> set nothing. The same five seconds a consumer's
+    /// <see cref="ConsumerOptions.RetryDelay"/> defaults to.
+    /// </summary>
+    private static readonly TimeSpan HopRetryDelay = TimeSpan.FromSeconds(5);
+
     internal async Task StartAsync()
     {
         // Quorum, from the library default. A pipeline queue holds work that has
@@ -224,7 +231,12 @@ public sealed class Pipeline<T> : IDisposable
                         {
                             await _idempotency.ReleaseAsync(key).ConfigureAwait(false);
                         }
-                        return Ack.Retry(step.RetryDelay, e.Message);
+                        // No policy and no WithRetryDelay: one attempt, then
+                        // {pipeline}.{step}.dlq with every header (AMQP-SLIP-004). The
+                        // delay is only ever the caller's, never a default.
+                        return step.RetryDelay is { } delay
+                            ? Ack.Retry(delay, e.Message)
+                            : Ack.Retry(e.Message);
                     }
 
                     if (_idempotency != null) await _idempotency.ConfirmAsync(key).ConfigureAwait(false);
@@ -305,7 +317,7 @@ public sealed class Pipeline<T> : IDisposable
                         {
                             await _idempotency.ReleaseAsync(key).ConfigureAwait(false);
                         }
-                        return Ack.Retry(step.RetryDelay, $"could not hop to {onwardTo}: {e.Message}");
+                        return Ack.Retry(step.RetryDelay ?? HopRetryDelay, $"could not hop to {onwardTo}: {e.Message}");
                     }
                     return Ack.Accept();
                 }).ConfigureAwait(false);
@@ -460,7 +472,7 @@ internal sealed class PipelineStep
 {
     internal PipelineStep(
         string name, Func<byte[], Envelope, Task<object?>> invoke,
-        Func<object, byte[]> encode, string contentType, int prefetch, TimeSpan retryDelay)
+        Func<object, byte[]> encode, string contentType, int prefetch, TimeSpan? retryDelay)
     {
         Name = name;
         Invoke = invoke;
@@ -486,7 +498,8 @@ internal sealed class PipelineStep
     internal string ContentType { get; }
 
     internal int Prefetch { get; }
-    internal TimeSpan RetryDelay { get; }
+    /// <summary>What <c>WithRetryDelay</c> asked for; null when nothing did.</summary>
+    internal TimeSpan? RetryDelay { get; }
 }
 
 /// <summary>
@@ -507,7 +520,7 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
     private readonly List<PipelineStep> _steps;
     private readonly ICodec _codec;
     private int _prefetch = 20;
-    private TimeSpan _retryDelay = TimeSpan.FromSeconds(5);
+    private TimeSpan? _retryDelay;
     private RetryPolicy? _retryPolicy;
     private IIdempotencyStore? _idempotency;
     private SlipForm _slipForm = SlipForm.Declared;
@@ -572,6 +585,11 @@ public sealed class PipelineBuilder<TEntry, TCurrent>
         return this;
     }
 
+    /// <summary>
+    /// Retries a step that throws after this delay, for ever, when there is no policy.
+    /// Without it (or <see cref="WithRetry"/>) a failing step is attempted once and
+    /// dead-lettered (AMQP-SLIP-004).
+    /// </summary>
     public PipelineBuilder<TEntry, TCurrent> WithRetryDelay(TimeSpan delay)
     {
         _retryDelay = delay;

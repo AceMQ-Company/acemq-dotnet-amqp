@@ -8,6 +8,24 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **A pipeline step that throws, with no retry policy, now makes one attempt**
+  (AMQP-SLIP-004, TCK SLIP-003). It is dead-lettered to `{pipeline}.{step}.dlq` with
+  `x-acemq-attempt` 1, the reason on `x-acemq-error` and every header it arrived
+  with. Up to 0.7.15 the step answered a throw with a five-second retry of its own,
+  which with no policy went back on the step queue every five seconds, for ever.
+  `PipelineBuilder.WithRetryDelay(...)` is now the explicit opt-in to that old
+  behaviour, and `WithRetry(policy)` still bounds it. A hop to the next step that is
+  not taken is still retried (AMQP-PUB-002), after five seconds unless
+  `WithRetryDelay` says otherwise.
+
+### Fixed
+
+- `UnroutablePublishWithoutConfirmsTests` no longer replays a queue before the
+  unconfirmed message published into it has arrived; the test waits for the broker
+  to report it.
+
 ## [0.7.15] - 2026-10-20
 
 ### Changed

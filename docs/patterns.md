@@ -81,6 +81,12 @@ row: a step that fails retries on its own without re-running the ones before it,
 slow step builds a visible backlog instead of blocking its predecessors, and each
 step scales independently.
 
+A step that throws, with no `WithRetry(policy)` and no `WithRetryDelay(...)`, is
+attempted once and dead-lettered to `{pipeline}.{step}.dlq` with every header it
+arrived with, route headers and unknown `x-acemq-` headers included (AMQP-SLIP-004).
+Up to 0.7.15 it was retried every five seconds, for ever. `WithRetryDelay` is the
+opt-in to that; a policy bounds it.
+
 A pipeline named `orders` is a direct exchange `orders` and a queue `orders.{step}`
 per step, bound with the step's name; each hop is published to that exchange with the
 next step's name as routing key, caused by the message the step handled. That is the

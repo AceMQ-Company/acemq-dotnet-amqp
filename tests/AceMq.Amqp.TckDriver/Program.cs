@@ -327,13 +327,26 @@ internal sealed class Driver
         var tally = new Tally();
         _tallies[(string)a["handle"]!] = tally;
         var builder = Mq.Pipeline<JsonNode>((string)a["name"]!);
+        // behaviour names a step: that step's own handler fails, as consume's does. No
+        // retry policy or delay is set anywhere: the pipeline as the library builds it.
+        var behaviours = a["behaviour"] as JsonObject;
         foreach (var step in a["steps"]!.AsArray())
         {
-            builder = builder.Step<JsonNode>((string)step!, node =>
+            var behaviour = behaviours?[(string)step!] as JsonObject;
+            var failFirst = FailFirst(behaviour);
+            var sleep = TimeSpan.FromMilliseconds((double?)behaviour?["sleepMs"] ?? 0);
+            var seenHere = new ConcurrentDictionary<string, int>();
+            builder = builder.Step<JsonNode>((string)step!, async node =>
             {
                 var id = node is JsonObject o && o["id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
                 tally.Count(id, false);
-                return Task.FromResult<JsonNode?>(node);
+                var seen = seenHere.AddOrUpdate(id, 1, (_, n) => n + 1);
+                if (sleep > TimeSpan.Zero) await Task.Delay(sleep).ConfigureAwait(false);
+                if (seen <= failFirst.GetValueOrDefault(id))
+                {
+                    throw new AceRetryableException($"tck: failing {id} on purpose, delivery {seen}");
+                }
+                return node;
             });
         }
         _consumers.Add(await builder.BuildAsync().ConfigureAwait(false));
