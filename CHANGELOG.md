@@ -8,6 +8,45 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **A consumer with no retry policy now makes one attempt** (AMQP-RETRY-008, TCK
+  RETRY-004). A handler that throws, or returns `Ack.Retry(reason)`, is
+  dead-lettered to `{queue}.dlq` with `x-acemq-attempt` 1 and the reason on
+  `x-acemq-error`. Up to 0.7.14 it waited five seconds and went back on the queue,
+  for ever. `ConsumerOptions.WithRetryDelay(...)` is now the explicit opt-in to the
+  old behaviour, and `Ack.Retry(TimeSpan, reason)` still honours its delay without a
+  policy. A responder whose reply cannot be sent, and a pipeline hop that is not
+  taken, are still retried (AMQP-PUB-002), not dead-lettered.
+- **A pipeline hops through its own direct exchange** (AMQP-SLIP-001, TCK SLIP-001,
+  SLIP-002). `mq.Pipeline<T>("orders")` now declares exchange `orders` and binds each
+  `orders.{step}` with the step's name, and a step publishes the next hop to that
+  exchange with the step name as routing key. Up to 0.7.14 it published to the
+  default exchange and the queue by name, so a route written by another library, or
+  a queue bound beside a step, never saw the hop. A step queue deleted and
+  redeclared by hand now also needs its binding back.
+- **`acemq-replayed-at` carries milliseconds**: `2026-02-03T04:05:06.789Z`, as
+  AMQP-ENV-013 and the `replayed` fixture spell it (TCK REPLAY-002). It was whole
+  seconds.
+
+### Fixed
+
+- **A pipeline hop names the handled message as its cause** (AMQP-SLIP-003).
+  `x-acemq-causation` on the hop was the handled message's own causation, so absent
+  after the first step; it is now that message's id.
+- **A pipeline hop that fails no longer loses the message under idempotency.** The
+  step's claim was confirmed before the hop was published, so the retry after a
+  failed hop was taken for a duplicate and acknowledged. The claim is released.
+
+### Added
+
+- **`PublishFailedException.Unroutable` and `.Nacked`** (AMQP-PUB-003): an
+  unroutable mandatory publish and a broker `basic.nack` can be told apart by a
+  flag rather than by the message text.
+- The TCK driver implements the `pipeline` op, `publish.mandatory`, `consume`
+  without `retry` (no policy), `consume.idempotent` and `readStream.behaviour`, for
+  the nine cases pending in the TCK.
+
 ## [0.7.14] - 2026-10-20
 
 ### Fixed

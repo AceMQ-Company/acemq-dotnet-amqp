@@ -385,13 +385,20 @@ public sealed class Responder : IDisposable
                 // Not counted as answered, as Python does not count it: a responder
                 // that fails every request should not report a healthy answered rate.
                 var description = $"{failure.GetType().Name}: {failure.Message}";
-                await mq.Publisher<byte[]>(
-                        string.Empty, replyTo!, PublishOptions.OnBehalfOfCaller(), null,
-                        new BytesCodec())
-                    .SendAsync(
-                        Array.Empty<byte>(),
-                        envelope.Header(Requester.ErrorHeader, description).Build())
-                    .ConfigureAwait(false);
+                try
+                {
+                    await mq.Publisher<byte[]>(
+                            string.Empty, replyTo!, PublishOptions.OnBehalfOfCaller(), null,
+                            new BytesCodec())
+                        .SendAsync(
+                            Array.Empty<byte>(),
+                            envelope.Header(Requester.ErrorHeader, description).Build())
+                        .ConfigureAwait(false);
+                }
+                catch (Exception e)
+                {
+                    return ReplyNotSent(options, e);
+                }
 
                 // Settled rather than retried: the caller has its answer, and a retry
                 // would answer the same question twice.
@@ -417,10 +424,10 @@ public sealed class Responder : IDisposable
             {
                 await publisher.SendAsync(answer, envelope.Build()).ConfigureAwait(false);
             }
-            catch
+            catch (Exception e)
             {
                 counters.UncountAnswered();
-                throw;
+                return ReplyNotSent(options, e);
             }
 
             return Ack.Accept();
@@ -428,6 +435,17 @@ public sealed class Responder : IDisposable
 
         return new Responder(consumer, counters);
     }
+
+    /// <summary>
+    /// A reply the broker did not take: the request is kept and tried again after the
+    /// consumer's retry delay (AMQP-PUB-002), never dead-lettered for want of a policy.
+    /// </summary>
+    /// <remarks>
+    /// An explicit delay, because a consumer with no policy dead-letters a bare
+    /// failure after one attempt, and the caller has not been answered.
+    /// </remarks>
+    private static Ack ReplyNotSent(ConsumerOptions options, Exception failure) =>
+        Ack.Retry(options.RetryDelay, $"could not send the reply: {failure.Message}");
 
     /// <summary>
     /// Works out where to send the answer: the header first, the native property second.

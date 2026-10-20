@@ -112,15 +112,17 @@ public sealed class Pipeline<T> : IDisposable
     /// Turns what a slip says into somewhere to publish.
     /// </summary>
     /// <remarks>
-    /// A declared slip carries step names, so <c>charge</c> has to become
-    /// <c>orders.charge</c>; an itinerary already carries the queue. Anything the
-    /// pipeline does not recognise is passed through untouched, so a slip that leaves
-    /// this pipeline for somewhere else still works.
+    /// A declared slip carries step names, so <c>charge</c> becomes exchange
+    /// <c>orders</c>, routing key <c>charge</c> (AMQP-SLIP-001): the pipeline's direct
+    /// exchange, which is where a step in another language publishes it too, and
+    /// where anything bound beside the step queue sees the hop. Up to 0.7.14 this was
+    /// the default exchange and queue <c>orders.charge</c>. An itinerary already
+    /// carries the address. Anything the pipeline does not recognise is passed through
+    /// untouched, so a slip that leaves this pipeline for somewhere else still works.
     /// </remarks>
     private RouteDestination Resolve(RouteDestination destination) =>
         destination.Exchange.Length == 0 && StepNames.Contains(destination.RoutingKey)
-            ? new RouteDestination(
-                string.Empty, QueueFor(destination.RoutingKey), destination.RoutingKey)
+            ? new RouteDestination(Name, destination.RoutingKey, destination.RoutingKey)
             : destination;
 
     /// <summary>Messages that entered the pipeline.</summary>
@@ -142,9 +144,15 @@ public sealed class Pipeline<T> : IDisposable
         // partly-finished runs — and the steps that already succeeded would have to be
         // repeated, which is exactly what a non-idempotent first step cannot survive.
         // Java's Pipeline declares these queues quorum for the same reason.
+        //
+        // Each bound to the pipeline's direct exchange with the step's name, the
+        // topology AMQP-SLIP-001 gives every library, so a route written in another
+        // language reaches these steps and a hop from here reaches theirs.
+        await _mq.DeclareExchangeAsync(Name, "direct").ConfigureAwait(false);
         foreach (var step in _steps)
         {
             await _mq.DeclareQueueAsync(QueueFor(step.Name)).ConfigureAwait(false);
+            await _mq.BindAsync(QueueFor(step.Name), Name, step.Name).ConfigureAwait(false);
         }
 
         for (var i = 0; i < _steps.Count; i++)
@@ -257,7 +265,10 @@ public sealed class Pipeline<T> : IDisposable
                         .Id(message.Envelope.Id)
                         .Version(message.Envelope.Version)
                         .CorrelationId(message.Envelope.CorrelationId)
-                        .CausationId(message.Envelope.CausationId)
+                        // Caused by the message this step handled (AMQP-SLIP-003). Up
+                        // to 0.7.14 the hop carried that message's own causation on,
+                        // which is absent at the first step.
+                        .CausationId(message.Envelope.Id)
                         .FirstSeen(message.Envelope.FirstSeen)
                         .Origin(message.Envelope.Origin)
                         .Build();
@@ -275,11 +286,27 @@ public sealed class Pipeline<T> : IDisposable
                     var publisher = _mq.Publisher<byte[]>(
                         onwardTo.Exchange, onwardTo.RoutingKey, PublishOptions.OnBehalfOfCaller(), null,
                         new VerbatimCodec(step.ContentType));
-                    await ((Publisher<byte[]>)publisher)
-                        .SendWithHeadersAsync(
-                            step.Encode(output), onward, onwardRoute.ToHeaders(),
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await ((Publisher<byte[]>)publisher)
+                            .SendWithHeadersAsync(
+                                step.Encode(output), onward, onwardRoute.ToHeaders(),
+                                CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception e)
+                    {
+                        // The hop was not taken, so the message is kept and the step
+                        // tried again (AMQP-PUB-002) -- with the step's own delay, so a
+                        // pipeline with no policy does not dead-letter a message whose
+                        // only fault is a missing next queue. The claim goes too, or the
+                        // retry would be taken for a duplicate and the hop never made.
+                        if (_idempotency != null)
+                        {
+                            await _idempotency.ReleaseAsync(key).ConfigureAwait(false);
+                        }
+                        return Ack.Retry(step.RetryDelay, $"could not hop to {onwardTo}: {e.Message}");
+                    }
                     return Ack.Accept();
                 }).ConfigureAwait(false);
 

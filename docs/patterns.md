@@ -81,6 +81,12 @@ row: a step that fails retries on its own without re-running the ones before it,
 slow step builds a visible backlog instead of blocking its predecessors, and each
 step scales independently.
 
+A pipeline named `orders` is a direct exchange `orders` and a queue `orders.{step}`
+per step, bound with the step's name; each hop is published to that exchange with the
+next step's name as routing key, caused by the message the step handled. That is the
+topology all five libraries share (AMQP-SLIP-001), so a step written in another
+language continues a route started here.
+
 The steps are type-checked against each other at compile time — a step added after
 one producing `Order` can only accept an `Order`. A mismatch is a compile error
 rather than a decode failure at the third step in production.
@@ -414,8 +420,8 @@ still **reads** the old spelling, so a message a 0.5.0 service replayed keeps it
 count; it is never written any more. Anything matching on the old names needs the
 new ones.
 
-`acemq-replayed-at` is RFC 3339 to the second, with a `Z` — `2026-02-03T04:05:06Z`,
-which is what Go and Ruby write and what the shared envelope fixtures pin.
+`acemq-replayed-at` is RFC 3339 to the millisecond, with a `Z` —
+`2026-02-03T04:05:06.789Z`, as AMQP-ENV-013 and the shared envelope fixtures pin.
 
 **`x-acemq-attempt` is reset to 1 as well.** A dead-letter queue is full of messages that
 were given up on at the *last* attempt of their policy, and the attempt counter now

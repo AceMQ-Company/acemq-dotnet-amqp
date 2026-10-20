@@ -271,7 +271,8 @@ internal sealed class Publisher<T> : IPublisher<T>
                 // same nack as failed.
                 Record(envelope, MetricNames.OutcomeFailed, clock.Elapsed, span);
                 throw new PublishFailedException(
-                    $"the broker rejected {envelope.Id}: {confirm.Reason ?? "no reason given"}");
+                    $"the broker rejected {envelope.Id}: {confirm.Reason ?? "no reason given"}",
+                    unroutable: false, nacked: true);
             }
 
             if (!confirm.Routed && _options.Mandatory)
@@ -280,7 +281,8 @@ internal sealed class Publisher<T> : IPublisher<T>
                 throw new PublishFailedException(
                     $"{envelope.Id} reached the broker but matched no queue bound to " +
                     $"'{_exchange}' for '{_routingKey}'. This is usually a topology mistake; " +
-                    "if the discard is intended, publish with PublishOptions.AllowUnroutable().");
+                    "if the discard is intended, publish with PublishOptions.AllowUnroutable().",
+                    unroutable: true, nacked: false);
             }
 
             Record(

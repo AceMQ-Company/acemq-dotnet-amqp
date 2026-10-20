@@ -267,6 +267,65 @@ public sealed class ReliabilityTests : IDisposable
     }
 
     [Fact]
+    public async Task WithNoPolicyAFailureIsDeadLetteredAfterOneAttempt()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var attempts = new ConcurrentQueue<int>();
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q, ConsumerOptions.Defaults(),
+            message =>
+            {
+                attempts.Enqueue(message.Attempt);
+                throw new InvalidOperationException("always fails");
+            });
+
+        // A header this version has no field for rides along (AMQP-ENV-014).
+        await ((Publisher<string>)mq.Publisher<string>("", _q)).SendWithHeadersAsync(
+            "doomed", Envelope.Of("job").Header("x-tenant", "acme").Build(),
+            new Dictionary<string, object> { ["x-acemq-future"] = "kept" },
+            CancellationToken.None);
+
+        var dead = await mq.Transport.ReceiveAsync(
+            Naming.DeadLetterQueue(_q), TimeSpan.FromSeconds(5), CancellationToken.None);
+
+        // AMQP-RETRY-008: no policy is one attempt. Up to 0.7.14 this waited five
+        // seconds and went back on the queue, for ever.
+        Assert.NotNull(dead);
+        Assert.Equal(1, Convert.ToInt32(dead!.Headers[AceHeaders.Attempt]));
+        Assert.Contains("gave up after 1 attempt", dead.Headers[AceHeaders.Error].ToString());
+        Assert.Equal("kept", dead.Headers["x-acemq-future"]);
+        Assert.Equal("acme", dead.Headers["x-tenant"]);
+
+        await Task.Delay(200);
+        Assert.Equal(new[] { 1 }, attempts.ToArray());
+        Assert.Equal(0, await mq.MessageCountAsync(_q));
+    }
+
+    [Fact]
+    public async Task WithRetryDelayIsTheOptInToRetryingForEver()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_q);
+
+        var attempts = new ConcurrentQueue<int>();
+        using var consumer = await mq.ConsumeAsync<string>(
+            _q, ConsumerOptions.Defaults().WithRetryDelay(TimeSpan.FromMilliseconds(5)),
+            message =>
+            {
+                attempts.Enqueue(message.Attempt);
+                throw new InvalidOperationException("always fails");
+            });
+
+        await mq.Publisher<string>("", _q).SendAsync("again and again");
+        await Eventually(() => attempts.Count >= 4, "four attempts");
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, attempts.Take(4).ToArray());
+        Assert.Equal(0, await mq.MessageCountAsync(Naming.DeadLetterQueue(_q)));
+    }
+
+    [Fact]
     public async Task AdvancesTheAttemptOnTheWireRatherThanCountingInMemory()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

@@ -442,6 +442,40 @@ public sealed class RoutingSlipFormTests
     }
 
     [Fact]
+    public async Task HopsThroughThePipelineExchangeCausedByTheHandledMessage()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        using var pipeline = await mq.Pipeline<string>(_q)
+            .Step<string>("validate", Task.FromResult<string?>)
+            .Step<string>("ship", Task.FromResult<string?>)
+            .BuildAsync();
+
+        // A queue bound beside the step sees the hop only when it goes through the
+        // pipeline's direct exchange under the step's name (AMQP-SLIP-001), which is
+        // where a step in another language sends it.
+        var tap = _q + ".tap";
+        await mq.DeclareQueueAsync(tap);
+        await mq.BindAsync(tap, _q, "ship");
+
+        var id = await pipeline.SendAsync("an order");
+
+        PulledMessage<string>? hop = null;
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (hop == null && DateTime.UtcNow < deadline)
+        {
+            hop = await mq.PullAsync<string>(tap, TimeSpan.FromMilliseconds(50));
+        }
+        Assert.NotNull(hop);
+        await hop!.AcknowledgeAsync();
+
+        Assert.Equal(1, Convert.ToInt32(hop.WireHeaders[RoutingSlip.PositionHeader]));
+        Assert.Equal(id, hop.WireHeaders[AceHeaders.Correlation]);
+        // AMQP-SLIP-003: caused by the message the step handled. Up to 0.7.14 the
+        // hop carried that message's own causation, absent at the first step.
+        Assert.Equal(id, hop.WireHeaders[AceHeaders.Causation]);
+    }
+
+    [Fact]
     public async Task FollowsASlipThatSkipsAStepTheMessageDoesNotNeed()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

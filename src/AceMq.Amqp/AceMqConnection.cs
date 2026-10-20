@@ -516,9 +516,14 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
                         Tell(queue, envelope, interceptor, "OnError",
                             () => interceptor.OnError(interceptorContext, e));
                     }
+                    // With no policy and no WithRetryDelay, a retry with no delay of
+                    // its own: RetryAsync reads that as one attempt and dead-letters
+                    // it (AMQP-RETRY-008). Up to 0.7.14 it went round for ever.
                     ack = options.RequeueOnFailure
                         ? Ack.Release()
-                        : Ack.Retry(options.RetryDelay, e.Message);
+                        : policy == null && !options.RetriesForEver
+                            ? Ack.Retry(e.Message)
+                            : Ack.Retry(options.RetryDelay, e.Message);
                 }
                 finally
                 {
@@ -822,11 +827,16 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         var reason = ack.Reason ?? "no reason given";
         var advanced = envelope.WithAttempt(envelope.Attempt + 1);
 
+        // No policy and no delay asked for: one attempt, then the dead letters
+        // (AMQP-RETRY-008). A retry for ever is something a caller asks for, with a
+        // delay, never what a consumer does because nobody configured it.
+        if (policy == null && ack.Delay == null) policy = RetryPolicy.None();
+
         if (policy == null)
         {
-            // No policy means no give-up: the delay the handler asked for, waited
-            // here, for ever. Bounding it is exactly what a policy is for, which is
-            // why one is worth configuring.
+            // No policy and an explicit delay: the delay the handler (or
+            // WithRetryDelay) asked for, waited here, for ever. Bounding it is
+            // exactly what a policy is for.
             var asked = ack.Delay ?? TimeSpan.Zero;
             AceMqTelemetry.MessageRetried(span, asked, queue, reason);
             if (!await WaitOutAsync(asked, stopped).ConfigureAwait(false))

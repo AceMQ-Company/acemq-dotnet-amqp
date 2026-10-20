@@ -4,8 +4,10 @@ Three things that decide whether a consumer survives contact with production.
 
 ## Retry policies
 
-Without one, a handler that throws is retried after a fixed delay, forever. A policy
-bounds that:
+Without one, a handler that throws gets one attempt and is dead-lettered to
+`{queue}.dlq` (AMQP-RETRY-008; up to 0.7.14 it was retried after a fixed delay,
+forever). `WithRetryDelay` is the explicit opt-in to that old behaviour. A policy
+gives it a bounded number of attempts:
 
 ```csharp
 await mq.ConsumeAsync<OrderPlaced>(

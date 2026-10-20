@@ -710,15 +710,15 @@ public sealed class PatternTests : IDisposable
         Assert.Equal(1, Convert.ToInt32(
             headers[AceHeaders.ReplayCount], CultureInfo.InvariantCulture));
 
-        // The shape the other four write: whole seconds, and a Z. Not "o", which
-        // carries an offset and seven fractional digits that nothing else produces.
+        // AMQP-ENV-013: milliseconds, and a Z. Not "o", which carries an offset and
+        // seven fractional digits, and not whole seconds, which this wrote to 0.7.14.
         var at = Assert.IsType<string>(headers[AceHeaders.ReplayedAt]);
-        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", at);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", at);
         Assert.Equal(
             at,
             DateTimeOffset.Parse(at, CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind)
-                .UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture));
+                .UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
 
         // And nothing left behind under the old spelling: one name for one fact.
         Assert.DoesNotContain(AceHeaders.LegacyReplayedFrom, back.Headers.Keys);

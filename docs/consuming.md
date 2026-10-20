@@ -109,7 +109,7 @@ instance works through everything it was handed.
 ```csharp
 ConsumerOptions.Defaults()
     .WithPrefetch(50)
-    .WithRetryDelay(TimeSpan.FromSeconds(10))   // when a handler throws
+    .WithRetryDelay(TimeSpan.FromSeconds(10))   // no policy: retry a throw every 10s, forever
     .As(new BytesCodec())                       // decode differently from the connection
     .RequeueingOnFailure()                      // hand it straight back to the broker
 ```
@@ -171,8 +171,8 @@ ConsumerOptions.Defaults()
     .Idempotent(InMemoryIdempotencyStore.ForOneDay())
 ```
 
-Without a policy a failing handler is retried forever; without a store a redelivery
-is handled twice. [Reliability](reliability.md) covers both, and how to drain
+Without a policy a failing handler gets one attempt and is dead-lettered; without a
+store a redelivery is handled twice. [Reliability](reliability.md) covers both, and how to drain
 consumers before shutting down.
 
 ## Concurrency

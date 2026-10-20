@@ -304,17 +304,15 @@ public sealed class Replay
     }
 
     /// <summary>
-    /// The instant as the other four libraries write it: seconds, and a <c>Z</c>.
+    /// The instant as AMQP-ENV-013 and the <c>replayed</c> fixture spell it:
+    /// milliseconds, and a <c>Z</c>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Not <c>"o"</c>, which is what this wrote up to 0.5.0. That is legitimate RFC
-    /// 3339 and Java's reader takes it, but it is the one shape in the family with
-    /// both a <c>+00:00</c> offset and seven fractional digits — and the offset form
-    /// has already cost Java a widened reader once. Go and Ruby write exactly this;
-    /// Java writes it with an optional fraction; the shared <c>envelope-fixtures.json</c>
-    /// pins the <c>Z</c> form. Whole seconds lose nothing anybody uses: this is the
-    /// stamp on an operator draining a queue by hand.
+    /// Not <c>"o"</c>, which is what this wrote up to 0.5.0: a <c>+00:00</c> offset and
+    /// seven fractional digits. Up to 0.7.14 it was whole seconds, which the spec has
+    /// since settled against: exactly three fractional digits, so every library writes
+    /// one shape and a reader needs no special case.
     /// </para>
     /// <para>
     /// The literal <c>Z</c> is quoted rather than spelled with a format specifier so
@@ -322,7 +320,7 @@ public sealed class Replay
     /// </para>
     /// </remarks>
     private static string Rfc3339(DateTimeOffset at) =>
-        at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        at.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     public override string ToString() => $"Replay[{From} -> {_to}]";
 }

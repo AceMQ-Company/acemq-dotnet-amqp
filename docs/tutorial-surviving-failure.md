@@ -44,13 +44,12 @@ await Task.Delay(30_000);
 
 ```
 attempt 1 for A-1
-attempt 2 for A-1
-attempt 3 for A-1
-...
 ```
 
-Forever. An exception is treated as a retry, and with no policy there is nothing to
-stop it. That consumer is now occupied by one message that will never succeed.
+Once. With no policy a handler that throws is given one attempt and the message goes
+to `orders.placed.dlq` with the reason on `x-acemq-error` — nothing is retried unless
+you say how. (Up to 0.7.14 it was retried every five seconds, forever.) A dependency
+that is down for a minute deserves a few more tries than that.
 
 ## Bound it
 

@@ -58,7 +58,8 @@ public sealed class Ack
     /// <remarks>
     /// The delay comes from the consumer's <see cref="RetryPolicy"/>, which is where
     /// it belongs: a handler knows that it failed, not how many attempts are left or
-    /// how long the fleet has agreed to back off for.
+    /// how long the fleet has agreed to back off for. With no policy there is no
+    /// other attempt, and the message is dead-lettered (AMQP-RETRY-008).
     /// </remarks>
     public static Ack Retry(string reason) =>
         new Ack(AckKind.Retry, null, reason ?? throw new ArgumentNullException(nameof(reason)));
@@ -253,13 +254,13 @@ internal sealed class ReceivedMessage<T> : IMessage<T>
 public sealed class ConsumerOptions
 {
     private ConsumerOptions(
-        int prefetch, ICodec? codec, bool requeueOnFailure, TimeSpan retryDelay,
+        int prefetch, ICodec? codec, bool requeueOnFailure, TimeSpan? retryDelay,
         RetryPolicy? retryPolicy, IIdempotencyStore? idempotency, TimeSpan inProgressDelay)
     {
         PrefetchCount = prefetch;
         Codec = codec;
         RequeueOnFailure = requeueOnFailure;
-        RetryDelay = retryDelay;
+        _retryDelay = retryDelay;
         RetryPolicy = retryPolicy;
         Idempotency = idempotency;
         InProgressDelay = inProgressDelay;
@@ -272,7 +273,7 @@ public sealed class ConsumerOptions
     public static readonly TimeSpan DefaultInProgressDelay = TimeSpan.FromSeconds(5);
 
     public static ConsumerOptions Defaults() =>
-        new ConsumerOptions(20, null, false, TimeSpan.FromSeconds(5), null, null, DefaultInProgressDelay);
+        new ConsumerOptions(20, null, false, null, null, null, DefaultInProgressDelay);
 
     /// <summary>
     /// How many unacknowledged messages the broker may have outstanding with this
@@ -286,26 +287,27 @@ public sealed class ConsumerOptions
     public static ConsumerOptions Prefetch(int prefetch)
     {
         if (prefetch < 1) throw new ArgumentException("must be at least 1", nameof(prefetch));
-        return new ConsumerOptions(prefetch, null, false, TimeSpan.FromSeconds(5), null, null, DefaultInProgressDelay);
+        return new ConsumerOptions(prefetch, null, false, null, null, null, DefaultInProgressDelay);
     }
 
     public ConsumerOptions WithPrefetch(int prefetch) =>
-        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
+        new ConsumerOptions(prefetch, Codec, RequeueOnFailure, _retryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
     /// <summary>Decodes with this codec rather than the connection's.</summary>
     public ConsumerOptions As(ICodec codec) =>
-        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
+        new ConsumerOptions(PrefetchCount, codec, RequeueOnFailure, _retryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
     /// <summary>
     /// Backs off between attempts and gives up according to a policy.
     /// </summary>
     /// <remarks>
-    /// Without one, a handler that throws is retried after a fixed delay forever. A
-    /// policy is what turns that into a bounded number of attempts with growing gaps,
-    /// after which the message is dead-lettered rather than retried into eternity.
+    /// Without one, a handler that throws is dead-lettered after its first attempt
+    /// (up to 0.7.14 it was retried after a fixed delay for ever). A policy is what
+    /// turns that into a bounded number of attempts with growing gaps, after which
+    /// the message is dead-lettered.
     /// </remarks>
     public ConsumerOptions WithRetry(RetryPolicy policy) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, policy, Idempotency, InProgressDelay);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, _retryDelay, policy, Idempotency, InProgressDelay);
 
     /// <summary>
     /// Skips a message this store says has already been handled.
@@ -317,7 +319,7 @@ public sealed class ConsumerOptions
     /// not yet confirmed is put back — see <see cref="WithInProgressDelay"/>.
     /// </remarks>
     public ConsumerOptions Idempotent(IIdempotencyStore store) =>
-        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, store, InProgressDelay);
+        new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, _retryDelay, RetryPolicy, store, InProgressDelay);
 
     /// <summary>
     /// Returns a failed message to the queue rather than retrying it.
@@ -331,8 +333,17 @@ public sealed class ConsumerOptions
     /// "somebody else should take this", and for nothing else.
     /// </remarks>
     public ConsumerOptions RequeueingOnFailure() =>
-        new ConsumerOptions(PrefetchCount, Codec, true, RetryDelay, RetryPolicy, Idempotency, InProgressDelay);
+        new ConsumerOptions(PrefetchCount, Codec, true, _retryDelay, RetryPolicy, Idempotency, InProgressDelay);
 
+    /// <summary>
+    /// Retries a handler that throws after this delay, for ever, when there is no
+    /// <see cref="RetryPolicy"/>.
+    /// </summary>
+    /// <remarks>
+    /// An explicit opt-in. Without it, and without a policy, a handler that throws is
+    /// dead-lettered after its first attempt (AMQP-RETRY-008): retrying for ever is
+    /// never the default. With a policy this is ignored; the policy decides.
+    /// </remarks>
     public ConsumerOptions WithRetryDelay(TimeSpan delay) =>
         new ConsumerOptions(PrefetchCount, Codec, RequeueOnFailure, delay, RetryPolicy, Idempotency, InProgressDelay);
 
@@ -360,7 +371,7 @@ public sealed class ConsumerOptions
     {
         if (delay < TimeSpan.Zero) throw new ArgumentException("cannot be negative", nameof(delay));
         return new ConsumerOptions(
-            PrefetchCount, Codec, RequeueOnFailure, RetryDelay, RetryPolicy, Idempotency, delay);
+            PrefetchCount, Codec, RequeueOnFailure, _retryDelay, RetryPolicy, Idempotency, delay);
     }
 
     public int PrefetchCount { get; }
@@ -370,14 +381,23 @@ public sealed class ConsumerOptions
     public TimeSpan InProgressDelay { get; }
     public bool RequeueOnFailure { get; }
 
-    /// <summary>How to back off and when to give up, or null for a fixed delay forever.</summary>
+    /// <summary>
+    /// How to back off and when to give up, or null for one attempt (unless
+    /// <see cref="WithRetryDelay"/> asked for a fixed delay for ever).
+    /// </summary>
     public RetryPolicy? RetryPolicy { get; }
 
     /// <summary>Where already-handled message ids are remembered, or null for none.</summary>
     public IIdempotencyStore? Idempotency { get; }
 
+    private readonly TimeSpan? _retryDelay;
+
     /// <summary>Delay applied when a handler throws rather than returning a disposition.</summary>
-    public TimeSpan RetryDelay { get; }
+    /// <remarks>Five seconds unless <see cref="WithRetryDelay"/> set it.</remarks>
+    public TimeSpan RetryDelay => _retryDelay ?? TimeSpan.FromSeconds(5);
+
+    /// <summary>True when <see cref="WithRetryDelay"/> was called.</summary>
+    internal bool RetriesForEver => _retryDelay.HasValue;
 }
 
 /// <summary>A running consumer. Disposing it stops delivery.</summary>

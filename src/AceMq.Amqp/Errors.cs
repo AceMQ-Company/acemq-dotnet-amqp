@@ -88,4 +88,26 @@ public sealed class PublishFailedException : AceMqException
 {
     public PublishFailedException(string message) : base(message) { }
     public PublishFailedException(string message, Exception? cause) : base(message, cause) { }
+
+    internal PublishFailedException(string message, bool unroutable, bool nacked) : base(message)
+    {
+        Unroutable = unroutable;
+        Nacked = nacked;
+    }
+
+    /// <summary>
+    /// The broker returned the publish: mandatory, and no queue matched (AMQP-PUB-003).
+    /// </summary>
+    /// <remarks>
+    /// The test a caller makes instead of reading the message. Never true together
+    /// with <see cref="Nacked"/>; both false is any other failure, such as a confirm
+    /// that never came.
+    /// </remarks>
+    public bool Unroutable { get; }
+
+    /// <summary>
+    /// The broker refused the publish with a <c>basic.nack</c>: it reached the broker,
+    /// which would not keep it.
+    /// </summary>
+    public bool Nacked { get; }
 }

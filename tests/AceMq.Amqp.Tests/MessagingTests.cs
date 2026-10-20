@@ -142,6 +142,10 @@ public sealed class MessagingTests : IDisposable
         var error = await Assert.ThrowsAsync<PublishFailedException>(
             () => publisher.SendAsync(new OrderPlaced { OrderId = "A-2" }));
         Assert.Contains("matched no queue", error.Message);
+
+        // AMQP-PUB-003: a flag to test, not only a sentence to read.
+        Assert.True(error.Unroutable);
+        Assert.False(error.Nacked);
     }
 
     [Fact]

@@ -60,6 +60,7 @@ public class UnroutablePublishTests : IAsyncLifetime
             }
         }
         try { await _mq.DeleteExchangeAsync(Name("x")); } catch { /* never declared */ }
+        try { await _mq.DeleteExchangeAsync(Name("p")); } catch { /* never declared */ }
         _mq.Dispose();
     }
 
@@ -196,7 +197,9 @@ public class UnroutablePublishTests : IAsyncLifetime
         // Put the queue back and the same message completes: it was kept, not lost.
         // Also leaves no handler mid-retry when the consumer is disposed.
         // The second step's consumer went with its queue, so the hop waits there.
+        // And its binding: a hop goes through the pipeline's exchange (AMQP-SLIP-001).
         await _mq.DeclareQueueAsync(pipeline.QueueFor("second"));
+        await _mq.BindAsync(pipeline.QueueFor("second"), name, "second");
         await EventuallyAsync(async () => await _mq.MessageCountAsync(pipeline.QueueFor("second")) == 1);
         Assert.Equal(1, await _mq.MessageCountAsync(pipeline.QueueFor("second")));
     }

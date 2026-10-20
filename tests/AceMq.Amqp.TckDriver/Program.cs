@@ -65,11 +65,8 @@ internal static class Program
         ResponderFailedException => "responder",
         // The JSON codec throws the serializer's own exception for a body it cannot read.
         AceFatalException or JsonException => "decode",
-        // One type for unroutable, nacked and unconfirmed; only the message tells them apart.
-        PublishFailedException e when e.Message.Contains("matched no queue", StringComparison.Ordinal)
-            => "unroutable",
-        PublishFailedException e when e.Message.Contains("the broker rejected", StringComparison.Ordinal)
-            => "nacked",
+        PublishFailedException { Unroutable: true } => "unroutable",
+        PublishFailedException { Nacked: true } => "nacked",
         // Thrown before anything is written: the library declined to send.
         ConnectionBlockedException or PublishingPausedException => "paused",
         _ => "other",
@@ -88,8 +85,13 @@ internal sealed class Tally
     {
         var id = message.Payload.ValueKind == JsonValueKind.Object
                  && message.Payload.TryGetProperty("id", out var value) ? value.ToString() : "";
+        return Count(id, message.Redelivered);
+    }
+
+    internal int Count(string id, bool redelivered)
+    {
         _order.Enqueue(id);
-        if (message.Redelivered) _redelivered.AddOrUpdate(id, 1, (_, n) => n + 1);
+        if (redelivered) _redelivered.AddOrUpdate(id, 1, (_, n) => n + 1);
         return _counts.AddOrUpdate(id, 1, (_, n) => n + 1);
     }
 
@@ -111,7 +113,7 @@ internal sealed class Driver
     private static readonly string[] Ops =
     [
         "hello", "begin", "end", "publish", "consume", "handled", "schedule", "request",
-        "declareStream", "readStream", "metrics", "replay",
+        "declareStream", "readStream", "metrics", "replay", "pipeline",
     ];
 
     private readonly string _url;
@@ -143,6 +145,7 @@ internal sealed class Driver
             case "readStream": await ReadStreamAsync(a).ConfigureAwait(false); return new JsonObject();
             case "metrics": return Metrics();
             case "replay": return await ReplayAsync(a).ConfigureAwait(false);
+            case "pipeline": await PipelineAsync(a).ConfigureAwait(false); return new JsonObject();
             default: throw new NotSupportedException((string?)a["op"]);
         }
     }
@@ -214,7 +217,11 @@ internal sealed class Driver
     private async Task<JsonNode> PublishAsync(JsonObject a)
     {
         var routingKey = (string)a["routingKey"]!;
-        var publisher = Mq.Publisher<JsonElement>((string?)a["exchange"] ?? "", routingKey);
+        // Absent is the library's default, which is mandatory; false is the opt-out.
+        var options = (bool?)a["mandatory"] == false
+            ? PublishOptions.Defaults().AllowUnroutable()
+            : PublishOptions.Defaults();
+        var publisher = Mq.Publisher<JsonElement>((string?)a["exchange"] ?? "", routingKey, options);
         var body = Element(a["body"]);
         PublishResult result;
         if (a["envelope"] is JsonObject fields)
@@ -247,13 +254,15 @@ internal sealed class Driver
     private async Task ConsumeAsync(JsonObject a)
     {
         var queue = (string)a["queue"]!;
-        var retry = a["retry"] as JsonObject;
-        var policy = RetryPolicy.Fixed(
-            (int?)retry?["maxAttempts"] ?? 3,
-            TimeSpan.FromMilliseconds((double?)retry?["delayMs"] ?? 1000));
+        // retry absent is no policy at all: the consumer as the library builds it
+        // when the caller configures none.
+        var policy = a["retry"] is JsonObject retry
+            ? RetryPolicy.Fixed(
+                (int?)retry["maxAttempts"] ?? 3,
+                TimeSpan.FromMilliseconds((double?)retry["delayMs"] ?? 1000))
+            : null;
         var behaviour = a["behaviour"] as JsonObject;
-        var failFirst = (behaviour?["failFirst"] as JsonObject)?
-            .ToDictionary(p => p.Key, p => (int)p.Value!) ?? new Dictionary<string, int>();
+        var failFirst = FailFirst(behaviour);
         var sleep = TimeSpan.FromMilliseconds((double?)behaviour?["sleepMs"] ?? 0);
         var tally = new Tally();
 
@@ -269,8 +278,14 @@ internal sealed class Driver
             return Ack.Accept();
         }
 
-        await Mq.ApplyAsync(Topology.Define().QueueWithRetry(queue, policy).Build()).ConfigureAwait(false);
-        var options = ConsumerOptions.Prefetch((int?)a["prefetch"] ?? 10).WithRetry(policy);
+        var topology = policy == null
+            ? Topology.Define().QueueWithDeadLetter(queue)
+            : Topology.Define().QueueWithRetry(queue, policy);
+        await Mq.ApplyAsync(topology.Build()).ConfigureAwait(false);
+        var options = ConsumerOptions.Prefetch((int?)a["prefetch"] ?? 10);
+        if (policy != null) options = options.WithRetry(policy);
+        // The count is taken in the handler, inside the library's idempotent wrapper.
+        if ((bool?)a["idempotent"] == true) options = options.Idempotent(InMemoryIdempotencyStore.ForOneDay());
         _consumers.Add(await Mq.ConsumeAsync<JsonElement>(queue, options, HandleAsync).ConfigureAwait(false));
         _tallies[(string)a["handle"]!] = tally;
     }
@@ -290,14 +305,43 @@ internal sealed class Driver
             "next" or null => reader.FromNext(),
             var other => throw new NotSupportedException($"offset {other}"),
         };
+        var failFirst = FailFirst(a["behaviour"] as JsonObject);
         var tally = new Tally();
         _consumers.Add(await reader.ConsumeAsync(message =>
         {
-            tally.Count(message);
+            var seen = tally.Count(message);
+            var id = message.Payload.ValueKind == JsonValueKind.Object
+                     && message.Payload.TryGetProperty("id", out var value) ? value.ToString() : "";
+            if (seen <= failFirst.GetValueOrDefault(id))
+            {
+                throw new InvalidOperationException($"tck: failing {id} on purpose, delivery {seen}");
+            }
             return Task.CompletedTask;
         }).ConfigureAwait(false));
         _tallies[(string)a["handle"]!] = tally;
     }
+
+    // The library declares the exchange, the step queues and their bindings itself.
+    private async Task PipelineAsync(JsonObject a)
+    {
+        var tally = new Tally();
+        _tallies[(string)a["handle"]!] = tally;
+        var builder = Mq.Pipeline<JsonNode>((string)a["name"]!);
+        foreach (var step in a["steps"]!.AsArray())
+        {
+            builder = builder.Step<JsonNode>((string)step!, node =>
+            {
+                var id = node is JsonObject o && o["id"] is JsonValue v && v.TryGetValue<string>(out var s) ? s : "";
+                tally.Count(id, false);
+                return Task.FromResult<JsonNode?>(node);
+            });
+        }
+        _consumers.Add(await builder.BuildAsync().ConfigureAwait(false));
+    }
+
+    private static Dictionary<string, int> FailFirst(JsonObject? behaviour) =>
+        (behaviour?["failFirst"] as JsonObject)?
+            .ToDictionary(p => p.Key, p => (int)p.Value!) ?? new Dictionary<string, int>();
 
     private JsonObject Metrics()
     {
