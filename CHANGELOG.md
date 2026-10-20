@@ -15,6 +15,11 @@ While the version is `0.x` the public API may change in any release.
   nothing waited for the broker to apply it, so on a quorum queue a
   `PendingAsync()` straight after the replay could read 0.
 
+### Added
+
+- Runs the AceMQ TCK v0.3.0 (was v0.2.0), which adds REPLAY-001 to the
+  default run: 20 cases.
+
 ## [0.7.13] - 2026-10-13
 
 ### Breaking
