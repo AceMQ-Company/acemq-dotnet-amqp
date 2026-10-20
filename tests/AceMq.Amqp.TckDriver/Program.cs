@@ -111,7 +111,7 @@ internal sealed class Driver
     private static readonly string[] Ops =
     [
         "hello", "begin", "end", "publish", "consume", "handled", "schedule", "request",
-        "declareStream", "readStream", "metrics",
+        "declareStream", "readStream", "metrics", "replay",
     ];
 
     private readonly string _url;
@@ -142,6 +142,7 @@ internal sealed class Driver
             case "declareStream": await DeclareStreamAsync(a).ConfigureAwait(false); return new JsonObject();
             case "readStream": await ReadStreamAsync(a).ConfigureAwait(false); return new JsonObject();
             case "metrics": return Metrics();
+            case "replay": return await ReplayAsync(a).ConfigureAwait(false);
             default: throw new NotSupportedException((string?)a["op"]);
         }
     }
@@ -334,6 +335,30 @@ internal sealed class Driver
                 TimeSpan.FromMilliseconds((double)a["timeoutMs"]!), CancellationToken.None)
             .ConfigureAwait(false);
         return new JsonObject { ["reply"] = JsonNode.Parse(reply.GetRawText()) };
+    }
+
+    // One call, answered the moment it returns: the case reads the source queue next.
+    private async Task<JsonNode> ReplayAsync(JsonObject a)
+    {
+        var ids = a["ids"]!.AsArray().Select(id => (string)id!).ToHashSet();
+        var replayed = await Mq.Replay((string)a["from"]!)
+            .ReplayAsync(int.MaxValue, delivery =>
+            {
+                try
+                {
+                    using var body = JsonDocument.Parse(delivery.Body);
+                    return body.RootElement.ValueKind == JsonValueKind.Object
+                           && body.RootElement.TryGetProperty("id", out var id)
+                           && id.ValueKind == JsonValueKind.String
+                           && ids.Contains(id.GetString()!);
+                }
+                catch (JsonException)
+                {
+                    return false;
+                }
+            })
+            .ConfigureAwait(false);
+        return new JsonObject { ["replayed"] = replayed };
     }
 
     private static JsonElement Element(JsonNode? node) =>
