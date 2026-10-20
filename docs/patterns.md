@@ -86,6 +86,9 @@ per step, bound with the step's name; each hop is published to that exchange wit
 next step's name as routing key, caused by the message the step handled. That is the
 topology all five libraries share (AMQP-SLIP-001), so a step written in another
 language continues a route started here.
+Up to 0.7.14 a hop went to the default exchange and the queue by name, so a queue
+bound beside a step never saw it. A step queue you delete and redeclare by hand now
+needs its binding to the pipeline exchange back.
 
 The steps are type-checked against each other at compile time — a step added after
 one producing `Order` can only accept an `Order`. A mismatch is a compile error

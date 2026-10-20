@@ -62,6 +62,10 @@ typo in it. The cheapest moment to discover that is the publish call. The
 alternative — the broker's default — is that the message disappears and the problem
 surfaces hours later as an absence nobody can account for.
 
+To tell the two apart in code rather than by the message text, read the flags on
+the exception: `PublishFailedException.Unroutable` is true when no queue matched, and
+`.Nacked` when the broker refused the message with a `basic.nack` (since 0.7.15).
+
 Where the discard really is intended:
 
 ```csharp
