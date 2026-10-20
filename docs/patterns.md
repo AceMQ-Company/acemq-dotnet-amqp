@@ -389,7 +389,10 @@ message first and lose it, and count it as replayed.
 
 **What the filter rejects is put back, not discarded.** Selective replay is normally
 about picking out one tenant or one kind of failure, and losing the rest as a side
-effect of looking at them would be a poor trade.
+effect of looking at them would be a poor trade. `ReplayAsync` returns only once
+the messages it passed over are back on the source queue, so a `PendingAsync()`
+straight after it counts them, on a quorum queue too (up to 0.7.13 it could read 0
+there).
 
 Replayed messages carry `acemq-replayed-from`, `acemq-replayed-at` and
 `acemq-replay-count`, and the failure reason is cleared — it belonged to the
