@@ -17,7 +17,9 @@ While the version is `0.x` the public API may change in any release.
   for ever. `ConsumerOptions.WithRetryDelay(...)` is now the explicit opt-in to the
   old behaviour, and `Ack.Retry(TimeSpan, reason)` still honours its delay without a
   policy. A responder whose reply cannot be sent, and a pipeline hop that is not
-  taken, are still retried (AMQP-PUB-002), not dead-lettered.
+  taken, are still retried (AMQP-PUB-002), not dead-lettered; and a handler that
+  fails while the connection is draining or closing is handed back, not
+  dead-lettered.
 - **A pipeline hops through its own direct exchange** (AMQP-SLIP-001, TCK SLIP-001,
   SLIP-002). `mq.Pipeline<T>("orders")` now declares exchange `orders` and binds each
   `orders.{step}` with the step's name, and a step publishes the next hop to that
