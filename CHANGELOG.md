@@ -15,6 +15,9 @@ While the version is `0.x` the public API may change in any release.
   (TCK CLAIM-001, CLAIM-002, OUTBOX-001, OUTBOX-002, CONSUME-001).
 - `OutboxRecord.Headers` and an `OutboxRecord` constructor that takes them.
   `DbOutboxStore.CreateTableSql()` has a nullable `headers` column.
+- Runs the AceMQ TCK v0.3.3 (was v0.3.2), which adds SLIP-004, SLIP-005,
+  CLAIM-001, CLAIM-002, OUTBOX-001, OUTBOX-002, CONSUME-001 and CONSUME-002
+  to the default run: 38 cases.
 
 ### Changed
 
