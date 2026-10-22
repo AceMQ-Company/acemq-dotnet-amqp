@@ -8,6 +8,8 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+## [0.7.18] - 2026-10-22
+
 ### Added
 
 - `AceMqConnection.ForwardAsync(IRoute, T, Envelope, IReadOnlyDictionary<string, object>?)`:
