@@ -113,11 +113,14 @@ internal sealed class Driver
     private static readonly string[] Ops =
     [
         "hello", "begin", "end", "publish", "consume", "handled", "schedule", "request",
-        "declareStream", "readStream", "metrics", "replay", "pipeline",
+        "declareStream", "readStream", "metrics", "replay", "pipeline", "claimCheck", "outbox", "consumeGroup",
     ];
 
     private readonly string _url;
     private AceMqConnection? _connection;
+    private ConnectionConfig? _config;
+    private InMemoryOutboxStore? _outboxStore;
+    private OutboxRelay? _relay;
     private readonly List<IDisposable> _consumers = new();
     private readonly Dictionary<string, Tally> _tallies = new();
     private Scheduler? _scheduler;
@@ -146,6 +149,9 @@ internal sealed class Driver
             case "metrics": return Metrics();
             case "replay": return await ReplayAsync(a).ConfigureAwait(false);
             case "pipeline": await PipelineAsync(a).ConfigureAwait(false); return new JsonObject();
+            case "claimCheck": await ClaimCheckAsync(a).ConfigureAwait(false); return new JsonObject();
+            case "outbox": return await OutboxAsync(a).ConfigureAwait(false);
+            case "consumeGroup": await ConsumeGroupAsync(a).ConfigureAwait(false); return new JsonObject();
             default: throw new NotSupportedException((string?)a["op"]);
         }
     }
@@ -185,7 +191,8 @@ internal sealed class Driver
             .ClientName(clientName)
             .Origin($"{clientName}@{Environment.MachineName}");
         if ((bool?)a["confirms"] == false) config.WithoutPublisherConfirms();
-        _connection = await AceMqConnection.ConnectAsync(config.Build()).ConfigureAwait(false);
+        _config = config.Build();
+        _connection = await AceMqConnection.ConnectAsync(_config).ConfigureAwait(false);
     }
 
     private void Sample(Instrument instrument, ReadOnlySpan<KeyValuePair<string, object?>> tags)
@@ -201,6 +208,9 @@ internal sealed class Driver
         _requesters.Clear();
         _scheduler?.Dispose();
         _scheduler = null;
+        _relay?.Dispose();
+        _relay = null;
+        _outboxStore = null;
         foreach (var consumer in _consumers) consumer.Dispose();
         _consumers.Clear();
         _tallies.Clear();
@@ -350,6 +360,53 @@ internal sealed class Driver
             });
         }
         _consumers.Add(await builder.BuildAsync().ConfigureAwait(false));
+    }
+
+    private async Task ClaimCheckAsync(JsonObject a)
+    {
+        if (_connection != null) await _connection.CloseAsync().ConfigureAwait(false);
+        var codec = ClaimCheckCodec.Wrapping(new JsonCodec(), new FilesystemClaimCheckStore((string)a["directory"]!), (int)a["thresholdBytes"]!);
+        _connection = await AceMqConnection.ConnectAsync(_config!, codec, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async Task<JsonNode> OutboxAsync(JsonObject a)
+    {
+        var routingKey = (string)a["routingKey"]!;
+        var builder = Envelope.Of(routingKey.Length == 0 ? "message" : routingKey);
+        if (a["envelope"] is JsonObject fields)
+        {
+            if (fields["id"] is { } id) builder.Id((string)id!);
+            if (fields["correlationId"] is { } correlation) builder.CorrelationId((string?)correlation);
+            if (fields["headers"] is JsonObject headers)
+                foreach (var (name, value) in headers) builder.Header(name, (string)value!);
+        }
+        if (_relay == null)
+        {
+            _outboxStore = new InMemoryOutboxStore();
+            _relay = Mq.Outbox(_outboxStore);
+            _relay.Start();
+        }
+        var record = OutboxRecord.For(Mq, (string?)a["exchange"] ?? "", routingKey, Element(a["body"]), builder.Build());
+        await _outboxStore!.AddAsync(record).ConfigureAwait(false);
+        return new JsonObject { ["id"] = record.Id };
+    }
+
+    private async Task ConsumeGroupAsync(JsonObject a)
+    {
+        var queue = (string)a["queue"]!;
+        var behaviour = a["behaviour"] as JsonObject;
+        var sleep = TimeSpan.FromMilliseconds((double?)behaviour?["sleepMs"] ?? 0);
+        var tally = new Tally();
+        async Task<Ack> HandleAsync(IMessage<JsonElement> message)
+        {
+            tally.Count(message);
+            if (sleep > TimeSpan.Zero) await Task.Delay(sleep).ConfigureAwait(false);
+            return Ack.Accept();
+        }
+        await Mq.ApplyAsync(Topology.Define().QueueWithDeadLetter(queue).Build()).ConfigureAwait(false);
+        _consumers.Add(await ConsumerGroup.StartAsync<JsonElement>(Mq, queue, (int)a["size"]!,
+            ConsumerOptions.Prefetch((int?)a["prefetch"] ?? 10), HandleAsync).ConfigureAwait(false));
+        _tallies[(string)a["handle"]!] = tally;
     }
 
     private static Dictionary<string, int> FailFirst(JsonObject? behaviour) =>
