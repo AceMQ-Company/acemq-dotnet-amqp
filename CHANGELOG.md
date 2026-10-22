@@ -8,6 +8,15 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- `AceMqConnection.ForwardAsync(IRoute, T, Envelope, IReadOnlyDictionary<string, object>?)`:
+  pass the delivery's `WireHeaders` and a routing-slip hop keeps the `x-acemq-` headers
+  this version does not know, as a pipeline hop does (AMQP-SLIP-005). The envelope's own
+  fields, `x-acemq-error`, `x-acemq-claim` and the old slip are not copied. The
+  three-argument `ForwardAsync(IRoute, T, Envelope)` is unchanged and still drops them,
+  because an `Envelope` does not hold them; the docs now use the new form.
+
 ## [0.7.17] - 2026-10-22
 
 ### Added

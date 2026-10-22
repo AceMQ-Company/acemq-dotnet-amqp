@@ -149,7 +149,7 @@ public sealed class Pipeline<T> : IDisposable
     /// the envelope's own fields, the error and claim of the delivery that was handled,
     /// and the slip in either form, which the onward route replaces.
     /// </summary>
-    private static readonly HashSet<string> NotCarried = new HashSet<string>(StringComparer.Ordinal)
+    internal static readonly HashSet<string> NotCarried = new HashSet<string>(StringComparer.Ordinal)
     {
         AceHeaders.Id, AceHeaders.Type, AceHeaders.Version, AceHeaders.Correlation,
         AceHeaders.Causation, AceHeaders.Attempt, AceHeaders.FirstSeen, AceHeaders.Origin,

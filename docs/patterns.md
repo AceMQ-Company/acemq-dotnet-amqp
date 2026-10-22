@@ -302,11 +302,18 @@ await mq.ConsumeAsync<Order>("validate", async message =>
     var slip = RoutingSlip.Of(message)!.Advance();
     if (!slip.IsFinished)
     {
-        await mq.ForwardAsync(slip, message.Payload, message.Envelope);
+        await mq.ForwardAsync(slip, message.Payload, message.Envelope, message.WireHeaders);
     }
     return Ack.Accept();
 });
 ```
+
+Pass `message.WireHeaders` as above. The envelope holds no `x-acemq-` header this
+version does not know, so the three-argument `ForwardAsync(slip, payload, envelope)`
+drops any that a newer library put on the message; with the wire headers they travel on,
+as they do on a pipeline hop. Up to 0.7.17 the three-argument form was the only one. The
+envelope's own fields, including `x-acemq-first-seen`, travel either way, so the run's age
+is measured from when it started.
 
 A step can change what happens next — skip ahead when a check is unnecessary, or go
 back to an earlier step:
@@ -363,7 +370,7 @@ await mq.ConsumeAsync<Order>("charge-queue", async message =>
     var slip = Itinerary.Of(message)!.Advance();
     if (!slip.IsFinished)
     {
-        await mq.ForwardAsync(slip, message.Payload, message.Envelope);
+        await mq.ForwardAsync(slip, message.Payload, message.Envelope, message.WireHeaders);
     }
     return Ack.Accept();
 });

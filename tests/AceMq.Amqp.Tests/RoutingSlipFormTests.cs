@@ -549,6 +549,59 @@ public sealed class RoutingSlipFormTests
         Assert.True(firstSeen >= before.ToUnixTimeMilliseconds(), $"first-seen was {firstSeen}");
     }
 
+    [Theory]
+    [InlineData(SlipForm.Declared, true)]
+    [InlineData(SlipForm.Itinerary, true)]
+    [InlineData(SlipForm.Declared, false)]
+    public async Task ForwardingWithTheWireHeadersKeepsUnknownReservedOnes(SlipForm form, bool passWire)
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        var first = _q + ".first";
+        var second = _q + ".second";
+        foreach (var step in new[] { first, second }) await mq.DeclareQueueAsync(step);
+        IRoute route = form == SlipForm.Declared
+            ? RoutingSlip.StartOf(first, second)
+            : new Itinerary().Then(string.Empty, first, "first").Then(string.Empty, second, "second");
+
+        var headers = new Dictionary<string, object>
+        {
+            [AceHeaders.Id] = "fwd-1",
+            [AceHeaders.FirstSeen] = 1761134400000L,
+            [AceHeaders.Error] = "left behind",
+            ["x-tenant"] = "acme",
+            ["x-acemq-future"] = "kept",
+        };
+        foreach (var pair in route.ToHeaders()) headers[pair.Key] = pair.Value;
+        await mq.Transport.SendAsync(
+            new OutboundMessage(
+                "", first, JsonSerializer.SerializeToUtf8Bytes("an order"), headers,
+                "fwd-1", "application/json",
+                persistent: true, mandatory: true, expiration: null, priority: null, replyTo: null),
+            CancellationToken.None);
+
+        using var hop = await mq.ConsumeAsync<string>(first, async message =>
+        {
+            var onward = Route.Of(message)!.Advance();
+            if (passWire) await mq.ForwardAsync(onward, message.Payload, message.Envelope, message.WireHeaders);
+            else await mq.ForwardAsync(onward, message.Payload, message.Envelope);
+            return Ack.Accept();
+        });
+
+        PulledMessage<string>? arrived = null;
+        await Eventually(() =>
+            (arrived = mq.PullAsync<string>(second, TimeSpan.FromMilliseconds(20)).GetAwaiter().GetResult()) != null,
+            "the forwarded message");
+        await arrived!.AcknowledgeAsync();
+
+        Assert.Equal("acme", arrived.WireHeaders["x-tenant"]);
+        Assert.Equal(1761134400000L, Convert.ToInt64(arrived.WireHeaders[AceHeaders.FirstSeen], System.Globalization.CultureInfo.InvariantCulture));
+        Assert.False(arrived.WireHeaders.ContainsKey(AceHeaders.Error));
+        Assert.Equal(form == SlipForm.Declared ? second : "second", Route.From(arrived.WireHeaders)!.Destination!.Label);
+        // The three-argument form only has the envelope, which holds no unknown reserved header.
+        Assert.Equal(passWire, arrived.WireHeaders.ContainsKey("x-acemq-future"));
+        if (passWire) Assert.Equal("kept", arrived.WireHeaders["x-acemq-future"]);
+    }
+
     [Fact]
     public void AnEnvelopeWithoutFirstSeenIsFirstSeenWhenRead()
     {

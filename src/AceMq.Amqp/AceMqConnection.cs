@@ -1480,7 +1480,7 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// <remarks>
     /// Takes either wire form: a <see cref="RoutingSlip"/>, whose current step names a
     /// queue, or an <see cref="Itinerary"/>, whose current step carries its own
-    /// exchange and routing key. Each step's handler calls <see cref="ForwardAsync{T}"/>
+    /// exchange and routing key. Each step's handler calls <see cref="ForwardAsync{T}(IRoute, T, Envelope, IReadOnlyDictionary{string, object})"/>
     /// to pass it on, so the route can be changed part way through by whatever handled
     /// the last step.
     /// </remarks>
@@ -1503,8 +1503,32 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// Call <see cref="IRoute.Advance"/> before this to move it on. A handler that
     /// forwards without advancing sends the message back to itself, which is a loop
     /// rather than a route.
+    /// <para>
+    /// An <see cref="Envelope"/> holds no <c>x-acemq-</c> header it does not know, so
+    /// this form drops any a newer library put on the message. Pass the delivery's
+    /// <see cref="IMessage{T}.WireHeaders"/> to
+    /// <see cref="ForwardAsync{T}(IRoute, T, Envelope, IReadOnlyDictionary{string, object})"/>
+    /// to keep them.
+    /// </para>
     /// </remarks>
-    public async Task<string> ForwardAsync<T>(IRoute slip, T payload, Envelope envelope)
+    public Task<string> ForwardAsync<T>(IRoute slip, T payload, Envelope envelope) =>
+        ForwardAsync(slip, payload, envelope, null);
+
+    /// <summary>
+    /// Sends a message to the slip's current step, keeping its envelope and every
+    /// <c>x-acemq-</c> header it arrived with that this version does not know.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="wireHeaders"/> is the delivery's <see cref="IMessage{T}.WireHeaders"/>
+    /// (or <c>PulledMessage&lt;T&gt;.WireHeaders</c>). From it the hop carries on the
+    /// reserved headers the envelope does not model, as a pipeline hop does
+    /// (AMQP-SLIP-005); the envelope's own fields, <c>x-acemq-error</c>,
+    /// <c>x-acemq-claim</c> and the old slip are not copied. Application headers still
+    /// come from <paramref name="envelope"/>, so a handler that changed them is heard.
+    /// <c>null</c> behaves as the three-argument form.
+    /// </remarks>
+    public async Task<string> ForwardAsync<T>(
+        IRoute slip, T payload, Envelope envelope, IReadOnlyDictionary<string, object>? wireHeaders)
     {
         EnsureOpen();
         if (slip == null) throw new ArgumentNullException(nameof(slip));
@@ -1536,11 +1560,24 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         }
 
         var carried = builder.Build();
+        var onwardHeaders = new Dictionary<string, object>(StringComparer.Ordinal);
+        if (wireHeaders != null)
+        {
+            foreach (var pair in wireHeaders)
+            {
+                if (AceHeaders.IsAceHeader(pair.Key) && !AceMq.Amqp.Pipeline<object>.NotCarried.Contains(pair.Key))
+                {
+                    onwardHeaders[pair.Key] = pair.Value;
+                }
+            }
+        }
+        foreach (var pair in slip.ToHeaders()) onwardHeaders[pair.Key] = pair.Value;
+
         var destination = slip.Destination!;
         var publisher = Publisher<T>(
             destination.Exchange, destination.RoutingKey, PublishOptions.OnBehalfOfCaller());
         await ((Publisher<T>)publisher)
-            .SendWithHeadersAsync(payload, carried, slip.ToHeaders(), CancellationToken.None)
+            .SendWithHeadersAsync(payload, carried, onwardHeaders, CancellationToken.None)
             .ConfigureAwait(false);
         return carried.Id;
     }

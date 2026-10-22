@@ -146,7 +146,7 @@ public sealed class RoutingSlip : IRoute
     /// </summary>
     /// <remarks>
     /// A step name is published to a queue of that name on the default exchange,
-    /// which is what <see cref="AceMqConnection.ForwardAsync{T}"/> has always done.
+    /// which is what <see cref="AceMqConnection.ForwardAsync{T}(IRoute, T, Envelope)"/> has always done.
     /// Inside a <see cref="Pipeline{T}"/> the name is resolved against the pipeline's
     /// own queues instead, because there the step names are short and the queues they
     /// belong to are prefixed with the pipeline's name.
