@@ -23,6 +23,11 @@ exactly, in every language, or two services stop understanding each other.
 | `acemq-replay-count` | integer | How many times it has been replayed |
 | `traceparent` / `tracestate` | string | W3C trace context |
 
+A message read without `x-acemq-first-seen` — published by something that is not
+AceMQ — has `FirstSeen` set to the moment it was read, as in Python and Ruby, and that
+value is what a retry move or pipeline hop writes on. Up to 0.7.16 it read as the Unix
+epoch, and a hop wrote `x-acemq-first-seen: 0`.
+
 Note the two timestamps are encoded **differently** — `first-seen` is an integer,
 `replayed-at` is a string. That is not an inconsistency to tidy up in a port. It is
 the contract, and a port that "fixes" it produces messages Java cannot read.

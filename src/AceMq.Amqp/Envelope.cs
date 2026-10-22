@@ -67,6 +67,11 @@ public sealed class Envelope
     public int Attempt { get; }
 
     /// <summary>When the message was first published.</summary>
+    /// <remarks>
+    /// A message read off the wire without <c>x-acemq-first-seen</c> — published by a
+    /// client that is not AceMQ — is first seen when it is read, to the millisecond.
+    /// Up to 0.7.16 it read as the Unix epoch.
+    /// </remarks>
     public DateTimeOffset FirstSeen { get; }
 
     /// <summary>The publishing process, conventionally <c>service@host</c>.</summary>
@@ -194,7 +199,11 @@ public sealed class Envelope
             Str(headers, AceHeaders.Correlation) ?? id,
             Str(headers, AceHeaders.Causation),
             Int(headers, AceHeaders.Attempt) ?? 1,
-            DateTimeOffset.FromUnixTimeMilliseconds(Long(headers, AceHeaders.FirstSeen) ?? 0L),
+            // Absent reads as now, as in Python and Ruby: up to 0.7.16 it read as the
+            // epoch, and every hop or retry move then wrote x-acemq-first-seen: 0 on.
+            Long(headers, AceHeaders.FirstSeen) is long seen
+                ? DateTimeOffset.FromUnixTimeMilliseconds(seen)
+                : DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()),
             Str(headers, AceHeaders.Origin),
             Str(headers, AceHeaders.Error),
             Str(headers, AceHeaders.Claim),

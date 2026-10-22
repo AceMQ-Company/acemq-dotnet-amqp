@@ -144,6 +144,42 @@ public sealed class Pipeline<T> : IDisposable
     /// </summary>
     private static readonly TimeSpan HopRetryDelay = TimeSpan.FromSeconds(5);
 
+    /// <summary>
+    /// Headers the hop's envelope writes itself, or that must not travel past a step:
+    /// the envelope's own fields, the error and claim of the delivery that was handled,
+    /// and the slip in either form, which the onward route replaces.
+    /// </summary>
+    private static readonly HashSet<string> NotCarried = new HashSet<string>(StringComparer.Ordinal)
+    {
+        AceHeaders.Id, AceHeaders.Type, AceHeaders.Version, AceHeaders.Correlation,
+        AceHeaders.Causation, AceHeaders.Attempt, AceHeaders.FirstSeen, AceHeaders.Origin,
+        AceHeaders.Error, AceHeaders.Claim,
+        RoutingSlip.RouteHeader, RoutingSlip.PositionHeader, RoutingSlip.RunIdHeader,
+        Itinerary.Header,
+    };
+
+    /// <summary>
+    /// What a hop carries on besides its envelope (AMQP-SLIP-005): every header that
+    /// arrived — application headers, trace context, and <c>x-acemq-</c> headers this
+    /// version does not know — then the onward slip.
+    /// </summary>
+    /// <remarks>
+    /// Up to 0.7.16 the hop rebuilt the message from the envelope's fields alone, so a
+    /// tenant header, a <c>traceparent</c> and any reserved header a newer library
+    /// added were gone after the first step. The same rule a retry move follows.
+    /// </remarks>
+    internal static IReadOnlyDictionary<string, object> HopHeaders(
+        IReadOnlyDictionary<string, object> arrived, IRoute onward)
+    {
+        var headers = new Dictionary<string, object>(StringComparer.Ordinal);
+        foreach (var pair in arrived)
+        {
+            if (!NotCarried.Contains(pair.Key)) headers[pair.Key] = pair.Value;
+        }
+        foreach (var pair in onward.ToHeaders()) headers[pair.Key] = pair.Value;
+        return headers;
+    }
+
     internal async Task StartAsync()
     {
         // Quorum, from the library default. A pipeline queue holds work that has
@@ -284,6 +320,7 @@ public sealed class Pipeline<T> : IDisposable
                         .FirstSeen(message.Envelope.FirstSeen)
                         .Origin(message.Envelope.Origin)
                         .Build();
+                    var onwardHeaders = HopHeaders(message.WireHeaders, onwardRoute);
 
                     // Verbatim, and that is the whole of it. step.Encode has already
                     // turned the handler's output into this step's wire format; sending
@@ -302,7 +339,7 @@ public sealed class Pipeline<T> : IDisposable
                     {
                         await ((Publisher<byte[]>)publisher)
                             .SendWithHeadersAsync(
-                                step.Encode(output), onward, onwardRoute.ToHeaders(),
+                                step.Encode(output), onward, onwardHeaders,
                                 CancellationToken.None)
                             .ConfigureAwait(false);
                     }

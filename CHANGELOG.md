@@ -8,6 +8,35 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- The TCK driver implements `claimCheck`, `outbox` and `consumeGroup`, through the
+  library's own `ClaimCheckCodec`, `OutboxRecord`/`OutboxRelay` and `ConsumerGroup`
+  (TCK CLAIM-001, CLAIM-002, OUTBOX-001, OUTBOX-002, CONSUME-001).
+- `OutboxRecord.Headers` and an `OutboxRecord` constructor that takes them.
+  `DbOutboxStore.CreateTableSql()` has a nullable `headers` column.
+
+### Changed
+
+- **A pipeline hop carries every header it does not own to the next step**
+  (AMQP-SLIP-005, TCK SLIP-004, SLIP-005): application headers, `traceparent` and
+  `x-acemq-` headers this version does not know, in both slip forms. The hop writes
+  its own envelope fields and the onward slip; `x-acemq-error` and `x-acemq-claim` of
+  the delivery it handled stay behind. Up to 0.7.16 the hop rebuilt the message from
+  the envelope alone and dropped them all after the first step.
+- **`Envelope.FromWire` reads a missing `x-acemq-first-seen` as the time it was read**,
+  as Python and Ruby do. Up to 0.7.16 it read as the Unix epoch.
+
+### Fixed
+
+- A message without `x-acemq-first-seen` no longer leaves a pipeline hop or a retry
+  move with `x-acemq-first-seen: 0`.
+- **The outbox keeps the envelope's application headers** (AMQP-OUTBOX-001, TCK
+  OUTBOX-001). `OutboxRecord.Of` and `For` now record them, both stores keep them,
+  and the relay publishes them. A `DbOutboxStore` table from before this release has
+  no `headers` column and keeps working without them; add it with
+  `ALTER TABLE acemq_outbox ADD headers TEXT NULL` to keep them.
+
 ## [0.7.16] - 2026-10-21
 
 ### Added

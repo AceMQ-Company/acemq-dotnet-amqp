@@ -505,4 +505,55 @@ public sealed class RoutingSlipFormTests
         await shipped.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(new[] { "validate", "ship" }, ran.ToArray());
     }
+
+    [Theory]
+    [InlineData(SlipForm.Declared)]
+    [InlineData(SlipForm.Itinerary)]
+    public async Task AHopCarriesEveryHeaderItDoesNotOwnOn(SlipForm form)
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        using var pipeline = await mq.Pipeline<string>(_q)
+            .WritingSlipAs(form)
+            .Step<string>("validate", Task.FromResult<string?>)
+            .Step<string>("ship", _ => throw new AceFatalException("stopped here on purpose"))
+            .BuildAsync();
+        await mq.DeclareQueueAsync(pipeline.QueueFor("ship") + ".dlq");
+
+        // Published by something that is not AceMQ, so there is no first-seen, plus a
+        // tenant, a trace parent and a reserved header no library knows yet.
+        await mq.Transport.SendAsync(
+            new OutboundMessage(
+                "", pipeline.QueueFor("validate"), JsonSerializer.SerializeToUtf8Bytes("an order"),
+                new Dictionary<string, object>
+                {
+                    [AceHeaders.Id] = "hop-1",
+                    ["x-tenant"] = "acme",
+                    ["traceparent"] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+                    ["x-acemq-future"] = "kept",
+                },
+                "hop-1", "application/json",
+                persistent: true, mandatory: true, expiration: null, priority: null, replyTo: null),
+            CancellationToken.None);
+
+        var before = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var stuck = await StuckAt(mq, pipeline.QueueFor("ship"));
+        await stuck.AcknowledgeAsync();
+
+        Assert.Equal("acme", stuck.WireHeaders["x-tenant"]);
+        Assert.Equal("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", stuck.WireHeaders["traceparent"]);
+        Assert.Equal("kept", stuck.WireHeaders["x-acemq-future"]);
+        Assert.Equal("ship", Route.From(stuck.WireHeaders)!.Destination!.Label);
+
+        // Up to 0.7.16 a message without first-seen left the hop with 0.
+        var firstSeen = Convert.ToInt64(stuck.WireHeaders[AceHeaders.FirstSeen], System.Globalization.CultureInfo.InvariantCulture);
+        Assert.True(firstSeen >= before.ToUnixTimeMilliseconds(), $"first-seen was {firstSeen}");
+    }
+
+    [Fact]
+    public void AnEnvelopeWithoutFirstSeenIsFirstSeenWhenRead()
+    {
+        var before = DateTimeOffset.UtcNow.AddMilliseconds(-1);
+        var envelope = Envelope.FromWire(new Dictionary<string, object> { [AceHeaders.Id] = "x" });
+        Assert.InRange(envelope.FirstSeen, before, DateTimeOffset.UtcNow.AddMilliseconds(1));
+    }
 }

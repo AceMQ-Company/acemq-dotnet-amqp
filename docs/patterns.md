@@ -140,6 +140,14 @@ before it rather than what entered the pipeline — hence its own type parameter
 `ResumeAsync`. `WireHeaders` rather than `Headers`: the declared slip is in the
 reserved namespace, which `Headers` deliberately hides from an application.
 
+**Every header a step does not own is carried to the next one** (AMQP-SLIP-005):
+application headers such as a tenant, the W3C `traceparent`, and any `x-acemq-` header
+this version does not know. The hop writes its own envelope fields and the onward slip;
+the error and claim of the delivery it handled stay behind. Up to 0.7.16 a hop rebuilt
+the message from the envelope alone and dropped all of them after the first step. A
+message that entered without `x-acemq-first-seen` leaves the first hop with the time it
+was read, not `0`.
+
 A slip also lets one message skip a step the pipeline declares. Publish it to the
 first step's queue with a slip naming only the steps it needs, and the pipeline
 follows the slip rather than its own declaration.
@@ -177,6 +185,11 @@ relay.Start();
 
 Either both the row and the record exist, or neither does.
 
+The record keeps the envelope's id, type, correlation and causation, and — since
+0.7.17 — its **application headers**, which the relay publishes with it
+(`OutboxRecord.Headers`). Up to 0.7.16 a header put on the envelope, such as
+`x-tenant`, was gone by the time the relay published.
+
 `DbOutboxStore` is the one that makes this work, because the record has to be in the
 same database as the business change:
 
@@ -192,6 +205,17 @@ transaction.Commit();
 **Pass the transaction.** The overload without one opens its own connection and is
 therefore not in yours, which quietly gives up the entire guarantee.
 `store.CreateTableSql()` gives you the schema for a migration.
+
+A table created before 0.7.17 has no `headers` column and keeps working exactly as
+before: records are stored and relayed without their application headers. Add the
+column to keep them:
+
+```sql
+ALTER TABLE acemq_outbox ADD headers TEXT NULL;
+```
+
+The store checks for the column once, on a connection of its own, so the check never
+touches your transaction.
 
 `InMemoryOutboxStore` ships for tests and to show the shape — it is **not an outbox**,
 because it cannot be written in the same transaction as anything durable and loses

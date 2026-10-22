@@ -16,6 +16,8 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace AceMq.Amqp;
@@ -54,6 +56,7 @@ public sealed class DbOutboxStore : IOutboxStore
     private readonly string _table;
     private readonly string _prefix;
     private readonly int _maxAttempts;
+    private bool? _hasHeaders;
 
     public DbOutboxStore(ConnectionSupplier connections)
         : this(connections, "acemq_outbox", "@") { }
@@ -107,7 +110,8 @@ public sealed class DbOutboxStore : IOutboxStore
   attempts       INTEGER      NOT NULL,
   last_error     TEXT             NULL,
   published      INTEGER      NOT NULL,
-  leased_until   TIMESTAMP        NULL
+  leased_until   TIMESTAMP        NULL,
+  headers        TEXT             NULL
 );
 CREATE INDEX {_table}_pending ON {_table} (published, leased_until, created_at);";
 
@@ -125,24 +129,25 @@ CREATE INDEX {_table}_pending ON {_table} (published, leased_until, created_at);
     {
         if (record == null) throw new ArgumentNullException(nameof(record));
 
+        var headers = HasHeadersColumn();
         var sql = $@"INSERT INTO {_table}
   (id, exchange, routing_key, type, payload, correlation_id, causation_id,
-   created_at, attempts, last_error, published, leased_until)
+   created_at, attempts, last_error, published, leased_until{(headers ? ", headers" : "")})
 VALUES ({P("id")}, {P("exchange")}, {P("routingKey")}, {P("type")}, {P("payload")},
         {P("correlationId")}, {P("causationId")}, {P("createdAt")}, {P("attempts")},
-        NULL, 0, NULL)";
+        NULL, 0, NULL{(headers ? ", " + P("headers") : "")})";
 
         if (transaction?.Connection != null)
         {
             using var owned = Command(transaction.Connection, sql, transaction);
-            Bind(owned, record);
+            Bind(owned, record, headers);
             await ExecuteAsync(owned).ConfigureAwait(false);
             return;
         }
 
         using var connection = Open();
         using var command = Command(connection, sql, null);
-        Bind(command, record);
+        Bind(command, record, headers);
         await ExecuteAsync(command).ConfigureAwait(false);
     }
 
@@ -163,7 +168,7 @@ VALUES ({P("id")}, {P("exchange")}, {P("routingKey")}, {P("type")}, {P("payload"
         // version and read by nothing, so a poison row spent a place in every batch
         // and a publish attempt, indefinitely.
         var select = $@"SELECT id, exchange, routing_key, type, payload, correlation_id,
-       causation_id, created_at, attempts, last_error
+       causation_id, created_at, attempts, last_error{HeadersSelected()}
 FROM {_table}
 WHERE published = 0 AND attempts < {P("maxAttempts")}
   AND (leased_until IS NULL OR leased_until <= {P("now")})
@@ -258,7 +263,7 @@ WHERE id = {P("id")}",
         using var command = Command(
             connection,
             $@"SELECT id, exchange, routing_key, type, payload, correlation_id,
-       causation_id, created_at, attempts, last_error
+       causation_id, created_at, attempts, last_error{HeadersSelected()}
 FROM {_table}
 WHERE published = 0 AND attempts >= {P("maxAttempts")}
 ORDER BY created_at",
@@ -296,8 +301,42 @@ ORDER BY created_at",
         command.Parameters.Add(parameter);
     }
 
-    private void Bind(DbCommand command, OutboxRecord record)
+    /// <summary>
+    /// Whether the table has the <c>headers</c> column, added in 0.7.17.
+    /// </summary>
+    /// <remarks>
+    /// Asked once, on a connection of its own so a failed probe never touches a
+    /// caller's transaction. A table created before 0.7.17 keeps working exactly as it
+    /// did — records are stored and relayed without their application headers — until
+    /// <c>ALTER TABLE {table} ADD headers TEXT NULL</c> is run.
+    /// </remarks>
+    private bool HasHeadersColumn()
     {
+        if (_hasHeaders is bool known) return known;
+        using var connection = Open();
+        using var command = Command(connection, $"SELECT headers FROM {_table} WHERE 1 = 0", null);
+        try
+        {
+            using var reader = command.ExecuteReader();
+            _hasHeaders = true;
+        }
+        catch (DbException)
+        {
+            _hasHeaders = false;
+        }
+        return _hasHeaders.Value;
+    }
+
+    private string HeadersSelected() => HasHeadersColumn() ? ", headers" : string.Empty;
+
+    private void Bind(DbCommand command, OutboxRecord record, bool headers)
+    {
+        if (headers)
+        {
+            Add(command, "headers", record.Headers.Count == 0
+                ? null
+                : JsonSerializer.Serialize(record.Headers.ToDictionary(p => p.Key, p => p.Value)));
+        }
         Add(command, "id", record.Id);
         Add(command, "exchange", record.Exchange);
         Add(command, "routingKey", record.RoutingKey);
@@ -317,7 +356,28 @@ ORDER BY created_at",
             reader.IsDBNull(6) ? null : reader.GetString(6),
             new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(7), DateTimeKind.Utc)),
             reader.GetInt32(8),
-            reader.IsDBNull(9) ? null : reader.GetString(9));
+            reader.IsDBNull(9) ? null : reader.GetString(9),
+            reader.FieldCount > 10 && !reader.IsDBNull(10) ? Headers(reader.GetString(10)) : null);
+
+    private static Dictionary<string, object> Headers(string json)
+    {
+        var headers = new Dictionary<string, object>(StringComparer.Ordinal);
+        using var document = JsonDocument.Parse(json);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            var value = property.Value;
+            headers[property.Name] = value.ValueKind switch
+            {
+                JsonValueKind.String => value.GetString()!,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Number when value.TryGetInt64(out var whole) => whole,
+                JsonValueKind.Number => value.GetDouble(),
+                _ => value.GetRawText(),
+            };
+        }
+        return headers;
+    }
 
     private static Task ExecuteAsync(DbCommand command)
     {

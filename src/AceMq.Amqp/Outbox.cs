@@ -29,7 +29,28 @@ public sealed class OutboxRecord
         string id, string exchange, string routingKey, string type, string payload,
         string? correlationId, string? causationId, DateTimeOffset createdAt,
         int attempts, string? lastError)
+        : this(id, exchange, routingKey, type, payload, correlationId, causationId, createdAt,
+            attempts, lastError, null) { }
+
+    /// <summary>A record that carries application headers.</summary>
+    /// <remarks>
+    /// <c>headers</c> may be null. Reserved <c>x-acemq-</c> names in it are not kept:
+    /// the relay writes those from the record itself.
+    /// </remarks>
+    public OutboxRecord(
+        string id, string exchange, string routingKey, string type, string payload,
+        string? correlationId, string? causationId, DateTimeOffset createdAt,
+        int attempts, string? lastError, IReadOnlyDictionary<string, object>? headers)
     {
+        var kept = new Dictionary<string, object>(StringComparer.Ordinal);
+        if (headers != null)
+        {
+            foreach (var pair in headers)
+            {
+                if (!AceHeaders.IsAceHeader(pair.Key)) kept[pair.Key] = pair.Value;
+            }
+        }
+        Headers = kept;
         Id = id;
         Exchange = exchange;
         RoutingKey = routingKey;
@@ -45,7 +66,8 @@ public sealed class OutboxRecord
     public static OutboxRecord Of(string exchange, string routingKey, Envelope envelope, string payload) =>
         new OutboxRecord(
             envelope.Id, exchange, routingKey, envelope.Type, payload,
-            envelope.CorrelationId, envelope.CausationId, DateTimeOffset.UtcNow, 0, null);
+            envelope.CorrelationId, envelope.CausationId, DateTimeOffset.UtcNow, 0, null,
+            envelope.Headers);
 
     /// <summary>
     /// A record for a payload, encoded with the connection's codec.
@@ -85,12 +107,21 @@ public sealed class OutboxRecord
     public int Attempts { get; }
     public string? LastError { get; }
 
+    /// <summary>The envelope's application headers, published with the record.</summary>
+    /// <remarks>
+    /// Never null. Up to 0.7.16 a record had no headers at all, so a header the caller
+    /// put on the envelope — a tenant, a trace parent — was gone by the time the relay
+    /// published it (AMQP-OUTBOX-001).
+    /// </remarks>
+    public IReadOnlyDictionary<string, object> Headers { get; }
+
     /// <summary>The envelope this record was written with.</summary>
     public Envelope Envelope()
     {
         var builder = Amqp.Envelope.Of(Type).Id(Id).FirstSeen(CreatedAt);
         if (CorrelationId != null) builder.CorrelationId(CorrelationId);
         if (CausationId != null) builder.CausationId(CausationId);
+        foreach (var pair in Headers) builder.Header(pair.Key, pair.Value);
         return builder.Build();
     }
 
@@ -215,7 +246,7 @@ public sealed class InMemoryOutboxStore : IOutboxStore
             // attempt count carries so a record that always fails is visible.
             entry.Record = new OutboxRecord(
                 r.Id, r.Exchange, r.RoutingKey, r.Type, r.Payload, r.CorrelationId,
-                r.CausationId, r.CreatedAt, r.Attempts + 1, reason);
+                r.CausationId, r.CreatedAt, r.Attempts + 1, reason, r.Headers);
             entry.LeasedUntil = DateTimeOffset.MinValue;
         }
         return Task.CompletedTask;

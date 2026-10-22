@@ -191,4 +191,56 @@ public sealed class OutboxPoisonTests : IDisposable
         Assert.Throws<ArgumentException>(
             () => new DbOutboxStore(Connect, "acemq_outbox", "@", 0));
     }
+
+    private static OutboxRecord WithHeaders() =>
+        OutboxRecord.Of("", "work",
+            Envelope.Of("order.placed").Id("h-1").Header("x-tenant", "acme").Header("x-shard", 7L).Build(),
+            "\"A-1\"");
+
+    [Fact]
+    public async Task KeepsTheEnvelopesHeadersAndTheRelayPublishesThem()
+    {
+        var store = new DbOutboxStore(Connect, "acemq_outbox", "@");
+        WithSchema(store.CreateTableSql());
+        await store.AddAsync(WithHeaders());
+
+        var claimed = Assert.Single(await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30)));
+        Assert.Equal("acme", claimed.Headers["x-tenant"]);
+        Assert.Equal(7L, claimed.Headers["x-shard"]);
+        await store.MarkFailedAsync(claimed.Id, "try again");
+
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        using var relay = mq.Outbox(store);
+        Assert.Equal(1, await relay.DrainOnceAsync());
+
+        var back = await mq.Transport.ReceiveAsync("work", TimeSpan.FromSeconds(2), System.Threading.CancellationToken.None);
+        Assert.NotNull(back);
+        Assert.Equal("acme", back!.Headers["x-tenant"]);
+        Assert.Equal("h-1", back.Headers[AceHeaders.Id]);
+    }
+
+    [Fact]
+    public async Task ATableFromBefore0Point7Point17StillWorksWithoutTheHeadersColumn()
+    {
+        var store = new DbOutboxStore(Connect, "acemq_outbox", "@");
+        WithSchema(store.CreateTableSql().Replace(",\n  headers        TEXT             NULL", string.Empty));
+        await store.AddAsync(WithHeaders());
+
+        var claimed = Assert.Single(await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30)));
+        Assert.Equal("h-1", claimed.Id);
+        Assert.Empty(claimed.Headers);
+    }
+
+    [Fact]
+    public async Task TheInMemoryStoreKeepsHeadersAcrossAFailedPass()
+    {
+        var store = new InMemoryOutboxStore();
+        await store.AddAsync(WithHeaders());
+        var claimed = Assert.Single(await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30)));
+        await store.MarkFailedAsync(claimed.Id, "try again");
+        var again = Assert.Single(await store.ClaimBatchAsync(10, TimeSpan.FromSeconds(30)));
+        Assert.Equal("acme", again.Headers["x-tenant"]);
+        Assert.Equal("acme", again.Envelope().Headers["x-tenant"]);
+    }
 }
