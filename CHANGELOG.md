@@ -8,6 +8,11 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- Runs the AceMQ TCK v0.3.2 (was v0.3.1), which adds SLIP-003 to the
+  default run: 30 cases.
+
 ### Changed
 
 - **A pipeline step that throws, with no retry policy, now makes one attempt**

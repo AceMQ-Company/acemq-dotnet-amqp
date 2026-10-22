@@ -493,7 +493,7 @@ jobs:
       - name: Build the TCK driver
         run: dotnet build tests/AceMq.Amqp.TckDriver/AceMq.Amqp.TckDriver.csproj --configuration Release
 
-      - uses: AceMQ-Company/acemq-amqp-tck@v0.3.1
+      - uses: AceMQ-Company/acemq-amqp-tck@v0.3.2
         with:
           driver: dotnet tests/AceMq.Amqp.TckDriver/bin/Release/net10.0/AceMq.Amqp.TckDriver.dll
 
