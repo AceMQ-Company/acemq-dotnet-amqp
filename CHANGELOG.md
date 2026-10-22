@@ -16,6 +16,8 @@ While the version is `0.x` the public API may change in any release.
   fields, `x-acemq-error`, `x-acemq-claim` and the old slip are not copied. The
   three-argument `ForwardAsync(IRoute, T, Envelope)` is unchanged and still drops them,
   because an `Envelope` does not hold them; the docs now use the new form.
+- Runs the AceMQ TCK v0.3.4 (was v0.3.3), which adds SLIP-006 and SLIP-007
+  to the default run: 40 cases.
 
 ## [0.7.17] - 2026-10-22
 
