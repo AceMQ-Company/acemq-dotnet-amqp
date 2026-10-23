@@ -148,6 +148,10 @@ the message from the envelope alone and dropped all of them after the first step
 message that entered without `x-acemq-first-seen` leaves the first hop with the time it
 was read, not `0`.
 
+Every hop keeps the run's `x-acemq-first-seen` (AMQP-SLIP-006, TCK SLIP-006 and
+SLIP-007), so `acemq.pipeline.run.duration` covers the whole run, from the first publish
+to the last step, not only the last hop.
+
 A slip also lets one message skip a step the pipeline declares. Publish it to the
 first step's queue with a slip naming only the steps it needs, and the pipeline
 follows the slip rather than its own declaration.
