@@ -161,6 +161,27 @@ actually dead-lettered or parked. The end state was the same; the window before 
 not, and Java's `RetryTopology.declare` had been declaring them at start-up all along,
 which is what the shared contract fixture records.
 
+## When the dead-letter or parked queue refuses the copy
+
+A dead letter or a park is a republish to `{queue}.dlq` or `{queue}.parked`, and the
+broker can refuse it: a nack, a `reject-publish` overflow, or no queue to route to. The
+original delivery is then the only copy, so it is not acknowledged. From 0.7.19 the
+consumer holds it for one second and then hands it back with requeue, and it is set aside
+again when it comes back (AMQP-RETRY-007, TCK PARK-002). Up to 0.7.18 it was handed back
+at once, so the loop ran at broker speed. A close cuts the pause short. The pause holds
+one prefetch slot while it runs.
+
+**A refusal that lasts ends in `{queue}.dlq`, not lost.** Each requeue counts against a
+quorum source queue's delivery limit, twenty by default on RabbitMQ 4, and at one second
+a requeue that limit is spent after about twenty seconds of refusal. The broker then
+dead-letters the message itself, through the source queue's dead-letter exchange, so a
+park the broker refuses for longer than that arrives in `{queue}.dlq` with the
+`x-acemq-` headers it had, rather than in `{queue}.parked`. That is deliberate, and every
+AceMQ library does the same: a copy that cannot go where it was meant to goes to the next
+safe place. Look in the dead-letter queue as well as the parked one after a broker
+outage. A classic source queue has no delivery limit, so there the message keeps coming
+back until the queue takes it.
+
 ## Retries, duplicates and shutdown
 
 `ConsumerOptions` also takes a retry policy and an idempotency store:

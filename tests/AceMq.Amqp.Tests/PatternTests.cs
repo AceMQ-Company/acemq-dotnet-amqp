@@ -805,6 +805,32 @@ public sealed class PatternTests : IDisposable
             "the rejected message to be back on the queue");
     }
 
+    [Fact]
+    public async Task WaitsAsLongAsItIsToldForWhatTheFilterPassedOver()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync("work");
+        await mq.DeclareQueueAsync("work.dead");
+
+        Assert.Equal(TimeSpan.FromSeconds(5), mq.Replay("work.dead").PassedOverWait);
+        Assert.Throws<ArgumentException>(
+            () => mq.Replay("work.dead").WaitingForPassedOver(TimeSpan.FromSeconds(-1)));
+
+        var publisher = mq.Publisher<string>("", "work.dead");
+        await publisher.SendAsync("keep");
+        await publisher.SendAsync("skip");
+
+        // No wait at all: the replay returns at once, and the passed-over message is
+        // still put back rather than lost.
+        var replay = mq.Replay("work.dead").WaitingForPassedOver(TimeSpan.Zero);
+        Assert.Equal(TimeSpan.Zero, replay.PassedOverWait);
+        Assert.Equal(1, await replay.ReplayAsync(
+            10, d => System.Text.Encoding.UTF8.GetString(d.Body).Contains("keep")));
+        await Eventually(
+            () => mq.MessageCountAsync("work.dead").Result == 1,
+            "the passed-over message to be back on the queue");
+    }
+
     // ---- partitioning and ordering ---------------------------------------
 
     [Fact]

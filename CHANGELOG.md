@@ -8,6 +8,33 @@ While the version is `0.x` the public API may change in any release.
 
 ## [Unreleased]
 
+### Added
+
+- `Replay.WaitingForPassedOver(TimeSpan)` and `Replay.PassedOverWait`: how long a filtered
+  replay waits for the messages its filter passed over to be back on the source queue
+  (I5). Five seconds unless set, as before; `TimeSpan.Zero` returns at once. The
+  trade-off — passed-over messages held unacked, a consumer on the same queue can make the
+  wait run out, Go republishes instead — is in `docs/patterns.md`, "Replay".
+
+### Changed
+
+- **A pipeline hop is a new message** (I11, AMQP-SLIP-007, TCK SLIP-008 and SLIP-009),
+  in both slip forms: it publishes an `x-acemq-id` of its own, `x-acemq-causation` is the
+  handled message's id, and the correlation is unchanged, as in Go, Python and Ruby. Up
+  to 0.7.18 every hop kept the id of the message that entered the pipeline. Follow a run
+  by `x-acemq-correlation`, not by `x-acemq-id`. See `docs/patterns.md`, "Pipelines".
+- **`ForwardAsync` publishes the hop as a new message** too (I11, AMQP-SLIP-007): a fresh
+  `x-acemq-id`, `x-acemq-causation` set to the handled envelope's id, the correlation
+  kept; it returns the hop's id. Up to 0.7.18 it kept the handled message's id and
+  causation. `SendAlongAsync` is unchanged. See `docs/patterns.md`, "Routing slips".
+- **A park, dead letter or retry move the broker refuses is handed back after a
+  one-second pause** (I6, AMQP-RETRY-007, TCK PARK-002), as Go, Java, Python and Ruby do.
+  Up to 0.7.18 it was handed back at once, so on a quorum source queue the delivery limit
+  (twenty on RabbitMQ 4) was spent in well under a second. A refusal now has to last about
+  twenty seconds before the broker dead-letters the message, and then it ends in
+  `{queue}.dlq`, not lost. A close cuts the pause short. See `docs/consuming.md`, "When the
+  dead-letter or parked queue refuses the copy".
+
 ## [0.7.18] - 2026-10-22
 
 ### Added

@@ -473,6 +473,38 @@ public sealed class RoutingSlipFormTests
         // AMQP-SLIP-003: caused by the message the step handled. Up to 0.7.14 the
         // hop carried that message's own causation, absent at the first step.
         Assert.Equal(id, hop.WireHeaders[AceHeaders.Causation]);
+        // AMQP-SLIP-007: a new message with an id of its own. Up to 0.7.18 the hop
+        // kept the handled message's id.
+        Assert.False(string.IsNullOrEmpty(hop.WireHeaders[AceHeaders.Id] as string));
+        Assert.NotEqual(id, hop.WireHeaders[AceHeaders.Id]);
+    }
+
+    [Fact]
+    public async Task AnItineraryHopIsANewMessageCausedByTheHandledOne()
+    {
+        // TCK SLIP-009's shape: an itinerary from the pipeline's first step straight
+        // to a tap queue, so the hop that step publishes can be read as it is.
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        using var pipeline = await mq.Pipeline<string>(_q)
+            .Step<string>("validate", Task.FromResult<string?>)
+            .WritingSlipAs(SlipForm.Itinerary)
+            .BuildAsync();
+        var tap = _q + ".tap";
+        await mq.DeclareQueueAsync(tap);
+
+        var id = await mq.SendAlongAsync(
+            new Itinerary().Then(string.Empty, _q + ".validate", "validate").Then(string.Empty, tap, "tap"),
+            "an order");
+
+        PulledMessage<string>? hop = null;
+        await Eventually(() =>
+            (hop = mq.PullAsync<string>(tap, TimeSpan.FromMilliseconds(20)).GetAwaiter().GetResult()) != null,
+            "the hop");
+        await hop!.AcknowledgeAsync();
+
+        Assert.NotEqual(id, hop.WireHeaders[AceHeaders.Id]);
+        Assert.Equal(id, hop.WireHeaders[AceHeaders.Causation]);
+        Assert.Equal(id, hop.WireHeaders[AceHeaders.Correlation]);
     }
 
     [Fact]
@@ -596,6 +628,10 @@ public sealed class RoutingSlipFormTests
         Assert.Equal("acme", arrived.WireHeaders["x-tenant"]);
         Assert.Equal(1761134400000L, Convert.ToInt64(arrived.WireHeaders[AceHeaders.FirstSeen], System.Globalization.CultureInfo.InvariantCulture));
         Assert.False(arrived.WireHeaders.ContainsKey(AceHeaders.Error));
+        // AMQP-SLIP-007: a new id, caused by the handled message, same correlation.
+        Assert.NotEqual("fwd-1", arrived.WireHeaders[AceHeaders.Id]);
+        Assert.Equal("fwd-1", arrived.WireHeaders[AceHeaders.Causation]);
+        Assert.Equal("fwd-1", arrived.WireHeaders[AceHeaders.Correlation]);
         Assert.Equal(form == SlipForm.Declared ? second : "second", Route.From(arrived.WireHeaders)!.Destination!.Label);
         // The three-argument form only has the envelope, which holds no unknown reserved header.
         Assert.Equal(passWire, arrived.WireHeaders.ContainsKey("x-acemq-future"));

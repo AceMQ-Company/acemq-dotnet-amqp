@@ -107,6 +107,28 @@ public sealed class DiagnosticsTests
     }
 
     [Fact]
+    public async Task PausesBeforeHandingBackAMessageWhoseParkWasRefused()
+    {
+        using var mq = await AceMqConnection.ConnectAsync(_url);
+        await mq.DeclareQueueAsync(_queue);
+
+        var calls = 0;
+        using var consumer = await mq.ConsumeAsync<string>(_queue, async _ =>
+        {
+            // Nowhere to park it, so every park is refused and the message handed back.
+            await mq.DeleteQueueAsync(_queue + ".parked");
+            Interlocked.Increment(ref calls);
+            return Ack.Park("needs a person");
+        });
+
+        await mq.Publisher<string>("", _queue).SendAsync("refused");
+        await Task.Delay(TimeSpan.FromSeconds(2.5));
+
+        // One second held per refusal: about three deliveries, not hundreds.
+        Assert.InRange(Volatile.Read(ref calls), 1, 4);
+    }
+
+    [Fact]
     public async Task SaysSoWhenAMessageIsDeadLettered()
     {
         using var mq = await AceMqConnection.ConnectAsync(_url);

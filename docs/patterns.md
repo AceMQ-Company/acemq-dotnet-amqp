@@ -152,6 +152,15 @@ Every hop keeps the run's `x-acemq-first-seen` (AMQP-SLIP-006, TCK SLIP-006 and
 SLIP-007), so `acemq.pipeline.run.duration` covers the whole run, from the first publish
 to the last step, not only the last hop.
 
+**A hop is a new message, caused by the one the step handled** (AMQP-SLIP-007, TCK
+SLIP-008 and SLIP-009, both slip forms). It gets an `x-acemq-id` of its own, its
+`x-acemq-causation` is the handled message's `x-acemq-id`, and `x-acemq-correlation` is
+unchanged, so the correlation ties the run together and the causation chain says which
+step produced which message. Up to 0.7.18 every hop kept the id of the message that
+entered the pipeline, which Go, Python and Ruby never did. Anything that keyed on
+`x-acemq-id` to follow a run should key on the correlation instead. A pipeline's own
+idempotency is keyed by step and id, so it is unaffected.
+
 A slip also lets one message skip a step the pipeline declares. Publish it to the
 first step's queue with a slip naming only the steps it needs, and the pipeline
 follows the slip rather than its own declaration.
@@ -319,6 +328,11 @@ as they do on a pipeline hop. Up to 0.7.17 the three-argument form was the only 
 envelope's own fields, including `x-acemq-first-seen`, travel either way, so the run's age
 is measured from when it started.
 
+`ForwardAsync` publishes the hop as a new message (AMQP-SLIP-007), as a pipeline does: a
+fresh `x-acemq-id`, `x-acemq-causation` set to the handled envelope's id, and the
+correlation kept. It returns the hop's id. Up to 0.7.18 it kept the handled message's id
+and causation. `SendAlongAsync` starts a run, so its message has no causation.
+
 A step can change what happens next — skip ahead when a check is unnecessary, or go
 back to an earlier step:
 
@@ -437,6 +451,25 @@ effect of looking at them would be a poor trade. `ReplayAsync` returns only once
 the messages it passed over are back on the source queue, so a `PendingAsync()`
 straight after it counts them, on a quorum queue too (up to 0.7.13 it could read 0
 there).
+
+**The trade-off.** A message the filter passes over is held unacknowledged until the
+replay ends, then put back, so a filtered replay over a large queue holds every
+passed-over message at once and they return to the queue in a different position. The
+wait for them to show up again is five seconds unless set, and it is bounded on purpose:
+a consumer reading the same queue can take them as soon as they are back and keep the
+count below what the replay expects, and then the replay waits the whole time and returns
+anyway, with nothing lost. Set the wait with `WaitingForPassedOver`; `TimeSpan.Zero`
+returns at once, for when a consumer is draining the queue and the count afterwards does
+not matter:
+
+```csharp
+await mq.Replay("orders.placed.dlq")
+    .WaitingForPassedOver(TimeSpan.FromSeconds(30))   // a slow broker
+    .ReplayAsync(1000, delivery => delivery.Headers.ContainsKey("x-tenant"));
+```
+
+Go republishes a passed-over message instead of holding it, so there nothing is held and
+the order changes; Java, Python and Ruby hold it as this library does.
 
 Replayed messages carry `acemq-replayed-from`, `acemq-replayed-at` and
 `acemq-replay-count`, and the failure reason is cleared — it belonged to the

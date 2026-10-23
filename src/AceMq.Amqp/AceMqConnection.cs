@@ -1001,9 +1001,22 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
             AceMqDiagnostics.Report(
                 AceMqDiagnostics.MoveFailed, DiagnosticLevel.Error, failure,
                 delivery.Queue, destination, envelope.Id, envelope.Attempt, e);
+
+            // Held for a second before it goes back, as Go, Java, Python and Ruby do
+            // (AMQP-RETRY-007, TCK PARK-002). Handed back at once, the delivery
+            // returned and was refused again at broker speed, and a quorum source
+            // queue's delivery limit (twenty on RabbitMQ 4) was spent in well under a
+            // second: the broker dead-lettered or dropped the message before the
+            // parking lot could take it. With the pause a refusal has to last about
+            // twenty seconds for that, and the message then ends in `.dlq`. A close
+            // cuts the pause short.
+            await Task.WhenAny(Task.Delay(RefusedMovePause), _closed.Task).ConfigureAwait(false);
             return Ack.Release();
         }
     }
+
+    /// <summary>How long a delivery whose move was refused is held before it is handed back.</summary>
+    internal static readonly TimeSpan RefusedMovePause = TimeSpan.FromSeconds(1);
 
     /// <summary>How old the message is, as the give-up rule means it.</summary>
     /// <remarks>
@@ -1492,12 +1505,14 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         {
             throw new ArgumentException("this routing slip has no steps left", nameof(slip));
         }
-        return await ForwardAsync(slip, payload, Envelope.Of(slip.Destination!.Label).Build())
+        return await PublishAlongAsync(
+                slip, payload, Envelope.Of(slip.Destination!.Label).Build(), null, hop: false)
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Sends a message to the slip's current step, keeping its envelope.
+    /// Sends a message to the slip's current step as a hop caused by the one handled,
+    /// keeping its correlation (AMQP-SLIP-007).
     /// </summary>
     /// <remarks>
     /// Call <see cref="IRoute.Advance"/> before this to move it on. A handler that
@@ -1515,7 +1530,8 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         ForwardAsync(slip, payload, envelope, null);
 
     /// <summary>
-    /// Sends a message to the slip's current step, keeping its envelope and every
+    /// Sends a message to the slip's current step as a hop caused by the one handled,
+    /// keeping its correlation and every
     /// <c>x-acemq-</c> header it arrived with that this version does not know.
     /// </summary>
     /// <remarks>
@@ -1526,9 +1542,20 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
     /// <c>x-acemq-claim</c> and the old slip are not copied. Application headers still
     /// come from <paramref name="envelope"/>, so a handler that changed them is heard.
     /// <c>null</c> behaves as the three-argument form.
+    /// <para>
+    /// The hop is a new message (AMQP-SLIP-007): it gets an <c>x-acemq-id</c> of its
+    /// own, its <c>x-acemq-causation</c> is <paramref name="envelope"/>'s id, and the
+    /// correlation is unchanged. Up to 0.7.18 it kept the handled message's id and
+    /// causation. The id returned is the hop's.
+    /// </para>
     /// </remarks>
-    public async Task<string> ForwardAsync<T>(
-        IRoute slip, T payload, Envelope envelope, IReadOnlyDictionary<string, object>? wireHeaders)
+    public Task<string> ForwardAsync<T>(
+        IRoute slip, T payload, Envelope envelope, IReadOnlyDictionary<string, object>? wireHeaders) =>
+        PublishAlongAsync(slip, payload, envelope, wireHeaders, hop: true);
+
+    private async Task<string> PublishAlongAsync<T>(
+        IRoute slip, T payload, Envelope envelope, IReadOnlyDictionary<string, object>? wireHeaders,
+        bool hop)
     {
         EnsureOpen();
         if (slip == null) throw new ArgumentNullException(nameof(slip));
@@ -1544,12 +1571,14 @@ public sealed class AceMqConnection : IDisposable, IAsyncDisposable
         // into its own headers. An itinerary rides in an ordinary header instead,
         // because that is the name the other three libraries publish and read, and the
         // reserved namespace would hide it from them as well as from the application.
+        // A hop is a new message caused by the one handled (AMQP-SLIP-007); the first
+        // message of a run keeps the id and causation it was built with.
         var builder = Envelope.Of(envelope.Type)
-            .Id(envelope.Id)
             .CorrelationId(envelope.CorrelationId)
-            .CausationId(envelope.CausationId)
+            .CausationId(hop ? envelope.Id : envelope.CausationId)
             .Attempt(envelope.Attempt)
             .FirstSeen(envelope.FirstSeen);
+        if (!hop) builder.Id(envelope.Id);
         foreach (var header in envelope.Headers)
         {
             // The stale slip on the way in is dropped rather than copied forward. The

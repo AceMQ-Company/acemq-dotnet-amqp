@@ -231,7 +231,8 @@ public sealed class Pipeline<T> : IDisposable
 
                     // Keyed by step as well as by message, so a message re-entering
                     // step three is not mistaken for one that already cleared step
-                    // one -- they share an envelope id all the way down the chain.
+                    // one. Each hop has an id of its own since 0.7.19, but a slip
+                    // written by an older library still carries one id throughout.
                     var key = step.Name + ":" + message.Envelope.Id;
                     if (_idempotency != null)
                     {
@@ -309,13 +310,17 @@ public sealed class Pipeline<T> : IDisposable
                     // hop made a message look newly published at each step, which is
                     // wrong twice over: an age-bounded retry policy never expires, and
                     // the run duration measures the last step instead of the run.
+                    //
+                    // The hop is a new message with an id of its own, caused by the one
+                    // this step handled (AMQP-SLIP-007, AMQP-SLIP-003). Up to 0.7.18 it
+                    // kept the handled message's id, so every step of a run published
+                    // the same x-acemq-id and an idempotency store keyed by id alone
+                    // took the second hop for a duplicate of the first. Up to 0.7.14
+                    // the causation was that message's own causation, absent at the
+                    // first step.
                     var onward = Envelope.Of(message.Envelope.Type)
-                        .Id(message.Envelope.Id)
                         .Version(message.Envelope.Version)
                         .CorrelationId(message.Envelope.CorrelationId)
-                        // Caused by the message this step handled (AMQP-SLIP-003). Up
-                        // to 0.7.14 the hop carried that message's own causation on,
-                        // which is absent at the first step.
                         .CausationId(message.Envelope.Id)
                         .FirstSeen(message.Envelope.FirstSeen)
                         .Origin(message.Envelope.Origin)

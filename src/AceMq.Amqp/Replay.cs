@@ -47,6 +47,13 @@ public sealed class Replay
     private readonly ITransportConnection _connection;
     private string _to;
     private bool _restart = true;
+    private TimeSpan _passedOverWait = DefaultPassedOverWait;
+
+    /// <summary>
+    /// How long a filtered replay waits, by default, for the messages its filter
+    /// passed over to show up on the source queue again.
+    /// </summary>
+    public static readonly TimeSpan DefaultPassedOverWait = TimeSpan.FromSeconds(5);
 
     internal Replay(ITransportConnection connection, string from)
     {
@@ -117,6 +124,37 @@ public sealed class Replay
     public Replay KeepingAttempts()
     {
         _restart = false;
+        return this;
+    }
+
+    /// <summary>How long a filtered replay waits for passed-over messages to return.</summary>
+    public TimeSpan PassedOverWait => _passedOverWait;
+
+    /// <summary>
+    /// Sets how long a filtered replay waits, once it is done, for the messages its
+    /// filter passed over to be back on the source queue. Five seconds unless set.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A message the filter passes over is held unacknowledged until the replay
+    /// ends, then put back, so on a large queue a filtered replay holds every
+    /// passed-over message at once. The broker applies those requeues after it has
+    /// answered, so the replay waits until the queue count is back up before it
+    /// returns, and a count read after it sees them.
+    /// </para>
+    /// <para>
+    /// The wait is bounded because a consumer on the same queue can take those
+    /// messages as soon as they are back, keeping the count below what is expected
+    /// for as long as it runs: the replay then waits the whole time and returns
+    /// anyway, with nothing lost. Raise it for a slow broker; lower it, or set
+    /// <see cref="TimeSpan.Zero"/>, when a consumer is draining the queue and the
+    /// count afterwards does not matter.
+    /// </para>
+    /// </remarks>
+    public Replay WaitingForPassedOver(TimeSpan wait)
+    {
+        if (wait < TimeSpan.Zero) throw new ArgumentException("cannot be negative", nameof(wait));
+        _passedOverWait = wait;
         return this;
     }
 
@@ -210,8 +248,9 @@ public sealed class Replay
                     await pulled.RejectAsync(true, CancellationToken.None).ConfigureAwait(false);
                 }
                 // ponytail: a consumer on the source queue can keep the count below
-                // expected, so the wait is bounded; per-message confirms if that matters.
-                var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+                // expected, so the wait is bounded (WaitingForPassedOver); per-message
+                // confirms if that matters.
+                var deadline = DateTime.UtcNow + _passedOverWait;
                 while (await PendingAsync().ConfigureAwait(false) < expected
                        && DateTime.UtcNow < deadline)
                 {
